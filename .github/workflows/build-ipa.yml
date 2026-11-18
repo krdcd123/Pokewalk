@@ -88,6 +88,8 @@ jobs:
           grep -nE "error:|warning: unable|\*\* BUILD" "$GITHUB_WORKSPACE/build.log" | head -400 > errors.txt || true
           tail -200 "$GITHUB_WORKSPACE/build.log" > tail.txt
           echo "${{ job.status }} run ${{ github.run_number }} commit ${{ github.sha }}" > status.txt
+          # Debug symbols, so crash reports from the app can be turned into file/line numbers.
+          (cd "$GITHUB_WORKSPACE/build/Build/Products/Release-iphoneos" 2>/dev/null && zip -qr /tmp/ci/dSYMs.zip *.dSYM) || true
           git init -q && git checkout -q -b ci-logs
           git add . && git -c user.name=ci -c user.email=ci@localhost commit -qm "Build log for run ${{ github.run_number }}"
           git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" ci-logs

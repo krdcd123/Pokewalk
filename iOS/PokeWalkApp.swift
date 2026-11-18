@@ -4,6 +4,7 @@ import UserNotifications
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        CrashReporter.install()
         UNUserNotificationCenter.current().delegate = self
         PhoneConnectivity.shared.activate()
         // Also runs when iOS relaunches us in the background for location or HealthKit updates.
@@ -60,6 +61,7 @@ struct PokeWalkApp: App {
 
 struct RootView: View {
     @EnvironmentObject private var store: GameStore
+    @State private var crashReport: String? = CrashReporter.takeLastReport()
 
     var body: some View {
         Group {
@@ -70,5 +72,36 @@ struct RootView: View {
             }
         }
         .fullScreenCover(item: $store.evolutionCandidate) { EvolutionView(candidate: $0) }
+        .sheet(isPresented: Binding(get: { crashReport != nil }, set: { if !$0 { crashReport = nil } })) {
+            CrashReportView(report: crashReport ?? "") { crashReport = nil }
+        }
+    }
+}
+
+/// Shown on the launch after a crash so the report can be copied and sent.
+struct CrashReportView: View {
+    let report: String
+    let done: () -> Void
+    @State private var copied = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("PokéWalk crashed last time. Tap Copy and send this report so it can be fixed.")
+                        .font(.rounded(15, .heavy))
+                    Text(report).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                }
+                .padding()
+            }
+            .navigationTitle("Crash report")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(copied ? "Copied" : "Copy") { UIPasteboard.general.string = report; copied = true }
+                }
+                ToolbarItem(placement: .topBarTrailing) { Button("Done", action: done) }
+            }
+        }
     }
 }

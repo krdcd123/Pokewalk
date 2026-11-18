@@ -66,7 +66,9 @@ struct MapHomeView: View {
                 }.annotationTitles(.hidden)
             }
             if let loc = tracker.lastLocation {
-                Annotation("You", coordinate: loc.coordinate, anchor: .bottom) { BuddyMarker() }.annotationTitles(.hidden)
+                Annotation("You", coordinate: loc.coordinate, anchor: .bottom) {
+                    BuddyMarker(speciesID: store.state.buddy?.speciesID, shiny: store.state.buddy?.isShiny ?? false)
+                }.annotationTitles(.hidden)
             }
         }
         .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
@@ -249,14 +251,16 @@ struct MapPin: View {
 }
 
 /// Your walking buddy follows you around the map.
+/// Takes plain values: map annotation content doesn't reliably receive environment objects.
 struct BuddyMarker: View {
-    @EnvironmentObject private var store: GameStore
+    let speciesID: Int?
+    var shiny = false
     @State private var bob = false
 
     var body: some View {
         VStack(spacing: -6) {
-            if let buddy = store.state.buddy {
-                AnimatedSprite(speciesID: buddy.speciesID, shiny: buddy.isShiny)
+            if let speciesID {
+                AnimatedSprite(speciesID: speciesID, shiny: shiny)
                     .frame(width: 84, height: 84)
                     .offset(y: bob ? -3 : 0)
                     .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: bob)
