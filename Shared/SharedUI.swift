@@ -111,3 +111,13 @@ struct TypeChip: View {
             .foregroundStyle(.white)
     }
 }
+
+
+/// Distances are shown in miles.
+enum Distance {
+    static let metersPerMile = 1609.344
+    static func miles(_ meters: Double) -> Double { meters / metersPerMile }
+    static func text(_ meters: Double, digits: Int = 1) -> String {
+        String(format: "%.\(digits)f mi", miles(meters))
+    }
+}

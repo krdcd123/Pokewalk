@@ -48,7 +48,74 @@ final class GameStore: ObservableObject {
 
     private func save() {
         if let data = try? JSONEncoder().encode(state) { try? data.write(to: saveURL, options: .atomic) }
+        autoBackup()
         pushOutward()
+    }
+
+    // MARK: Backups & moving saves between installs
+
+    /// A whole save (game + walk tracks) in one file.
+    struct SaveFile: Codable {
+        var format = "pokewalk-save"
+        var exportedAt = Date()
+        var state: GameState
+        var tracks: [String: [[TrackPoint]]]
+    }
+
+    private var lastBackup = Date.distantPast
+
+    /// Files app › On My iPhone › PokéWalk › Backups — kept up to date automatically (every few minutes).
+    var autoBackupURL: URL {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Backups", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("PokeWalk-backup.json")
+    }
+
+    private func autoBackup() {
+        guard hasGame, Date().timeIntervalSince(lastBackup) > 300 else { return }
+        lastBackup = .now
+        if let data = try? JSONEncoder().encode(SaveFile(state: state, tracks: TrackStore.shared.allDays())) {
+            try? data.write(to: autoBackupURL, options: .atomic)
+        }
+    }
+
+    /// Writes a fresh export file to share (Files, iCloud Drive, AirDrop…).
+    func exportSave() -> URL? {
+        let name = "PokeWalk-\(state.trainer.name)-\(Date().formatted(.iso8601.year().month().day())).json"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        guard let data = try? enc.encode(SaveFile(state: state, tracks: TrackStore.shared.allDays())),
+              (try? data.write(to: url, options: .atomic)) != nil else { return nil }
+        return url
+    }
+
+    /// Loads a save exported from any PokéWalk install. Returns an error message, or nil on success.
+    func importSave(from url: URL) -> String? {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else { return "Couldn't read that file." }
+        let dec = JSONDecoder()
+        let imported: GameState
+        if let file = try? dec.decode(SaveFile.self, from: data) {
+            imported = file.state
+            TrackStore.shared.importDays(file.tracks)
+        } else if let bare = try? dec.decode(GameState.self, from: data) {
+            imported = bare
+        } else {
+            return "That isn't a PokéWalk save file."
+        }
+        guard !imported.pokemon.isEmpty else { return "That save has no Pokémon in it." }
+        var s = imported
+        // Keep whichever ledger has credited more, so steps are never rewarded twice.
+        s.stepLedger.merge(state.stepLedger) { max($0, $1) }
+        s.distanceLedger.merge(state.distanceLedger) { max($0, $1) }
+        state = s
+        hasGame = true
+        save()
+        start()
+        return nil
     }
 
     private func mutate(_ change: (inout GameState) -> Void) {

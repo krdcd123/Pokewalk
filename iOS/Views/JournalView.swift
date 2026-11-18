@@ -75,9 +75,9 @@ struct JournalView: View {
                     }
                 }
 
-                let gpsKm = segments.reduce(0) { $0 + TrackStore.meters($1) } / 1000
+                let gpsMeters = segments.reduce(0) { $0 + TrackStore.meters($1) }
                 HStack(spacing: 10) {
-                    stat(showAllTime ? String(format: "%.1f km", gpsKm) : String(format: "%.1f km", max(gpsKm, healthMeters / 1000)), "distance")
+                    stat(showAllTime ? Distance.text(gpsMeters) : Distance.text(max(gpsMeters, healthMeters)), "distance")
                     stat(showAllTime ? store.state.lifetimeSteps.formatted() : steps.formatted(), "steps")
                     stat("\(caught.count)", "caught")
                 }
@@ -100,7 +100,7 @@ struct JournalView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("\(w.start.formatted(date: .omitted, time: .shortened)) – \(w.end.formatted(date: .omitted, time: .shortened))")
                                         .font(.rounded(15, .heavy))
-                                    Text(String(format: "%.2f km · %d min · %d caught", w.meters / 1000,
+                                    Text(String(format: "%.2f mi · %d min · %d caught", Distance.miles(w.meters),
                                                 Int(w.end.timeIntervalSince(w.start) / 60), n))
                                         .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                                 }

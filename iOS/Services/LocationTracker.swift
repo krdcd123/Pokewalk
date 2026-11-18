@@ -82,6 +82,26 @@ final class TrackStore: ObservableObject {
         if (today.last?.count ?? 0) % 10 == 0 { flush() }
     }
 
+    /// Every recorded day, for save export.
+    func allDays() -> [String: [[TrackPoint]]] {
+        flush()
+        var out: [String: [[TrackPoint]]] = [:]
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        for f in files where f.hasSuffix(".json") {
+            let key = String(f.dropLast(5))
+            out[key] = load(key)
+        }
+        return out
+    }
+
+    /// Replace/merge recorded days from an imported save.
+    func importDays(_ days: [String: [[TrackPoint]]]) {
+        for (key, segs) in days {
+            if let data = try? JSONEncoder().encode(segs) { try? data.write(to: file(key), options: .atomic) }
+        }
+        today = load(todayKey)
+    }
+
     func flush() {
         guard dirty, let data = try? JSONEncoder().encode(today) else { return }
         try? data.write(to: file(todayKey), options: .atomic)

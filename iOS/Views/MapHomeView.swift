@@ -10,7 +10,7 @@ struct MapHomeView: View {
     @State private var sheet: HomeSheet?
     @State private var showCard = false
 
-    enum HomeSheet: String, Identifiable { case menu, encounters; var id: String { rawValue } }
+    enum HomeSheet: String, Identifiable { case menu, encounters, bag, journal; var id: String { rawValue } }
 
     private var caughtToday: [OwnedPokemon] {
         store.state.pokemon.filter { Calendar.current.isDateInToday($0.metDate) && $0.metLocation != nil && $0.metNote == nil }
@@ -41,6 +41,8 @@ struct MapHomeView: View {
                     switch which {
                     case .menu: MainMenuView(close: close)
                     case .encounters: EncounterListView(open: { enc in close(); open(enc) })
+                    case .bag: NavigationStack { BagView() }
+                    case .journal: NavigationStack { JournalView() }
                     }
                 }
                 .transition(.move(edge: .bottom))
@@ -105,6 +107,7 @@ struct MapHomeView: View {
     private var topCards: some View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
+                Button { withAnimation(.spring(duration: 0.4)) { sheet = .journal } } label: {
                 card {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("TODAY").font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft)
@@ -112,11 +115,17 @@ struct MapHomeView: View {
                             Text(store.stepsToday.formatted()).font(.rounded(22, .black))
                             Text("steps").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                         }
-                        Text(String(format: "%.1f km walked", store.metersToday / 1000))
+                        Text("\(Distance.text(store.metersToday)) walked")
                             .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .contentShape(RoundedRectangle(cornerRadius: 20))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Today's journal")
+
+                Button { withAnimation(.spring(duration: 0.4)) { sheet = .bag } } label: {
                 card {
                     HStack(spacing: 10) {
                         ItemSprite(key: BallKind.poke.itemKey).frame(width: 32, height: 32)
@@ -127,6 +136,10 @@ struct MapHomeView: View {
                     }
                 }
                 .frame(width: 120)
+                .contentShape(RoundedRectangle(cornerRadius: 20))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Bag")
             }
             card {
                 VStack(spacing: 6) {

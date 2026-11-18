@@ -65,7 +65,7 @@ struct BuddyPage: View {
                     }
                     GridRow {
                         stat(model.liveStepsToEncounter.formatted(), "to encounter")
-                        stat(String(format: "%.1f", model.snapshot.distanceTodayKm), "km")
+                        stat(String(format: "%.1f", model.snapshot.distanceTodayKm / 1.609344), "mi")
                     }
                 }
                 .padding(.top, 4)

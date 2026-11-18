@@ -84,7 +84,7 @@ struct BuddyHeader: View {
                 Text("\(mon.expToNext.formatted()) Exp to next level").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                 HStack(spacing: 14) {
                     Label(mon.stepsWalked.formatted(), systemImage: "figure.walk")
-                    Label(String(format: "%.1f km", mon.metersWalked / 1000), systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                    Label(Distance.text(mon.metersWalked), systemImage: "point.topleft.down.to.point.bottomright.curvepath")
                     Spacer()
                     Image(systemName: "chevron.right").foregroundStyle(Theme.inkSoft)
                 }
@@ -223,7 +223,7 @@ struct BagView: View {
 struct TrainerCardView: View {
     @EnvironmentObject private var store: GameStore
     var popup = false
-    @State private var totalKm: Double = 0
+    @State private var totalMeters: Double = 0
 
     private let gold = Color(hex: 0xF2CC4A)
 
@@ -275,7 +275,7 @@ struct TrainerCardView: View {
                     row("NAME", t.name.uppercased())
                     row("POKéDEX", "\(store.state.dexCaught.count)")
                     row("STEPS", store.state.lifetimeSteps.formatted())
-                    row("DISTANCE", String(format: "%.1f km", totalKm))
+                    row("DISTANCE", Distance.text(totalMeters))
                     row("STARTED", t.startedOn.formatted(.dateTime.day().month(.abbreviated).year(.twoDigits)))
                     HStack(spacing: 4) {
                         ForEach(0..<4, id: \.self) { i in
@@ -315,9 +315,9 @@ struct TrainerCardView: View {
         .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
         .task {
             let tracks = TrackStore.shared
-            let tracked = tracks.daysWithTracks.reduce(0) { $0 + tracks.meters(on: $1) } / 1000
-            let buddies = store.state.pokemon.reduce(0) { $0 + $1.metersWalked } / 1000
-            totalKm = max(tracked, buddies)
+            let tracked = tracks.daysWithTracks.reduce(0) { $0 + tracks.meters(on: $1) }
+            let buddies = store.state.pokemon.reduce(0) { $0 + $1.metersWalked }
+            totalMeters = max(tracked, buddies)
         }
     }
 }
@@ -331,6 +331,9 @@ struct SettingsView: View {
     @State private var importing = false
     @State private var message: String?
     @State private var confirmReset = false
+    @State private var importingSave = false
+    @State private var confirmImport: URL?
+    @State private var exportURL: URL?
     @State private var liveActivity = LiveActivityManager.shared.enabled
 
     var body: some View {
@@ -405,13 +408,25 @@ struct SettingsView: View {
             }
 
             Section {
+                Button("Export save…") { exportURL = store.exportSave() }.glassRow()
+                Button("Import save…") { importingSave = true; importKind = nil; importing = true }.glassRow()
+            } header: { Text("Save data") } footer: {
+                Text("Export before installing a new IPA, then Import in the new one — or save it to iCloud Drive. PokéWalk also keeps an automatic backup in Files › On My iPhone › PokéWalk › Backups. Installing an update over the top (same SideStore app) keeps your save without doing anything.")
+            }
+
+            Section {
                 Button("Start a new game", role: .destructive) { confirmReset = true }.glassRow()
             }
         }
         .navigationTitle("Settings")
         .glassScreen()
         .onAppear { name = store.state.trainer.name }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.folder]) { result in
+        .fileImporter(isPresented: $importing, allowedContentTypes: importingSave ? [.json, .data] : [.folder]) { result in
+            defer { importingSave = false }
+            if importingSave {
+                if case .success(let url) = result { confirmImport = url }
+                return
+            }
             guard let kind = importKind, case .success(let url) = result else { return }
             do {
                 let n = try SpriteStore.shared.importFolder(url, as: kind)
@@ -422,6 +437,17 @@ struct SettingsView: View {
             }
         }
         .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) { Button("OK") {} }
+        .confirmationDialog("Replace this game with the imported save?", isPresented: Binding(get: { confirmImport != nil }, set: { if !$0 { confirmImport = nil } }),
+                            titleVisibility: .visible) {
+            Button("Replace with imported save", role: .destructive) {
+                guard let url = confirmImport else { return }
+                message = store.importSave(from: url) ?? "Save imported. Welcome back, \(store.state.trainer.name)!"
+                name = store.state.trainer.name
+            }
+        }
+        .sheet(isPresented: Binding(get: { exportURL != nil }, set: { if !$0 { exportURL = nil } })) {
+            if let url = exportURL { ShareSheet(items: [url]).presentationDetents([.medium, .large]) }
+        }
         .confirmationDialog("Erase your Pokémon, PC, items and progress? Walk tracks are kept.", isPresented: $confirmReset,
                             titleVisibility: .visible) {
             Button("Erase everything", role: .destructive) { store.resetGame() }
@@ -441,4 +467,14 @@ struct SettingsView: View {
     private func binding<T>(_ kp: WritableKeyPath<GameSettings, T>) -> Binding<T> {
         Binding(get: { store.state.settings[keyPath: kp] }, set: { v in store.updateSettings { $0[keyPath: kp] = v } })
     }
+}
+
+
+/// System share sheet (Save to Files, iCloud Drive, AirDrop…).
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }

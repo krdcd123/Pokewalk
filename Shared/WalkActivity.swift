@@ -14,7 +14,7 @@ struct WalkActivityAttributes: ActivityAttributes {
         var stepsToday: Int
         var stepsToEncounter: Int
         var pendingEncounters: Int
-        var kmToday: Double
+        var kmToday: Double            // shown as miles
         var spritePNG: Data?
     }
     var trainerName: String
