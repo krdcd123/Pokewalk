@@ -46,12 +46,15 @@ struct SafariView: View {
                     ItemSprite(key: ball.itemKey)
                         .frame(width: 88 * ballScale, height: 88 * ballScale)
                         .rotationEffect(.degrees(wobble))
+                        .frame(width: 110, height: 110)      // generous tap target
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .disabled(busy || ballsLeft == 0 || safari.phase != .active)
                 .opacity(ballsLeft > 0 || busy ? 1 : 0.35)
                 .position(x: geo.size.width / 2, y: ballHomeY + ballOffset)
                 .accessibilityLabel("Throw \(ball.name), \(ballsLeft) left")
+                .zIndex(2)   // keep the ball above the bottom controls so taps always reach it
 
                 if !busy {
                     Text(ballsLeft > 0 ? "Tap to throw" : "No \(ball.name)s left")

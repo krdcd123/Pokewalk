@@ -229,6 +229,7 @@ struct AnimatedSprite: View {
                 ProgressView().tint(Theme.inkSoft)
             }
         }
+        .spriteHitArea()
         .task(id: "\(speciesID)-\(shiny)-\(kind?.rawValue ?? "")") {
             let k = kind ?? (shiny ? .shiny : .front)
             var url = await SpriteStore.shared.url(k, speciesID: speciesID)
@@ -249,10 +250,18 @@ struct ItemSprite: View {
             else if let ball = BallKind.allCases.first(where: { $0.itemKey == key }) { BallGlyph(kind: ball) }
             else { Image(systemName: "shippingbox.fill").resizable().scaledToFit().foregroundStyle(Theme.inkSoft) }
         }
+        .spriteHitArea()
         .task(id: key) {
             guard let url = await SpriteStore.shared.itemURL(key) else { return }
             image = await Task.detached { GIFCache.shared.image(at: url) }.value
         }
+    }
+}
+
+extension View {
+    /// Sprites are drawn by a UIKit image view; keep it out of hit testing and give SwiftUI a tappable shape instead.
+    func spriteHitArea() -> some View {
+        self.allowsHitTesting(false).background(Color.white.opacity(0.001)).contentShape(Rectangle())
     }
 }
 
@@ -261,6 +270,7 @@ struct PixelImageView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UIImageView {
         let v = UIImageView()
+        v.isUserInteractionEnabled = false   // never swallow taps meant for the button the sprite sits in
         v.contentMode = .scaleAspectFit
         v.layer.magnificationFilter = .nearest
         v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -332,6 +342,7 @@ struct TrainerSprite: View {
                 ProgressView()
             }
         }
+        .spriteHitArea()
         .onAppear { step = true }
         .task(id: "\(style.id)-\(pose.rawValue)") {
             guard let url = await SpriteStore.shared.trainerURL(style, pose) else { return }

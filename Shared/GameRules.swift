@@ -173,25 +173,48 @@ enum GameRules {
 
     // MARK: Wild encounters
 
+    /// Chance that any single encounter is a legendary or mythical Pokémon (0.01%).
+    static let legendaryChance = 0.0001
+
+    /// Rarity tiers from each species' real catch rate: the harder to catch, the rarer it is to meet.
+    static func rarityWeight(_ sp: Species) -> Double {
+        switch sp.captureRate {
+        case 190...: return 100        // Pidgey, Rattata, Zigzagoon…
+        case 120..<190: return 45      // Pikachu, Oddish, Geodude…
+        case 75..<120: return 18       // Growlithe, Abra's kin…
+        case 45..<75: return 6         // starters, Eevee, Dratini, Larvitar…
+        case 11..<45: return 1.5       // Chansey, Snorlax, Lapras…
+        default: return 0.4            // Beldum and other ultra-rare non-legendaries
+        }
+    }
+
     static func encounterWeight(_ sp: Species, context: EncounterContext, lifetimeSteps: Int) -> Double {
-        if sp.isMythical { return lifetimeSteps >= 300_000 ? 0.01 : 0 }
-        if sp.isLegendary { return lifetimeSteps >= 150_000 ? 0.03 : 0 }
-        var w = pow(Double(sp.captureRate) / 255, 0.8) * 30 + 0.3
+        if sp.isLegendary || sp.isMythical { return 0 }     // handled separately (legendaryChance)
+        var w = rarityWeight(sp)
         if sp.evolvesFrom != nil {
             let preEvolvesToo = Dex.species(sp.evolvesFrom!).evolvesFrom != nil
-            w *= preEvolvesToo ? 0.03 : 0.12        // final stages are rarest
+            w *= preEvolvesToo ? 0.05 : 0.2              // evolved forms are rarer, final stages rarest
         }
-        if sp.isBaby { w *= 0.3 }
-        if !context.habitats.isDisjoint(with: sp.habitats) { w *= 4 }
+        if sp.isBaby { w *= 0.5 }
+        if !context.habitats.isDisjoint(with: sp.habitats) { w *= 1.5 }   // a gentle nudge, still mostly random
         let spooky = sp.types.contains(.ghost) || sp.types.contains(.dark)
-        if spooky { w *= context.isNight ? 2.5 : 0.6 }
+        if spooky { w *= context.isNight ? 1.5 : 0.8 }
         return w
+    }
+
+    static func pickSpecies(context: EncounterContext, lifetimeSteps: Int) -> Species {
+        if Double.random(in: 0..<1) < legendaryChance {
+            // Mythicals (Mew, Celebi, Jirachi, Deoxys) are a quarter as likely as legendaries
+            let pool = Dex.all.filter { $0.isLegendary || $0.isMythical }.map { ($0, $0.isMythical ? 0.25 : 1.0) }
+            return weightedPick(pool)
+        }
+        let options = Dex.all.map { ($0, encounterWeight($0, context: context, lifetimeSteps: lifetimeSteps)) }
+        return weightedPick(options.filter { $0.1 > 0 })
     }
 
     static func generateEncounter(context: EncounterContext, lifetimeSteps: Int, settings: GameSettings,
                                   at date: Date = .now) -> PendingEncounter {
-        let options = Dex.all.map { ($0, encounterWeight($0, context: context, lifetimeSteps: lifetimeSteps)) }
-        let sp = weightedPick(options.filter { $0.1 > 0 })
+        let sp = pickSpecies(context: context, lifetimeSteps: lifetimeSteps)
         let base = min(55, 3 + lifetimeSteps / 6_000)
         var level = base + Int.random(in: -2...3)
         level = max(level, sp.minimumWildLevel)
