@@ -22,6 +22,8 @@ extension View {
     @ViewBuilder func glassScreen(transparent: Bool = false) -> some View {
         if transparent {
             self.scrollContentBackground(.hidden)
+                .containerBackground(.clear, for: .navigation)   // NavigationStack otherwise paints solid black
+                .background(Color.clear)
                 .foregroundStyle(.white)
                 .toolbarBackground(.hidden, for: .navigationBar)
         } else {
