@@ -1,0 +1,9 @@
+*.xcodeproj
+build/
+out/
+iOS/Info.plist
+Watch/Info.plist
+Complications/Info.plist
+LiveActivity/Info.plist
+*.entitlements
+.DS_Store
