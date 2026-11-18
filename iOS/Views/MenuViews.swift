@@ -217,18 +217,14 @@ struct BagView: View {
     }
 }
 
-// MARK: - Trainer card (Hoenn style)
+// MARK: - Trainer card (Liquid Glass, inspired by the Hoenn trainer card)
 
 struct TrainerCardView: View {
     @EnvironmentObject private var store: GameStore
+    var popup = false
     @State private var totalKm: Double = 0
 
-    // Card palette
-    private let stripeA = Color(hex: 0xE8789C), stripeB = Color(hex: 0xF098B4)
-    private let cardBody = Color(hex: 0xF8F4C8), cardStripe = Color(hex: 0xF0ECB0)
-    private let band = Color(hex: 0xE8D050), frame = Color(hex: 0x707880)
-    private let textMain = Color(hex: 0x606060), textShadow = Color(hex: 0xD8D8C0)
-    private let labelBlue = Color(hex: 0x58A8F8)
+    private let gold = Color(hex: 0xF2CC4A)
 
     private var stars: Int {
         let s = store.state
@@ -237,114 +233,91 @@ struct TrainerCardView: View {
     }
 
     var body: some View {
-        let t = store.state.trainer
-        ZStack {
-            // Pink stripes behind the card, like the GBA screen
-            VStack(spacing: 0) {
-                ForEach(0..<120, id: \.self) { i in (i % 2 == 0 ? stripeA : stripeB).frame(height: 8) }
-            }
-            .ignoresSafeArea()
-
-            VStack(spacing: 18) {
-                card(t)
-                Text("Tap outside the card or swipe down to close").font(.rounded(12, .heavy)).foregroundStyle(.white.opacity(0.85))
-            }
-            .padding(16)
+        if popup {
+            card
+        } else {
+            ScrollView { card.padding(16).padding(.top, 20) }
+                .navigationTitle("Trainer")
+                .glassScreen()
         }
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                Capsule().fill(gold).frame(width: 4, height: 15)
+                Text(label).font(.system(size: 15, weight: .heavy, design: .monospaced)).foregroundStyle(.white.opacity(0.75))
+                Spacer(minLength: 6)
+                Text(value).font(.system(size: 16, weight: .heavy, design: .monospaced)).foregroundStyle(.white)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+            }
+            Rectangle().fill(.white.opacity(0.18)).frame(height: 1)
+        }
+    }
+
+    private var card: some View {
+        let t = store.state.trainer
+        let accent = Color(hex: t.style.cardHex)
+        return VStack(spacing: 14) {
+            HStack {
+                Text("TRAINER CARD")
+                    .font(.system(size: 14, weight: .black, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .glassCapsule(tint: Color(hex: 0x3D7BE0))
+                Spacer()
+                Text("IDNo.\(t.idString)").font(.system(size: 17, weight: .heavy, design: .monospaced))
+            }
+
+            HStack(alignment: .center, spacing: 12) {
+                VStack(spacing: 10) {
+                    row("NAME", t.name.uppercased())
+                    row("POKéDEX", "\(store.state.dexCaught.count)")
+                    row("STEPS", store.state.lifetimeSteps.formatted())
+                    row("DISTANCE", String(format: "%.1f km", totalKm))
+                    row("STARTED", t.startedOn.formatted(.dateTime.day().month(.abbreviated).year(.twoDigits)))
+                    HStack(spacing: 4) {
+                        ForEach(0..<4, id: \.self) { i in
+                            Image(systemName: i < stars ? "star.fill" : "star")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(i < stars ? gold : .white.opacity(0.3))
+                        }
+                        Spacer()
+                    }
+                }
+                ZStack {
+                    Circle().fill(accent.opacity(0.25)).frame(width: 118, height: 118).glassCircle(tint: accent, interactive: false)
+                    TrainerSprite(style: t.style, pose: .card).frame(width: 110, height: 128)
+                }
+                .frame(width: 122)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("PARTY").font(.system(size: 12, weight: .black, design: .monospaced)).foregroundStyle(.white.opacity(0.75))
+                HStack(spacing: 6) {
+                    ForEach(0..<GameState.maxParty, id: \.self) { i in
+                        let mon = i < store.state.party.count ? store.state.party[i] : nil
+                        ZStack {
+                            if let mon { AnimatedSprite(speciesID: mon.speciesID, kind: .icons).padding(3) }
+                        }
+                        .frame(maxWidth: .infinity).frame(height: 40)
+                        .glassCard(10)
+                    }
+                }
+            }
+            .padding(10)
+            .glassCard(16, tint: gold)
+        }
+        .padding(16)
+        .foregroundStyle(.white)
+        .glassCard(28, tint: accent)
+        .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
         .task {
             let tracks = TrackStore.shared
             let tracked = tracks.daysWithTracks.reduce(0) { $0 + tracks.meters(on: $1) } / 1000
             let buddies = store.state.pokemon.reduce(0) { $0 + $1.metersWalked } / 1000
             totalKm = max(tracked, buddies)
         }
-    }
-
-    private func pixel(_ text: String, size: CGFloat = 17) -> some View {
-        Text(text)
-            .font(.system(size: size, weight: .bold, design: .monospaced))
-            .foregroundStyle(textMain)
-            .shadow(color: textShadow, radius: 0, x: 1.5, y: 1.5)
-    }
-
-    private func row(_ label: String, _ value: String) -> some View {
-        VStack(spacing: 2) {
-            HStack(spacing: 6) {
-                Rectangle().fill(band).frame(width: 5, height: 14)
-                pixel(label)
-                Spacer(minLength: 6)
-                pixel(value)
-            }
-            Rectangle().fill(textMain.opacity(0.55)).frame(height: 1.5)
-        }
-    }
-
-    private func card(_ t: Trainer) -> some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("TRAINER CARD")
-                    .font(.system(size: 15, weight: .black, design: .monospaced))
-                    .foregroundStyle(Color(hex: 0x203048))
-                    .padding(.horizontal, 12).padding(.vertical, 5)
-                    .background(labelBlue, in: RoundedRectangle(cornerRadius: 6))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(hex: 0x305080), lineWidth: 2))
-                Spacer()
-                pixel("IDNo.\(t.idString)", size: 18)
-            }
-            .padding(.bottom, 10)
-
-            HStack(alignment: .top, spacing: 10) {
-                VStack(spacing: 9) {
-                    row("NAME:", t.name.uppercased())
-                    HStack(spacing: 3) {
-                        Spacer()
-                        ForEach(0..<stars, id: \.self) { _ in
-                            Image(systemName: "star.fill").font(.system(size: 11)).foregroundStyle(Color(hex: 0xF0B020))
-                        }
-                    }
-                    .frame(height: 12)
-                    row("POKéDEX", "\(store.state.dexCaught.count)")
-                    row("STEPS", store.state.lifetimeSteps.formatted())
-                    row("DISTANCE", String(format: "%.1fkm", totalKm))
-                    row("STARTED", t.startedOn.formatted(.dateTime.day().month(.abbreviated).year(.twoDigits)))
-                }
-                ZStack {
-                    Circle().fill(band.opacity(0.75)).frame(width: 104, height: 104)
-                    Circle().stroke(.white.opacity(0.7), lineWidth: 6).frame(width: 64, height: 64)
-                    TrainerSprite(style: t.style, pose: .card).frame(width: 112, height: 128)
-                }
-                .frame(width: 112)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("PARTY").font(.system(size: 13, weight: .black, design: .monospaced))
-                    .foregroundStyle(.white).shadow(color: Color(hex: 0xB89830), radius: 0, x: 1, y: 1)
-                HStack(spacing: 4) {
-                    ForEach(0..<GameState.maxParty, id: \.self) { i in
-                        let mon = i < store.state.party.count ? store.state.party[i] : nil
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 4).fill(Color(hex: 0xF8F0A8))
-                            RoundedRectangle(cornerRadius: 4).stroke(Color(hex: 0xB8A040), lineWidth: 1.5)
-                            if let mon { AnimatedSprite(speciesID: mon.speciesID, kind: .icons).padding(2) }
-                        }
-                        .frame(height: 36)
-                    }
-                }
-            }
-            .padding(10)
-            .background(band, in: RoundedRectangle(cornerRadius: 8))
-            .padding(.top, 12)
-        }
-        .padding(14)
-        .background(
-            ZStack {
-                cardBody
-                VStack(spacing: 6) { ForEach(0..<40, id: \.self) { _ in cardStripe.frame(height: 3) } }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-        )
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(frame, lineWidth: 5))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white.opacity(0.8), lineWidth: 2).padding(4))
-        .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
     }
 }
 

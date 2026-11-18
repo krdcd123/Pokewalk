@@ -15,6 +15,9 @@ final class SpriteStore {
 
         var exts: [String] { self == .front || self == .shiny ? ["gif", "png", "webp"] : ["png", "gif"] }
 
+        /// Items and trainers are cached by name; Pokémon by Pokédex number.
+        var keyedByName: Bool { self == .items || self == .trainers }
+
         func remoteURL(id: Int, key: String) -> URL? {
             let base = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites"
             switch self {
@@ -77,11 +80,11 @@ final class SpriteStore {
 
     /// Synchronous lookup of a local copy (user, bundled or cached). No network.
     func localURL(_ kind: Kind, id: Int, key: String, name: String) -> URL? {
-        let names = kind == .items ? [key] : candidateNames(id: id, key: key, name: name)
+        let names = kind.keyedByName ? [key] : candidateNames(id: id, key: key, name: name)
         if let u = find(in: userRoot.appendingPathComponent(kind.rawValue), names: names, exts: kind.exts) { return u }
         if let bundled = Bundle.main.resourceURL?.appendingPathComponent("Sprites/\(kind.rawValue)"),
            let u = find(in: bundled, names: names, exts: kind.exts) { return u }
-        return find(in: cacheRoot.appendingPathComponent(kind.rawValue), names: [kind == .items ? key : String(id)], exts: kind.exts)
+        return find(in: cacheRoot.appendingPathComponent(kind.rawValue), names: [kind.keyedByName ? key : String(id)], exts: kind.exts)
     }
 
     func url(_ kind: Kind, speciesID id: Int) async -> URL? {
@@ -93,22 +96,33 @@ final class SpriteStore {
 
     enum TrainerPose: String { case walk, head, card }
 
-    /// Your own trainer sprites first (Sprites/trainers/<id>-<pose>.gif/png), then the downloaded battle sprite.
-    func trainerURL(_ style: TrainerStyle, _ pose: TrainerPose) async -> URL? {
-        let dir = userRoot.appendingPathComponent(Kind.trainers.rawValue)
-        let bundled = Bundle.main.resourceURL?.appendingPathComponent("Sprites/trainers")
+    /// Your own trainer file for a pose (Sprites/trainers/<id>-walk.gif, <id>-head.gif, <id>-card.png), if any.
+    func userTrainerFile(_ style: TrainerStyle, _ pose: TrainerPose) -> URL? {
+        let roots = [userRoot.appendingPathComponent(Kind.trainers.rawValue),
+                     Bundle.main.resourceURL?.appendingPathComponent("Sprites/trainers")].compactMap { $0 }
         let names = pose == .head ? ["\(style.id)-head", "\(style.id)-walk"] :
                     pose == .walk ? ["\(style.id)-walk"] : ["\(style.id)-card", "\(style.id)"]
-        for root in [dir, bundled].compactMap({ $0 }) {
-            if let u = find(in: root, names: names, exts: ["gif", "png"]) { return u }
-        }
+        for root in roots { if let u = find(in: root, names: names, exts: ["gif", "png"]) { return u } }
+        return nil
+    }
+
+    /// Full trainer sprite for the trainer card (yours, else the battle sprite from Showdown).
+    func trainerCardURL(_ style: TrainerStyle) async -> URL? {
+        if let u = userTrainerFile(style, .card) { return u }
         return await url(.trainers, id: 0, key: style.id, name: style.id)
     }
 
-    /// True if the player supplied a real walking animation (otherwise the UI fakes a walk with a bob).
-    func hasWalkAnimation(_ style: TrainerStyle) -> Bool {
-        let dir = userRoot.appendingPathComponent(Kind.trainers.rawValue)
-        return find(in: dir, names: ["\(style.id)-walk", "\(style.id)-head"], exts: ["gif"]) != nil
+    /// The small overworld walking sprite (yours, else built from the original game's sprite sheet).
+    func trainerWalk(_ style: TrainerStyle) async -> UIImage? {
+        if let u = userTrainerFile(style, .walk) ?? userTrainerFile(style, .head) { return GIFCache.shared.image(at: u) }
+        let file = cacheRoot.appendingPathComponent("trainers/\(style.id)-overworld.png")
+        if !FileManager.default.fileExists(atPath: file.path) {
+            guard let (data, resp) = try? await URLSession.shared.data(from: style.overworldURL),
+                  (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            try? data.write(to: file, options: .atomic)
+        }
+        guard let data = try? Data(contentsOf: file) else { return nil }
+        return OverworldSheet.walkAnimation(from: data, sheet: style.sheet)
     }
 
     /// Small PNG of the buddy for the Live Activity (it has to fit in ActivityKit's ~4 KB payload).
@@ -129,7 +143,7 @@ final class SpriteStore {
     func url(_ kind: Kind, id: Int, key: String, name: String) async -> URL? {
         if let u = localURL(kind, id: id, key: key, name: name) { return u }
         guard let remote = kind.remoteURL(id: id, key: key) else { return nil }
-        let cacheKey = "\(kind.rawValue)/\(kind == .items ? key : String(id))"
+        let cacheKey = "\(kind.rawValue)/\(kind.keyedByName ? key : String(id))"
         lock.lock()
         if let t = inFlight[cacheKey] { lock.unlock(); return await t.value }
         let ext = remote.pathExtension
@@ -324,29 +338,93 @@ extension CGImage {
     }
 }
 
-/// A trainer sprite: plays your walking GIF if you added one, otherwise bobs the battle sprite as a walk cycle.
+/// A trainer sprite: the small overworld walking animation (.walk / .head) or the full card sprite (.card).
 struct TrainerSprite: View {
     let style: TrainerStyle
     var pose: SpriteStore.TrainerPose = .walk
     @State private var image: UIImage?
-    @State private var step = false
 
     var body: some View {
         Group {
-            if let image {
-                PixelImageView(image: image)
-                    .offset(y: image.images == nil && pose != .card && step ? -3 : 0)
-                    .animation(image.images == nil && pose != .card
-                               ? .easeInOut(duration: 0.28).repeatForever(autoreverses: true) : .default, value: step)
-            } else {
-                ProgressView()
-            }
+            if let image { PixelImageView(image: image) } else { ProgressView() }
         }
         .spriteHitArea()
-        .onAppear { step = true }
         .task(id: "\(style.id)-\(pose.rawValue)") {
-            guard let url = await SpriteStore.shared.trainerURL(style, pose) else { return }
-            image = await Task.detached { GIFCache.shared.image(at: url) }.value
+            image = nil
+            if pose == .card {
+                guard let url = await SpriteStore.shared.trainerCardURL(style) else { return }
+                image = await Task.detached { GIFCache.shared.image(at: url) }.value
+            } else {
+                image = await SpriteStore.shared.trainerWalk(style)
+            }
         }
+    }
+}
+
+/// Cuts the "walking towards you" frames out of the original games' overworld sprite sheets.
+enum OverworldSheet {
+    static func walkAnimation(from data: Data, sheet: TrainerStyle.Sheet) -> UIImage? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+        let w = cg.width, h = cg.height
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))   // row 0 in memory = top of image
+
+        func setRGBA(_ i: Int, _ c: UInt32, _ a: UInt8 = 255) {
+            px[i] = UInt8((c >> 16) & 0xFF); px[i + 1] = UInt8((c >> 8) & 0xFF); px[i + 2] = UInt8(c & 0xFF); px[i + 3] = a
+        }
+
+        var frameRects: [CGRect] = []
+        var flipLast = false
+        switch sheet {
+        case .gen3:
+            let bg = (px[0], px[1], px[2])           // palette colour 0 is the background
+            for i in stride(from: 0, to: px.count, by: 4) where (px[i], px[i + 1], px[i + 2]) == bg {
+                px[i] = 0; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 0
+            }
+            // frames: 0 stand-down, 3 & 4 walk-down
+            frameRects = [0, 3, 0, 4].map { CGRect(x: $0 * 16, y: 0, width: 16, height: min(32, h)) }
+        case .gbc(let accent):
+            for i in stride(from: 0, to: px.count, by: 4) {
+                switch px[i] {                       // greyscale: 255 white, 170 light, 85 dark, 0 black
+                case 200...: px[i] = 0; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 0
+                case 128..<200: setRGBA(i, 0xFF9C52)  // skin
+                case 40..<128: setRGBA(i, accent)     // clothes (red for Gold, blue for Kris)
+                default: setRGBA(i, 0x101010)
+                }
+            }
+            // frames: 0 stand-down, 3 walk-down (the GBC mirrors it for the other step)
+            frameRects = [0, 3, 0, 3].map { CGRect(x: 0, y: $0 * 16, width: 16, height: 16) }
+            flipLast = true
+        }
+
+        guard let provider = CGDataProvider(data: Data(px) as CFData),
+              let full = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                                 space: CGColorSpaceCreateDeviceRGB(),
+                                 bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                                 provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        else { return nil }
+
+        var frames: [UIImage] = []
+        for (n, r) in frameRects.enumerated() {
+            guard var f = full.cropping(to: r) else { continue }
+            if flipLast && n == frameRects.count - 1, let flipped = mirrored(f) { f = flipped }
+            frames.append(UIImage(cgImage: f))
+        }
+        return frames.count > 1 ? UIImage.animatedImage(with: frames, duration: 0.9) : frames.first
+    }
+
+    /// Left-right mirror of a frame (drawn into pixels, so animated images keep it).
+    private static func mirrored(_ img: CGImage) -> CGImage? {
+        guard let ctx = CGContext(data: nil, width: img.width, height: img.height, bitsPerComponent: 8,
+                                  bytesPerRow: img.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.translateBy(x: CGFloat(img.width), y: 0)
+        ctx.scaleBy(x: -1, y: 1)
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: img.width, height: img.height))
+        return ctx.makeImage()
     }
 }

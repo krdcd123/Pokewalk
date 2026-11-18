@@ -8,8 +8,9 @@ struct MapHomeView: View {
 
     @State private var camera: MapCameraPosition = .userLocation(fallback: .automatic)
     @State private var sheet: HomeSheet?
+    @State private var showCard = false
 
-    enum HomeSheet: String, Identifiable { case menu, encounters, trainer; var id: String { rawValue } }
+    enum HomeSheet: String, Identifiable { case menu, encounters; var id: String { rawValue } }
 
     private var caughtToday: [OwnedPokemon] {
         store.state.pokemon.filter { Calendar.current.isDateInToday($0.metDate) && $0.metLocation != nil && $0.metNote == nil }
@@ -17,22 +18,35 @@ struct MapHomeView: View {
 
     var body: some View {
         ZStack {
-            map
-            VStack(spacing: 10) {
-                topCards
-                if let toast = store.toast { toastView(toast) }
-                Spacer()
-                bottomBar
+            ZStack {
+                map
+                VStack(spacing: 10) {
+                    topCards
+                    if let toast = store.toast { toastView(toast) }
+                    Spacer()
+                    bottomBar
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+            .blur(radius: showCard ? 16 : 0)
+            .allowsHitTesting(!showCard)
+
+            if showCard {
+                // Trainer card pops up over the blurred map; tap anywhere outside to close.
+                Color.black.opacity(0.25).ignoresSafeArea()
+                    .onTapGesture { withAnimation(.spring(duration: 0.35)) { showCard = false } }
+                TrainerCardView(popup: true)
+                    .padding(.horizontal, 14)
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
+                    .onTapGesture { withAnimation(.spring(duration: 0.35)) { showCard = false } }
+            }
         }
         .sheet(item: $sheet) { which in
             switch which {
             case .menu: MainMenuView()
             case .encounters: EncounterListView(open: { enc in sheet = nil; open(enc) })
                     .presentationDetents([.medium, .large])
-            case .trainer: TrainerCardView().presentationDetents([.large])
             }
         }
         .fullScreenCover(item: $store.activeEncounter) { SafariView(wild: $0) }
@@ -164,13 +178,12 @@ struct MapHomeView: View {
                 }
             }
             HStack(alignment: .bottom) {
-                Button { sheet = .trainer } label: {
-                    // Your trainer's head (the top of the walking sprite), framed in a glass circle.
-                    TrainerSprite(style: store.state.trainer.style, pose: .head)
-                        .frame(width: 96, height: 96)
-                        .offset(y: 22)
+                Button { withAnimation(.spring(duration: 0.35)) { showCard = true } } label: {
+                    // Your trainer's small overworld sprite, walking on the spot.
+                    TrainerSprite(style: store.state.trainer.style, pose: .walk)
+                        .frame(width: 34, height: 46)
                         .frame(width: 64, height: 64)
-                        .clipShape(Circle())
+                        .contentShape(Circle())
                         .glassCircle(tint: Theme.teal)
                         .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
                 }
@@ -184,6 +197,7 @@ struct MapHomeView: View {
                         .foregroundStyle(.white)
                         .frame(width: 42, height: 42)
                         .frame(width: 80, height: 80)
+                        .contentShape(Circle())          // the whole circle is tappable, not just the outline
                         .glassCircle(tint: Color(hex: 0xE04A3F))
                         .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
                 }
@@ -197,6 +211,7 @@ struct MapHomeView: View {
                         .font(.system(size: 26, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(width: 64, height: 64)
+                        .contentShape(Circle())
                         .glassCircle(tint: Theme.orange)
                         .overlay(alignment: .topTrailing) {
                             if !store.state.pending.isEmpty {

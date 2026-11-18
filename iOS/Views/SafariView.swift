@@ -1,4 +1,5 @@
 import SwiftUI
+import MapKit
 
 /// Safari Zone-style encounter: tap the ball to throw (the catch is decided by the odds),
 /// give bait to calm it down, or run.
@@ -82,13 +83,25 @@ struct SafariView: View {
 
     // MARK: Pieces
 
-    private var background: some View {
-        LinearGradient(stops: [.init(color: Color(hex: 0x1D4E63), location: 0),
-                               .init(color: Color(hex: 0x3A7F86), location: 0.46),
-                               .init(color: Color(hex: 0x3F8F4E), location: 0.47),
-                               .init(color: Color(hex: 0x24603A), location: 1)],
-                       startPoint: .top, endPoint: .bottom)
-            .ignoresSafeArea()
+    /// A zoomed-in, blurred view of the map where you met it, with the glass controls on top.
+    @ViewBuilder private var background: some View {
+        let loc = wild.location.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+            ?? LocationTracker.shared.currentLocation()?.coordinate
+        ZStack {
+            if let loc {
+                Map(initialPosition: .camera(MapCamera(centerCoordinate: loc, distance: 260, heading: 0, pitch: 55)),
+                    interactionModes: [])
+                    .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
+                    .allowsHitTesting(false)
+                    .scaleEffect(1.15)                 // hide the blurred edges
+                    .blur(radius: 14)
+            } else {
+                AppBackground()
+            }
+            LinearGradient(colors: [.black.opacity(0.35), .black.opacity(0.05), .black.opacity(0.45)],
+                           startPoint: .top, endPoint: .bottom)
+        }
+        .ignoresSafeArea()
     }
 
     private var header: some View {
