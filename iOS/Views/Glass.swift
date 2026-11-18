@@ -18,11 +18,24 @@ struct AppBackground: View {
 
 extension View {
     /// Full-screen background + dark appearance + hidden list/form backgrounds.
-    func glassScreen() -> some View {
-        self.scrollContentBackground(.hidden)
-            .background(AppBackground())
-            .foregroundStyle(.white)
-            .toolbarBackground(.hidden, for: .navigationBar)
+    /// `transparent`: no background of its own, for sheets that float over the blurred map.
+    @ViewBuilder func glassScreen(transparent: Bool = false) -> some View {
+        if transparent {
+            self.scrollContentBackground(.hidden)
+                .foregroundStyle(.white)
+                .toolbarBackground(.hidden, for: .navigationBar)
+        } else {
+            self.scrollContentBackground(.hidden)
+                .background(AppBackground())
+                .foregroundStyle(.white)
+                .toolbarBackground(.hidden, for: .navigationBar)
+        }
+    }
+
+    /// Sheets over the map: see-through, so the blurred map shows behind like the trainer card.
+    func blurredMapSheet() -> some View {
+        self.presentationBackground { Color.black.opacity(0.3) }
+            .presentationCornerRadius(32)
     }
 
     @ViewBuilder func glassCard(_ radius: CGFloat = 20, tint: Color? = nil) -> some View {

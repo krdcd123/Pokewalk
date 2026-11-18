@@ -47,7 +47,7 @@ struct MainMenuView: View {
                 .padding()
             }
             .navigationTitle("Menu")
-            .glassScreen()
+            .glassScreen(transparent: true)
             .navigationDestination(for: Dest.self) { d in
                 switch d {
                 case .pc: PCView()

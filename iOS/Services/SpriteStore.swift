@@ -408,6 +408,24 @@ enum OverworldSheet {
                                  provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
         else { return nil }
 
+        // Trim the empty margin shared by all frames, so the sprite is centred and fills its frame.
+        var minX = Int.max, minY = Int.max, maxX = -1, maxY = -1
+        for r in frameRects {
+            for y in Int(r.minY)..<Int(r.maxY) {
+                for x in Int(r.minX)..<Int(r.maxX) where px[(y * w + x) * 4 + 3] > 0 {
+                    minX = min(minX, x - Int(r.minX)); maxX = max(maxX, x - Int(r.minX))
+                    minY = min(minY, y - Int(r.minY)); maxY = max(maxY, y - Int(r.minY))
+                }
+            }
+        }
+        if maxX >= minX, maxY >= minY {
+            // keep the sprite horizontally symmetric so it doesn't jump when the walk frame mirrors
+            let left = min(minX, Int(frameRects[0].width) - 1 - maxX)
+            let right = Int(frameRects[0].width) - 1 - left
+            frameRects = frameRects.map { CGRect(x: $0.minX + CGFloat(left), y: $0.minY + CGFloat(minY),
+                                                width: CGFloat(right - left + 1), height: CGFloat(maxY - minY + 1)) }
+        }
+
         var frames: [UIImage] = []
         for (n, r) in frameRects.enumerated() {
             guard var f = full.cropping(to: r) else { continue }

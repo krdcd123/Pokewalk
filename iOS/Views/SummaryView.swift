@@ -33,7 +33,6 @@ struct SummaryView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                    .background(LinearGradient(colors: [tint.opacity(0.45), .clear], startPoint: .top, endPoint: .bottom))
 
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
@@ -90,7 +89,18 @@ struct SummaryView: View {
                 }
             }
             .navigationTitle(mon.name)
-            .glassScreen()
+            .glassScreen(transparent: true)
+            .background {
+                ZStack {
+                    AppBackground()
+                    LinearGradient(stops: [.init(color: tint.opacity(0.55), location: 0),
+                                           .init(color: tint.opacity(0.28), location: 0.3),
+                                           .init(color: tint.opacity(0.08), location: 0.55),
+                                           .init(color: .clear, location: 0.8)],
+                                   startPoint: .top, endPoint: .bottom)
+                        .ignoresSafeArea()
+                }
+            }
             .navigationBarTitleDisplayMode(.inline)
             .alert("Nickname", isPresented: $renaming) {
                 TextField(mon.species.name, text: $newName)

@@ -29,7 +29,8 @@ struct MapHomeView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
             }
-            .blur(radius: showCard ? 16 : 0)
+            .blur(radius: showCard || sheet != nil ? 16 : 0)
+            .animation(.easeInOut(duration: 0.3), value: sheet)
             .allowsHitTesting(!showCard)
 
             if showCard {
@@ -44,9 +45,10 @@ struct MapHomeView: View {
         }
         .sheet(item: $sheet) { which in
             switch which {
-            case .menu: MainMenuView()
+            case .menu: MainMenuView().blurredMapSheet()
             case .encounters: EncounterListView(open: { enc in sheet = nil; open(enc) })
                     .presentationDetents([.medium, .large])
+                    .blurredMapSheet()
             }
         }
         .fullScreenCover(item: $store.activeEncounter) { SafariView(wild: $0) }
@@ -181,8 +183,8 @@ struct MapHomeView: View {
                 Button { withAnimation(.spring(duration: 0.35)) { showCard = true } } label: {
                     // Your trainer's small overworld sprite, walking on the spot.
                     TrainerSprite(style: store.state.trainer.style, pose: .walk)
-                        .frame(width: 34, height: 46)
-                        .frame(width: 64, height: 64)
+                        .frame(width: 44, height: 46)
+                        .frame(width: 64, height: 64, alignment: .center)
                         .contentShape(Circle())
                         .glassCircle(tint: Theme.teal)
                         .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
@@ -318,7 +320,7 @@ struct EncounterListView: View {
             }
             .navigationTitle("Wild Pokémon")
             .navigationBarTitleDisplayMode(.inline)
-            .glassScreen()
+            .glassScreen(transparent: true)
         }
     }
 }
