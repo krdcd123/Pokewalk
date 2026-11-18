@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct MainMenuView: View {
     @EnvironmentObject private var store: GameStore
+    var close: () -> Void = {}
 
     enum Dest: Hashable {
         case pc, dex, bag, journal, trainer, settings, summary(UUID)
@@ -48,6 +49,11 @@ struct MainMenuView: View {
             }
             .navigationTitle("Menu")
             .glassScreen(transparent: true)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: close) { Image(systemName: "xmark") }.accessibilityLabel("Close menu")
+                }
+            }
             .navigationDestination(for: Dest.self) { d in
                 switch d {
                 case .pc: PCView()

@@ -30,8 +30,22 @@ struct MapHomeView: View {
                 .padding(.bottom, 8)
             }
             .blur(radius: showCard || sheet != nil ? 16 : 0)
-            .animation(.easeInOut(duration: 0.3), value: sheet)
-            .allowsHitTesting(!showCard)
+            .allowsHitTesting(!showCard && sheet == nil)
+
+            // Menu / Wild Pokémon: our own panel over the live, blurred map (a system sheet dims it to grey)
+            if let which = sheet {
+                Color.black.opacity(0.2).ignoresSafeArea()
+                    .onTapGesture { close() }
+                    .transition(.opacity)
+                MapPanel(close: close) {
+                    switch which {
+                    case .menu: MainMenuView(close: close)
+                    case .encounters: EncounterListView(open: { enc in close(); open(enc) })
+                    }
+                }
+                .transition(.move(edge: .bottom))
+                .zIndex(1)
+            }
 
             if showCard {
                 // Trainer card pops up over the blurred map; tap anywhere outside to close.
@@ -43,17 +57,11 @@ struct MapHomeView: View {
                     .onTapGesture { withAnimation(.spring(duration: 0.35)) { showCard = false } }
             }
         }
-        .sheet(item: $sheet) { which in
-            switch which {
-            case .menu: MainMenuView().blurredMapSheet()
-            case .encounters: EncounterListView(open: { enc in sheet = nil; open(enc) })
-                    .presentationDetents([.medium, .large])
-                    .blurredMapSheet()
-            }
-        }
         .fullScreenCover(item: $store.activeEncounter) { SafariView(wild: $0) }
         .animation(.spring(duration: 0.4), value: store.toast)
     }
+
+    private func close() { withAnimation(.spring(duration: 0.4)) { sheet = nil } }
 
     private func open(_ enc: PendingEncounter) {
         Task { try? await Task.sleep(for: .milliseconds(350)); store.activeEncounter = enc }
@@ -194,7 +202,7 @@ struct MapHomeView: View {
 
                 Spacer()
 
-                Button { sheet = .menu } label: {
+                Button { withAnimation(.spring(duration: 0.4)) { sheet = .menu } } label: {
                     BallOutline(lineWidth: 3.5)
                         .foregroundStyle(.white)
                         .frame(width: 42, height: 42)
@@ -208,7 +216,7 @@ struct MapHomeView: View {
 
                 Spacer()
 
-                Button { sheet = .encounters } label: {
+                Button { withAnimation(.spring(duration: 0.4)) { sheet = .encounters } } label: {
                     Image(systemName: "leaf.fill")
                         .font(.system(size: 26, weight: .bold))
                         .foregroundStyle(.white)
@@ -322,5 +330,35 @@ struct EncounterListView: View {
             .navigationBarTitleDisplayMode(.inline)
             .glassScreen(transparent: true)
         }
+    }
+}
+
+
+/// A pull-down-to-close panel that floats over the blurred map.
+struct MapPanel<Content: View>: View {
+    let close: () -> Void
+    @ViewBuilder let content: Content
+    @State private var drag: CGFloat = 0
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Capsule().fill(.white.opacity(0.5)).frame(width: 40, height: 5)
+                .padding(.top, 10).padding(.bottom, 4)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .gesture(DragGesture()
+                    .onChanged { drag = max(0, $0.translation.height) }
+                    .onEnded { v in
+                        if v.translation.height > 120 || v.predictedEndTranslation.height > 300 { close() }
+                        withAnimation(.spring(duration: 0.3)) { drag = 0 }
+                    })
+            content
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.opacity(0.18), in: UnevenRoundedRectangle(topLeadingRadius: 34, topTrailingRadius: 34))
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 34, topTrailingRadius: 34))
+        .padding(.top, 54)
+        .ignoresSafeArea(edges: .bottom)
+        .offset(y: drag)
     }
 }
