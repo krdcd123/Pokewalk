@@ -39,4 +39,21 @@ rm -rf "$A/Watch"
 sign "$A" "$WORK/PokeWalk.entitlements"
 (cd "$WORK" && zip -qry "$ROOT/out/PokeWalk-iPhone-only.ipa" Payload)
 
+# SideStore / AltStore variants (free Apple IDs don't always get every capability):
+#  - SideStore: no extensions, HealthKit only (no background delivery, no App Group)
+#  - Basic:     no extensions, no special entitlements at all (steps come from the iPhone's motion chip only)
+rm -rf "$A/PlugIns"
+cat > "$WORK/healthkit-only.entitlements" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>com.apple.developer.healthkit</key><true/>
+  <key>com.apple.developer.healthkit.access</key><array/>
+</dict></plist>
+PLIST
+sign "$A" "$WORK/healthkit-only.entitlements"
+(cd "$WORK" && zip -qry "$ROOT/out/PokeWalk-SideStore.ipa" Payload)
+sign "$A"
+(cd "$WORK" && zip -qry "$ROOT/out/PokeWalk-Basic.ipa" Payload)
+
 ls -lh "$ROOT/out"/*.ipa

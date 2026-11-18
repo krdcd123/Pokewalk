@@ -63,16 +63,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag -R "$GITHUB_REPOSITORY" || true
-          gh release create latest out/PokeWalk-iPhone-only.ipa out/PokeWalk.ipa -R "$GITHUB_REPOSITORY" \
+          gh release create latest out/PokeWalk-SideStore.ipa out/PokeWalk-Basic.ipa out/PokeWalk-iPhone-only.ipa out/PokeWalk.ipa -R "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" --title "PokéWalk (latest build)" --latest \
-            --notes "Build ${{ github.run_number }} ($(echo $GITHUB_SHA | cut -c1-7)). SideStore / AltStore: use PokeWalk-iPhone-only.ipa. The full PokeWalk.ipa includes the Apple Watch app, which only Xcode or Sideloadly-type tools may install."
+            --notes "Build ${{ github.run_number }} ($(echo $GITHUB_SHA | cut -c1-7)). SideStore/AltStore: try PokeWalk-SideStore.ipa first; if that will not install, PokeWalk-Basic.ipa (no special permissions). PokeWalk-iPhone-only.ipa adds the Live Activity + App Group; PokeWalk.ipa adds the Apple Watch app (Xcode only)."
 
       - uses: actions/upload-artifact@v4
         with:
           name: PokeWalk-ipa
-          path: |
-            out/PokeWalk.ipa
-            out/PokeWalk-iPhone-only.ipa
+          path: out/*.ipa
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
