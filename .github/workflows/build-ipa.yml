@@ -58,6 +58,15 @@ jobs:
       - name: Package IPAs (with entitlements, ready to sign)
         run: bash ci/package-ipa.sh build/Build/Products/Release-iphoneos/PokeWalk.app "$BUNDLE_PREFIX"
 
+      - name: Publish IPAs as direct downloads (Releases › latest)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag -R "$GITHUB_REPOSITORY" || true
+          gh release create latest out/PokeWalk-iPhone-only.ipa out/PokeWalk.ipa -R "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --title "PokéWalk (latest build)" --latest \
+            --notes "Build ${{ github.run_number }} ($(echo $GITHUB_SHA | cut -c1-7)). SideStore / AltStore: use PokeWalk-iPhone-only.ipa. The full PokeWalk.ipa includes the Apple Watch app, which only Xcode or Sideloadly-type tools may install."
+
       - uses: actions/upload-artifact@v4
         with:
           name: PokeWalk-ipa
