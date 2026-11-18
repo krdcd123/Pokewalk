@@ -48,6 +48,7 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            -IDEBuildingContinueBuildingAfterErrors=YES \
             BUNDLE_ID_PREFIX="$BUNDLE_PREFIX" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build > build.log 2>&1 || true

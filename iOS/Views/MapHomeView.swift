@@ -57,20 +57,19 @@ struct MapHomeView: View {
                 Annotation(mon.name, coordinate: CLLocationCoordinate2D(latitude: mon.metLocation!.latitude,
                                                                         longitude: mon.metLocation!.longitude)) {
                     MapPin(speciesID: mon.speciesID, ring: Theme.orange)
-                }
+                }.annotationTitles(.hidden)
             }
             ForEach(store.state.pending.filter { $0.location != nil }) { enc in
                 Annotation("Wild \(enc.species.name)", coordinate: CLLocationCoordinate2D(latitude: enc.location!.latitude,
                                                                                           longitude: enc.location!.longitude)) {
                     Button { open(enc) } label: { MapPin(speciesID: enc.speciesID, ring: Theme.teal, wild: true) }
-                }
+                }.annotationTitles(.hidden)
             }
             if let loc = tracker.lastLocation {
-                Annotation("You", coordinate: loc.coordinate, anchor: .bottom) { BuddyMarker() }
+                Annotation("You", coordinate: loc.coordinate, anchor: .bottom) { BuddyMarker() }.annotationTitles(.hidden)
             }
         }
         .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
-        .annotationTitles(.hidden)
         .mapControls { MapCompass() }
         .ignoresSafeArea()
     }

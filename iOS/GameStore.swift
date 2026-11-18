@@ -170,7 +170,7 @@ final class GameStore: ObservableObject {
     }
 
     private func report(_ o: StepOutcome) {
-        let background = UIApplicationState.current != .active
+        let background = UIApplication.State.current != .active
         var lines: [String] = []
         if o.newLevel > o.oldLevel, let buddy = state.buddy {
             lines.append("\(buddy.name) grew to Lv. \(o.newLevel)!")
@@ -376,6 +376,6 @@ final class GameStore: ObservableObject {
     }
 }
 
-private extension UIApplicationState {
-    @MainActor static var current: UIApplicationState { UIApplication.shared.applicationState }
+private extension UIApplication.State {
+    @MainActor static var current: UIApplication.State { UIApplication.shared.applicationState }
 }

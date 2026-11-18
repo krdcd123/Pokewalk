@@ -80,11 +80,10 @@ struct MetCard: View {
                 Map(initialPosition: .camera(MapCamera(centerCoordinate: coord, distance: 900))) {
                     Annotation(mon.name, coordinate: coord) {
                         MapPin(speciesID: mon.speciesID, ring: Theme.orange)
-                    }
+                    }.annotationTitles(.hidden)
                 }
                 .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
-                .annotationTitles(.hidden)
-                .allowsHitTesting(false)
+                        .allowsHitTesting(false)
                 .frame(height: 140)
             }
             VStack(alignment: .leading, spacing: 4) {

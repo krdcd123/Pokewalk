@@ -62,12 +62,11 @@ struct JournalView: View {
                     ForEach(caught) { mon in
                         Annotation(mon.name, coordinate: .init(latitude: mon.metLocation!.latitude, longitude: mon.metLocation!.longitude)) {
                             MapPin(speciesID: mon.speciesID, ring: Theme.orange)
-                        }
+                        }.annotationTitles(.hidden)
                     }
                 }
                 .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
-                .annotationTitles(.hidden)
-                .frame(height: 320)
+                        .frame(height: 320)
                 .clipShape(RoundedRectangle(cornerRadius: 20))
                 .overlay {
                     if segments.isEmpty && caught.isEmpty {
