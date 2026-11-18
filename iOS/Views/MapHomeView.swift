@@ -353,6 +353,21 @@ struct MapPanel<Content: View>: View {
                         withAnimation(.spring(duration: 0.3)) { drag = 0 }
                     })
             content
+                // Close button at the bottom middle, within thumb reach; content scrolls clear of it.
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    Button(action: close) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 64, height: 64)
+                            .contentShape(Circle())
+                            .glassCircle()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
+                    .padding(.top, 8)
+                    .padding(.bottom, 30)
+                }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.opacity(0.18), in: UnevenRoundedRectangle(topLeadingRadius: 34, topTrailingRadius: 34))

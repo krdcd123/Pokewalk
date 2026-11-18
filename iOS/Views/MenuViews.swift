@@ -49,11 +49,6 @@ struct MainMenuView: View {
             }
             .navigationTitle("Menu")
             .glassScreen(transparent: true)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: close) { Image(systemName: "xmark") }.accessibilityLabel("Close menu")
-                }
-            }
             .navigationDestination(for: Dest.self) { d in
                 switch d {
                 case .pc: PCView()
