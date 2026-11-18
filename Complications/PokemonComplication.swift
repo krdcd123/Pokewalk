@@ -133,7 +133,7 @@ struct ComplicationView: View {
 
     @ViewBuilder private func sprite(_ id: Int) -> some View {
         if let image = LocalIcon.image(for: id) {
-            image.fullColorIfPossible().resizable().interpolation(.none).scaledToFit()
+            image.resizable().interpolation(.none).widgetAccentedRenderingMode(.fullColor).scaledToFit()
         } else {
             Image(systemName: "circle.circle.fill").resizable().scaledToFit().padding(3)
         }
@@ -198,12 +198,6 @@ struct ComplicationView: View {
     }
 }
 
-private extension Image {
-    /// Keep the sprite's real colours on tinted/accented watch faces (watchOS 11+).
-    func fullColorIfPossible() -> Image {
-        self.widgetAccentedRenderingMode(.fullColor)
-    }
-}
 
 // MARK: - Widget
 
