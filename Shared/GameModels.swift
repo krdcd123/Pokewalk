@@ -57,6 +57,9 @@ struct Trainer: Codable, Hashable {
     var trainerID: Int          // the 5-digit "ID No." shown on summaries
     var secretID: Int           // used for shiny checks, like the games
     var startedOn: Date
+    var appearance: String = "brendan"   // TrainerStyle id
+
+    var style: TrainerStyle { TrainerStyle.style(appearance) }
 
     var idString: String { String(format: "%05d", trainerID) }
 
@@ -79,6 +82,8 @@ struct OwnedPokemon: Codable, Identifiable, Hashable {
     var friendship: Int
     var stepsWalked: Int = 0
     var friendshipStepRemainder: Int = 0
+    var expRemainder: Double = 0        // fractional Exp carried between syncs
+    var metersWalked: Double = 0        // distance walked as your buddy
 
     // Origin ("trainer memo")
     var ball: BallKind
@@ -159,7 +164,8 @@ enum TrackingMode: String, Codable, CaseIterable, Identifiable {
 }
 
 struct GameSettings: Codable, Hashable {
-    var expMultiplier = 1
+    var expPerStep: Double = 0.25       // buddy Exp per step (1.0 = original Pokéwalker)
+    var partyShare: Double = 0.2        // the rest of the party gets this fraction of the buddy's Exp
     var encounterSteps = 500        // average steps between wild encounters
     var ballSteps = 100             // steps per Poké Ball
     var itemSteps = 1_500           // steps per found item
@@ -197,6 +203,7 @@ struct GameState: Codable {
     var dexSeen: Set<Int> = []
     var dexCaught: Set<Int> = []
     var stepLedger: [String: Int] = [:]     // "yyyy-MM-dd" -> steps already turned into rewards
+    var distanceLedger: [String: Double] = [:]  // "yyyy-MM-dd" -> metres already credited to the buddy
     var settings = GameSettings()
     var lastSyncDate = Date()
 
@@ -224,5 +231,95 @@ struct GameState: Codable {
         case .box(let b, let s): return "\(boxes[b].name) · slot \(s + 1)"
         case nil: return "—"
         }
+    }
+}
+
+
+// MARK: - Backwards-compatible decoding
+// Saves from earlier versions are missing newer fields; fall back to defaults instead of failing.
+
+private extension KeyedDecodingContainer {
+    func value<T: Decodable>(_ key: Key, _ fallback: @autoclosure () -> T) -> T {
+        (try? decodeIfPresent(T.self, forKey: key)) ?? fallback()
+    }
+}
+
+extension Trainer {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = c.value(.name, "Trainer")
+        trainerID = c.value(.trainerID, Int.random(in: 0...65535))
+        secretID = c.value(.secretID, Int.random(in: 0...65535))
+        startedOn = c.value(.startedOn, Date())
+        appearance = c.value(.appearance, "brendan")
+    }
+}
+
+extension OwnedPokemon {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        speciesID = try c.decode(Int.self, forKey: .speciesID)
+        nickname = c.value(.nickname, nil)
+        exp = c.value(.exp, 0)
+        gender = c.value(.gender, .genderless)
+        isShiny = c.value(.isShiny, false)
+        nature = c.value(.nature, "Hardy")
+        personality = c.value(.personality, 0)
+        friendship = c.value(.friendship, 70)
+        stepsWalked = c.value(.stepsWalked, 0)
+        friendshipStepRemainder = c.value(.friendshipStepRemainder, 0)
+        expRemainder = c.value(.expRemainder, 0)
+        metersWalked = c.value(.metersWalked, 0)
+        ball = c.value(.ball, .poke)
+        metDate = c.value(.metDate, Date())
+        metLevel = c.value(.metLevel, 5)
+        metLocation = c.value(.metLocation, nil)
+        metNote = c.value(.metNote, nil)
+        otName = c.value(.otName, "Trainer")
+        otID = c.value(.otID, 0)
+        evolutionDeclinedAtLevel = c.value(.evolutionDeclinedAtLevel, nil)
+        evolvedOn = c.value(.evolvedOn, nil)
+    }
+}
+
+extension GameSettings {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = GameSettings()
+        expPerStep = c.value(.expPerStep, d.expPerStep)
+        partyShare = c.value(.partyShare, d.partyShare)
+        encounterSteps = c.value(.encounterSteps, d.encounterSteps)
+        ballSteps = c.value(.ballSteps, d.ballSteps)
+        itemSteps = c.value(.itemSteps, d.itemSteps)
+        shinyOdds = c.value(.shinyOdds, d.shinyOdds)
+        maxPendingEncounters = c.value(.maxPendingEncounters, d.maxPendingEncounters)
+        encounterLifetimeHours = c.value(.encounterLifetimeHours, d.encounterLifetimeHours)
+        notifyEncounters = c.value(.notifyEncounters, d.notifyEncounters)
+        trackingMode = c.value(.trackingMode, d.trackingMode)
+    }
+}
+
+extension GameState {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = GameState()
+        version = c.value(.version, 2)
+        trainer = c.value(.trainer, d.trainer)
+        pokemon = c.value(.pokemon, [])
+        partyIDs = c.value(.partyIDs, [])
+        boxes = c.value(.boxes, d.boxes)
+        buddyID = c.value(.buddyID, nil)
+        bag = c.value(.bag, [:])
+        balls = c.value(.balls, d.balls)
+        lifetimeSteps = c.value(.lifetimeSteps, 0)
+        counters = c.value(.counters, d.counters)
+        pending = c.value(.pending, [])
+        dexSeen = c.value(.dexSeen, [])
+        dexCaught = c.value(.dexCaught, [])
+        stepLedger = c.value(.stepLedger, [:])
+        distanceLedger = c.value(.distanceLedger, [:])
+        settings = c.value(.settings, d.settings)
+        lastSyncDate = c.value(.lastSyncDate, Date())
     }
 }

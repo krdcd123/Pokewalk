@@ -96,17 +96,19 @@ final class GameStore: ObservableObject {
 
     // MARK: New game
 
-    func newGame(trainerName: String, starter: Int, nickname: String?) async {
+    func newGame(trainerName: String, appearance: String, starter: Int, nickname: String?) async {
         let loc = tracker.currentLocation()
         var met: MetLocation?
         if let loc {
             met = MetLocation(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude,
                               placeName: await PlaceService.shared.placeName(for: loc))
         }
-        var s = GameRules.newGame(trainerName: trainerName, starter: starter, nickname: nickname, location: met)
+        var s = GameRules.newGame(trainerName: trainerName, appearance: appearance, starter: starter,
+                                  nickname: nickname, location: met)
         // Start counting from now: today's earlier steps don't count.
         let today = Calendar.current.startOfDay(for: .now)
         s.stepLedger[TrackStore.key(for: today)] = await engine.steps(onDay: today)
+        s.distanceLedger[TrackStore.key(for: today)] = await engine.distanceToday()
         state = s
         hasGame = true
         save()
@@ -146,6 +148,10 @@ final class GameStore: ObservableObject {
         let keep = Set([yesterday, today].map { TrackStore.key(for: $0) })
         ledger = ledger.filter { keep.contains($0.key) }
         metersToday = await engine.distanceToday()
+        // Distance since last sync goes to the buddy (counted the same way as steps).
+        let todayKey = TrackStore.key(for: today)
+        let creditedMeters = state.distanceLedger[todayKey] ?? 0
+        let newMeters = max(0, metersToday - creditedMeters)
 
         guard newSteps > 0 else {
             if ledger != state.stepLedger { state.stepLedger = ledger; save() } else { pushOutward() }
@@ -163,7 +169,8 @@ final class GameStore: ObservableObject {
 
         var s = state
         s.stepLedger = ledger
-        let outcome = GameRules.apply(steps: newSteps, to: &s, context: context)
+        s.distanceLedger = [todayKey: max(creditedMeters, metersToday)]
+        let outcome = GameRules.apply(steps: newSteps, meters: newMeters, to: &s, context: context)
         state = s
         save()
         report(outcome)
@@ -329,6 +336,8 @@ final class GameStore: ObservableObject {
         if state.settings.trackingMode != oldMode { tracker.apply(mode: state.settings.trackingMode) }
     }
 
+    func setAppearance(_ id: String) { mutate { $0.trainer.appearance = id } }
+
     func setTrainerName(_ name: String) {
         mutate { s in
             let old = s.trainer.name
@@ -352,7 +361,8 @@ final class GameStore: ObservableObject {
     var snapshot: WatchSnapshot {
         WatchSnapshot(
             syncDate: state.lastSyncDate,
-            expMultiplier: state.settings.expMultiplier,
+            expPerStep: state.settings.expPerStep,
+            partyShare: state.settings.partyShare,
             lifetimeSteps: state.lifetimeSteps,
             balls: state.totalBalls,
             stepsToEncounter: state.counters.stepsToEncounter,

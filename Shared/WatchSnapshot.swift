@@ -16,7 +16,8 @@ struct WatchSnapshot: Codable, Equatable {
     }
 
     var syncDate: Date
-    var expMultiplier: Int
+    var expPerStep: Double
+    var partyShare: Double
     var lifetimeSteps: Int
     var balls: Int
     var stepsToEncounter: Int
@@ -29,7 +30,7 @@ struct WatchSnapshot: Codable, Equatable {
 
     var buddy: Member? { party.first { $0.isBuddy } }
 
-    static let empty = WatchSnapshot(syncDate: .now, expMultiplier: 1, lifetimeSteps: 0, balls: 0, stepsToEncounter: 0,
+    static let empty = WatchSnapshot(syncDate: .now, expPerStep: 0.25, partyShare: 0.2, lifetimeSteps: 0, balls: 0, stepsToEncounter: 0,
                                      stepsToBall: 0, ballSteps: 100, pendingEncounters: 0, distanceTodayKm: 0, trainerName: "",
                                      party: [])
 }
@@ -40,10 +41,15 @@ struct LiveMember {
     let liveExp: Int
     let pendingSteps: Int
 
-    init(_ member: WatchSnapshot.Member, stepsSinceSync: Int, multiplier: Int) {
+    init(_ member: WatchSnapshot.Member, stepsSinceSync: Int, expPerStep: Double, partyShare: Double) {
         self.member = member
-        self.pendingSteps = member.isBuddy ? stepsSinceSync : 0
-        self.liveExp = min(member.exp + pendingSteps * max(1, multiplier), member.species.growth.maxExp)
+        self.pendingSteps = stepsSinceSync
+        let rate = member.isBuddy ? expPerStep : expPerStep * partyShare
+        self.liveExp = min(member.exp + Int(Double(stepsSinceSync) * rate), member.species.growth.maxExp)
+    }
+
+    init(_ member: WatchSnapshot.Member, in snap: WatchSnapshot, stepsSinceSync: Int) {
+        self.init(member, stepsSinceSync: stepsSinceSync, expPerStep: snap.expPerStep, partyShare: snap.partyShare)
     }
 
     private var growth: GrowthRate { member.species.growth }

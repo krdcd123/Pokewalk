@@ -1,11 +1,15 @@
 import Foundation
 import ActivityKit
 
+/// Keeps one Lock Screen Live Activity running. iOS ends any Live Activity after 8 hours,
+/// so PokéWalk starts a fresh one whenever you open the app and the current one is over 4 hours old.
 @MainActor
 final class LiveActivityManager {
     static let shared = LiveActivityManager()
     private var activity: Activity<WalkActivityAttributes>?
+    private var startedAt: Date?
     private var lastState: WalkActivityAttributes.ContentState?
+    private var spriteCache: (key: String, data: Data?)?
 
     var enabled: Bool {
         get { UserDefaults.standard.object(forKey: "liveActivityEnabled") as? Bool ?? true }
@@ -15,38 +19,49 @@ final class LiveActivityManager {
         }
     }
 
-    private func content(_ store: GameStore) -> WalkActivityAttributes.ContentState? {
+    private func content(_ store: GameStore) async -> WalkActivityAttributes.ContentState? {
         guard let buddy = store.state.buddy else { return nil }
+        let key = "\(buddy.speciesID)-\(buddy.isShiny)"
+        if spriteCache?.key != key {
+            spriteCache = (key, await SpriteStore.shared.liveActivityImage(speciesID: buddy.speciesID, shiny: buddy.isShiny))
+        }
         return .init(buddyName: buddy.name, speciesID: buddy.speciesID, level: buddy.level,
-                     progress: buddy.levelProgress, stepsToday: store.stepsToday,
-                     stepsToEncounter: store.state.counters.stepsToEncounter, balls: store.state.totalBalls,
+                     progress: buddy.levelProgress, expToNext: buddy.expToNext, stepsToday: store.stepsToday,
+                     stepsToEncounter: store.state.counters.stepsToEncounter,
                      pendingEncounters: store.state.pending.count, kmToday: store.metersToday / 1000,
-                     latestWildName: store.state.pending.last?.species.name)
+                     spritePNG: spriteCache?.data)
     }
 
     /// Activities can only be started while the app is in the foreground.
     func startIfNeeded(with store: GameStore) {
-        guard enabled, ActivityAuthorizationInfo().areActivitiesEnabled, let state = content(store) else { return }
-        activity = activity ?? Activity<WalkActivityAttributes>.activities.first
-        if let activity, activity.activityState == .active { update(with: store); return }
-        Task { await SpriteStore.shared.ensureSharedIcon(state.speciesID) }
-        activity = try? Activity.request(attributes: WalkActivityAttributes(trainerName: store.state.trainer.name),
-                                         content: .init(state: state, staleDate: nil))
-        lastState = state
+        guard enabled, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        Task {
+            if activity == nil { activity = Activity<WalkActivityAttributes>.activities.first }
+            let tooOld = (startedAt.map { Date().timeIntervalSince($0) > 4 * 3600 } ?? true)
+            if let current = activity, current.activityState == .active, !tooOld {
+                update(with: store)
+                return
+            }
+            guard let state = await content(store) else { return }
+            for old in Activity<WalkActivityAttributes>.activities { await old.end(nil, dismissalPolicy: .immediate) }
+            activity = try? Activity.request(attributes: WalkActivityAttributes(trainerName: store.state.trainer.name),
+                                             content: .init(state: state, staleDate: Date().addingTimeInterval(8 * 3600)))
+            startedAt = .now
+            lastState = state
+        }
     }
 
     func update(with store: GameStore) {
-        guard let activity, activity.activityState == .active, let state = content(store), state != lastState else { return }
-        lastState = state
+        guard let activity, activity.activityState == .active else { return }
         Task {
-            await SpriteStore.shared.ensureSharedIcon(state.speciesID)
-            await activity.update(.init(state: state, staleDate: Date().addingTimeInterval(3 * 3600)))
+            guard let state = await content(store), state != lastState else { return }
+            lastState = state
+            await activity.update(.init(state: state, staleDate: Date().addingTimeInterval(8 * 3600)))
         }
     }
 
     func end() {
-        guard let activity else { return }
-        Task { await activity.end(nil, dismissalPolicy: .immediate) }
-        self.activity = nil
+        Task { for a in Activity<WalkActivityAttributes>.activities { await a.end(nil, dismissalPolicy: .immediate) } }
+        activity = nil
     }
 }

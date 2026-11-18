@@ -2,20 +2,20 @@
 import ActivityKit
 import Foundation
 
-/// Live Activity shown on the Lock Screen / Dynamic Island — and, on watchOS 11+, in the
-/// Apple Watch Smart Stack automatically (a handy fallback if the Watch app can't be sideloaded).
+/// Lock Screen Live Activity (also shown in the Apple Watch Smart Stack on watchOS 11+).
+/// The buddy's sprite travels inside the state, so the extension needs no App Group.
 struct WalkActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var buddyName: String
         var speciesID: Int
         var level: Int
         var progress: Double
+        var expToNext: Int
         var stepsToday: Int
         var stepsToEncounter: Int
-        var balls: Int
         var pendingEncounters: Int
         var kmToday: Double
-        var latestWildName: String?
+        var spritePNG: Data?
     }
     var trainerName: String
 }

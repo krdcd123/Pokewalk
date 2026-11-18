@@ -40,9 +40,10 @@ sign "$A" "$WORK/PokeWalk.entitlements"
 (cd "$WORK" && zip -qry "$ROOT/out/PokeWalk-iPhone-only.ipa" Payload)
 
 # SideStore / AltStore variants (free Apple IDs don't always get every capability):
-#  - SideStore: no extensions, HealthKit only (no background delivery, no App Group)
+#  - SideStore: HealthKit only (no background delivery, no App Group) + the Lock Screen Live Activity
+#               (its extension needs no entitlements: the sprite travels inside the activity's state)
 #  - Basic:     no extensions, no special entitlements at all (steps come from the iPhone's motion chip only)
-rm -rf "$A/PlugIns"
+[ -d "$A/PlugIns/PokeWalkLiveActivity.appex" ] && sign "$A/PlugIns/PokeWalkLiveActivity.appex"
 cat > "$WORK/healthkit-only.entitlements" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -53,6 +54,7 @@ cat > "$WORK/healthkit-only.entitlements" <<'PLIST'
 PLIST
 sign "$A" "$WORK/healthkit-only.entitlements"
 (cd "$WORK" && zip -qry "$ROOT/out/PokeWalk-SideStore.ipa" Payload)
+rm -rf "$A/PlugIns"
 sign "$A"
 (cd "$WORK" && zip -qry "$ROOT/out/PokeWalk-Basic.ipa" Payload)
 

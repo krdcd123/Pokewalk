@@ -20,7 +20,7 @@ final class WatchModel: NSObject, ObservableObject {
     var hasData: Bool { !snapshot.party.isEmpty }
 
     func live(_ member: WatchSnapshot.Member) -> LiveMember {
-        LiveMember(member, stepsSinceSync: stepsSinceSync, multiplier: snapshot.expMultiplier)
+        LiveMember(member, in: snapshot, stepsSinceSync: stepsSinceSync)
     }
 
     var liveStepsToEncounter: Int { max(0, snapshot.stepsToEncounter - stepsSinceSync) }

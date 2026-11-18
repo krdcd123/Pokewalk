@@ -3,6 +3,7 @@ import SwiftUI
 struct OnboardingView: View {
     @EnvironmentObject private var store: GameStore
     @State private var trainerName = ""
+    @State private var look: String?
     @State private var starter: Int?
     @State private var nickname = ""
     @State private var starting = false
@@ -14,11 +15,32 @@ struct OnboardingView: View {
                     Text("Walk with your Apple Watch to level up your buddy, find a wild Pokémon (Gen 1–3) about every 500 steps, and earn a ball every 100.")
                         .font(.rounded(15)).foregroundStyle(Theme.inkSoft)
 
+                    Text("ARE YOU…").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                        ForEach(TrainerStyle.all) { t in
+                            let chosen = look == t.id
+                            Button { withAnimation(.spring) { look = t.id } } label: {
+                                VStack(spacing: 4) {
+                                    TrainerSprite(style: t, pose: .walk).frame(width: 70, height: 80)
+                                    Text(t.name).font(.rounded(14, .heavy))
+                                    Text(t.game).font(.rounded(9, .heavy)).foregroundStyle(Theme.inkSoft)
+                                        .lineLimit(2).multilineTextAlignment(.center).frame(height: 24)
+                                }
+                                .frame(maxWidth: .infinity).padding(.vertical, 10)
+                                .glassCard(18, tint: chosen ? Color(hex: t.cardHex) : nil)
+                                .overlay(RoundedRectangle(cornerRadius: 18).stroke(chosen ? Color(hex: t.cardHex) : .clear, lineWidth: 3))
+                                .scaleEffect(chosen ? 1.04 : 1)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
                     VStack(alignment: .leading, spacing: 6) {
                         Text("YOUR NAME").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
-                        TextField("Trainer", text: $trainerName)
+                        TextField("", text: $trainerName, prompt: Text(look.map { TrainerStyle.style($0).name } ?? "Trainer")
+                            .foregroundStyle(Theme.inkSoft))
                             .font(.rounded(18)).padding(.horizontal, 14).frame(height: 50)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 14))
+                            .glassCard(14)
                             .textInputAutocapitalization(.words)
                     }
 
@@ -26,14 +48,14 @@ struct OnboardingView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 10)], spacing: 10) {
                         ForEach(Dex.starterChoices, id: \.self) { id in
                             let sp = Dex.species(id)
-                            Button { starter = id } label: {
+                            Button { withAnimation(.spring) { starter = id } } label: {
                                 VStack(spacing: 4) {
                                     AnimatedSprite(speciesID: id).frame(width: 72, height: 72)
-                                    Text(sp.name).font(.rounded(14, .heavy)).foregroundStyle(Theme.ink)
+                                    Text(sp.name).font(.rounded(14, .heavy))
                                     TypeChip(type: sp.primaryType)
                                 }
                                 .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                .background(starter == id ? Color(sp.primaryType).opacity(0.2) : .white, in: RoundedRectangle(cornerRadius: 18))
+                                .glassCard(18, tint: starter == id ? Color(sp.primaryType) : nil)
                                 .overlay(RoundedRectangle(cornerRadius: 18).stroke(starter == id ? Color(sp.primaryType) : .clear, lineWidth: 3))
                             }
                             .buttonStyle(.plain)
@@ -41,21 +63,24 @@ struct OnboardingView: View {
                     }
 
                     if let starter {
-                        TextField("Nickname for \(Dex.species(starter).name) (optional)", text: $nickname)
+                        TextField("", text: $nickname, prompt: Text("Nickname for \(Dex.species(starter).name) (optional)")
+                            .foregroundStyle(Theme.inkSoft))
                             .font(.rounded(16)).padding(.horizontal, 14).frame(height: 48)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 14))
-                        Button {
+                            .glassCard(14)
+                        GlassButton(title: starting ? "Getting ready…" : "Start walking", symbol: "figure.walk") {
+                            guard !starting else { return }
                             starting = true
+                            let name = trainerName.isEmpty ? TrainerStyle.style(look).name : trainerName
                             Task {
-                                await store.newGame(trainerName: trainerName, starter: starter,
-                                                    nickname: nickname.isEmpty ? nil : nickname)
+                                await store.newGame(trainerName: name, appearance: look ?? TrainerStyle.all[4].id,
+                                                    starter: starter, nickname: nickname.isEmpty ? nil : nickname)
                             }
-                        } label: {
-                            Text(starting ? "Getting ready…" : "Start walking")
-                                .font(.rounded(18, .black)).frame(maxWidth: .infinity).frame(height: 56)
-                                .background(Theme.ink, in: Capsule()).foregroundStyle(.white)
                         }
-                        .disabled(starting)
+                        .disabled(look == nil)
+                        .opacity(look == nil ? 0.5 : 1)
+                        if look == nil {
+                            Text("Pick your trainer above first.").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                        }
                     }
 
                     Text("PokéWalk asks for Health (steps), Motion, Location and Notifications. Choose \"Allow While Using\" then \"Change to Always Allow\" for location so encounters work with the phone in your pocket.")
@@ -63,8 +88,8 @@ struct OnboardingView: View {
                 }
                 .padding()
             }
-            .background(Theme.ground)
             .navigationTitle("Welcome to PokéWalk")
+            .glassScreen()
         }
     }
 }

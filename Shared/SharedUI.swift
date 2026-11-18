@@ -5,10 +5,11 @@ import UIKit
 
 enum Theme {
     static let teal = Color(hex: 0x2BA59F)
-    static let tealDark = Color(hex: 0x127C78)
-    static let ink = Color(hex: 0x13302E)
-    static let inkSoft = Color(hex: 0x4A6461)
-    static let ground = Color(hex: 0xF3F7F6)
+    static let tealDark = Color(hex: 0x5FD3C9)   // readable teal on dark glass
+    // Text colours for the dark Liquid Glass theme.
+    static let ink = Color.white
+    static let inkSoft = Color.white.opacity(0.68)
+    static let ground = Color(hex: 0x0C1F2B)
     static let orange = Color(hex: 0xF2A33A)
     static let route = Color(hex: 0x2F6FEB)
     static let card = Color.white
@@ -70,10 +71,10 @@ struct BallGlyph: View {
                     Rectangle().fill(Color(hex: 0xF2C230)).frame(width: s * 0.16, height: s * 0.38).offset(x: -s * 0.2, y: -s * 0.2)
                     Rectangle().fill(Color(hex: 0xF2C230)).frame(width: s * 0.16, height: s * 0.38).offset(x: s * 0.2, y: -s * 0.2)
                 }
-                Rectangle().fill(Theme.ink).frame(height: line)
-                Circle().stroke(Theme.ink, lineWidth: line)
+                Rectangle().fill(Color(hex: 0x1B2226)).frame(height: line)
+                Circle().stroke(Color(hex: 0x1B2226), lineWidth: line)
                 Circle().fill(.white).frame(width: s * 0.3, height: s * 0.3)
-                Circle().stroke(Theme.ink, lineWidth: line).frame(width: s * 0.3, height: s * 0.3)
+                Circle().stroke(Color(hex: 0x1B2226), lineWidth: line).frame(width: s * 0.3, height: s * 0.3)
             }
             .clipShape(Circle())
             .frame(width: s, height: s)
@@ -91,7 +92,7 @@ struct ExpBar: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.gray.opacity(0.22))
+                Capsule().fill(Color.white.opacity(0.16))
                 Capsule().fill(tint)
                     .frame(width: max(height, geo.size.width * min(max(progress, 0), 1)))
             }

@@ -33,7 +33,7 @@ struct SummaryView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                    .background(LinearGradient(colors: [tint.opacity(0.45), Theme.ground], startPoint: .top, endPoint: .bottom))
+                    .background(LinearGradient(colors: [tint.opacity(0.45), .clear], startPoint: .top, endPoint: .bottom))
 
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
@@ -58,7 +58,7 @@ struct SummaryView: View {
                         row("Location", store.state.locationText(of: mon.id), last: true)
                     }
                     .padding(.horizontal, 14).padding(.vertical, 4)
-                    .background(.white, in: RoundedRectangle(cornerRadius: 18))
+                    .glassCard(20)
                     .padding(.horizontal)
 
                     MetCard(mon: mon).padding(.horizontal)
@@ -89,9 +89,8 @@ struct SummaryView: View {
                     .padding(.horizontal).padding(.bottom, 30)
                 }
             }
-            .background(Theme.ground)
-            .foregroundStyle(Theme.ink)
             .navigationTitle(mon.name)
+            .glassScreen()
             .navigationBarTitleDisplayMode(.inline)
             .alert("Nickname", isPresented: $renaming) {
                 TextField(mon.species.name, text: $newName)
@@ -136,10 +135,11 @@ struct SummaryView: View {
         Button(action: action) {
             Label(title, systemImage: symbol).font(.rounded(15, .heavy))
                 .frame(maxWidth: .infinity).frame(height: 48)
-                .background(filled ? Theme.ink : .white, in: Capsule())
-                .foregroundStyle(filled ? .white : Theme.ink)
-                .overlay(Capsule().stroke(Theme.ink, lineWidth: filled ? 0 : 2))
+                .foregroundStyle(.white)
+                .contentShape(Capsule())
+                .glassCapsule(tint: filled ? Theme.teal : nil, interactive: true)
         }
+        .buttonStyle(.plain)
     }
 
     private func evolutionText(_ mon: OwnedPokemon) -> String {
@@ -179,9 +179,11 @@ struct ItemPicker: View {
                             Text("×\(store.state.bag[key] ?? 0)").font(.rounded(15, .heavy)).foregroundStyle(Theme.inkSoft)
                         }
                     }
+                    .glassRow()
                 }
             }
             .navigationTitle("Use an item")
+            .glassScreen()
             .navigationBarTitleDisplayMode(.inline)
         }
     }

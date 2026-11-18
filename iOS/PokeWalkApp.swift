@@ -41,6 +41,7 @@ struct PokeWalkApp: App {
                 .environmentObject(tracker)
                 .environmentObject(tracks)
                 .tint(Theme.tealDark)
+                .preferredColorScheme(.dark)   // one consistent Liquid Glass look (dark map, white text)
                 .task { await store.requestPermissions() }
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {
@@ -96,6 +97,7 @@ struct CrashReportView: View {
             }
             .navigationTitle("Crash report")
             .navigationBarTitleDisplayMode(.inline)
+            .glassScreen()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(copied ? "Copied" : "Copy") { UIPasteboard.general.string = report; copied = true }

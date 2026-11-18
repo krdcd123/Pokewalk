@@ -44,8 +44,8 @@ struct JournalView: View {
                                         Text(d.formatted(.dateTime.day())).font(.rounded(18, .black))
                                     }
                                     .frame(width: 48, height: 54)
-                                    .background(selected ? Theme.ink : .white, in: RoundedRectangle(cornerRadius: 14))
-                                    .foregroundStyle(selected ? .white : Theme.ink)
+                                    .foregroundStyle(.white)
+                                    .glassCard(14, tint: selected ? Theme.teal : nil)
                                 }
                             }
                         }
@@ -71,7 +71,7 @@ struct JournalView: View {
                 .overlay {
                     if segments.isEmpty && caught.isEmpty {
                         Text("No walks recorded").font(.rounded(15, .heavy)).foregroundStyle(Theme.inkSoft)
-                            .padding(12).background(.white.opacity(0.9), in: Capsule())
+                            .padding(12).glassCapsule()
                     }
                 }
 
@@ -114,9 +114,8 @@ struct JournalView: View {
             }
             .padding()
         }
-        .background(Theme.ground)
-        .foregroundStyle(Theme.ink)
         .navigationTitle("Journal")
+        .glassScreen()
         .task(id: day) {
             steps = await StepEngine.shared.steps(onDay: day)
             let end = min(Date(), day.addingTimeInterval(86_400))
@@ -133,7 +132,7 @@ struct JournalView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+        .glassCard(16)
     }
 
     private func boundingRect(_ pts: [TrackPoint]) -> MKMapRect {

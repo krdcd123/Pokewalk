@@ -25,19 +25,20 @@ struct WatchRootView: View {
 struct BuddyPage: View {
     @EnvironmentObject private var model: WatchModel
     let member: WatchSnapshot.Member
-    @State private var hop = false
 
     var body: some View {
         let live = model.live(member)
         let tint = Color(member.species.primaryType)
         ScrollView {
             VStack(spacing: 6) {
-                LocalIcon(speciesID: member.speciesID)
-                    .id("\(member.speciesID)-\(model.spriteVersion)")
-                    .frame(width: 80, height: 60)
-                    .offset(y: hop ? -3 : 0)
-                    .animation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true), value: hop)
-                    .onAppear { hop = true }
+                // Hops like the selected Pokémon on the party screen in the games.
+                TimelineView(.periodic(from: .now, by: 0.22)) { ctx in
+                    let up = Int(ctx.date.timeIntervalSinceReferenceDate / 0.22) % 2 == 0
+                    LocalIcon(speciesID: member.speciesID)
+                        .id("\(member.speciesID)-\(model.spriteVersion)")
+                        .frame(width: 80, height: 60)
+                        .offset(y: up ? -5 : 0)
+                }
 
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(member.name).font(.headline).lineLimit(1)

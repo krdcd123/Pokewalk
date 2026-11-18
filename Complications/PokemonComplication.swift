@@ -56,7 +56,7 @@ struct PokemonEntry: TimelineEntry {
     static let placeholder: PokemonEntry = {
         let m = WatchSnapshot.Member(id: "preview", speciesID: 25, name: "Pikachu",
                                      exp: GrowthRate.mediumFast.exp(forLevel: 12) + 600, isBuddy: true, canEvolve: false)
-        return PokemonEntry(date: .now, member: m, live: LiveMember(m, stepsSinceSync: 420, multiplier: 1),
+        return PokemonEntry(date: .now, member: m, live: LiveMember(m, stepsSinceSync: 420, expPerStep: 0.25, partyShare: 0.2),
                             stepsSinceSync: 420, stepsToEncounter: 188)
     }()
 }
@@ -100,7 +100,7 @@ struct Provider: AppIntentTimelineProvider {
         let fresh = (try? await StepCounter.shared.steps(from: snap.syncDate)) ?? 0
         let steps = max(cached, fresh)
 
-        let live = member.map { LiveMember($0, stepsSinceSync: steps, multiplier: snap.expMultiplier) }
+        let live = member.map { LiveMember($0, in: snap, stepsSinceSync: steps) }
         return PokemonEntry(date: .now, member: member, live: live, stepsSinceSync: steps,
                             stepsToEncounter: max(0, snap.stepsToEncounter - steps))
     }
@@ -152,29 +152,25 @@ struct ComplicationView: View {
         .widgetAccentable()
     }
 
+    /// Large middle slot: party ("bag") icon, name, level and an Exp bar, like the party screen in the games.
     private func rectangular(_ m: WatchSnapshot.Member, _ live: LiveMember) -> some View {
-        HStack(spacing: 6) {
-            sprite(m.speciesID).frame(width: 44, height: 34)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(m.name).font(.headline).lineLimit(1).widgetAccentable()
+        HStack(spacing: 8) {
+            sprite(m.speciesID)
+                .frame(width: 52, height: 40)
+                .background(Circle().fill(.white.opacity(0.12)).frame(width: 46, height: 46))
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(m.name).font(.system(size: 17, weight: .bold, design: .rounded)).lineLimit(1).widgetAccentable()
                     Spacer(minLength: 0)
-                    Text("Lv\(live.level)").font(.system(.body, design: .rounded).weight(.semibold))
+                    Text("Lv\(live.level)").font(.system(size: 15, weight: .semibold, design: .rounded))
                 }
-                ProgressView(value: live.progress).tint(Color(m.species.primaryType))
-                Group {
-                    if live.readyToEvolve {
-                        Text("✨ Ready to evolve!")
-                    } else if m.isBuddy {
-                        Text("\(entry.stepsToEncounter) steps to encounter")
-                    } else {
-                        Text("\(live.expToNext.formatted()) Exp to Lv\(min(live.level + 1, 100))")
-                    }
-                }
-                .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                ExpBar(progress: live.progress, tint: Color(hex: 0x4FD1C5), height: 6)
+                Text(live.readyToEvolve ? "Ready to evolve!" : "\(live.expToNext.formatted()) Exp to next")
+                    .font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary).lineLimit(1)
             }
         }
     }
+
 
     private func corner(_ m: WatchSnapshot.Member, _ live: LiveMember) -> some View {
         sprite(m.speciesID)

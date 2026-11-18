@@ -33,8 +33,8 @@ struct PCView: View {
             }
             .padding()
         }
-        .background(Theme.ground)
         .navigationTitle("PC")
+        .glassScreen()
         .searchable(text: $search, prompt: "Search names, species, places")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -48,8 +48,7 @@ struct PCView: View {
             Button("Save") { store.renameBox(boxIndex, to: boxName) }
             Button("Cancel", role: .cancel) {}
         }
-        .foregroundStyle(Theme.ink)
-    }
+            }
 
     // MARK: Party
 
@@ -79,7 +78,7 @@ struct PCView: View {
         HStack {
             Button { withAnimation { boxIndex = (boxIndex - 1 + store.state.boxes.count) % store.state.boxes.count } } label: {
                 Image(systemName: "chevron.left").font(.system(size: 18, weight: .bold)).frame(width: 44, height: 44)
-                    .background(.white, in: Circle())
+                    .glassCircle()
             }
             .accessibilityLabel("Previous box")
             Spacer()
@@ -101,7 +100,7 @@ struct PCView: View {
             Spacer()
             Button { withAnimation { boxIndex = (boxIndex + 1) % store.state.boxes.count } } label: {
                 Image(systemName: "chevron.right").font(.system(size: 18, weight: .bold)).frame(width: 44, height: 44)
-                    .background(.white, in: Circle())
+                    .glassCircle()
             }
             .accessibilityLabel("Next box")
         }
@@ -115,8 +114,10 @@ struct PCView: View {
             }
         }
         .padding(12)
-        .background(LinearGradient(colors: [Color(hex: wp[0]), Color(hex: wp[1])], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 20))
+        .background(LinearGradient(colors: [Color(hex: wp[0]).opacity(0.55), Color(hex: wp[1]).opacity(0.55)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 22))
+        .glassCard(22)
         .gesture(DragGesture(minimumDistance: 40).onEnded { v in
             guard abs(v.translation.width) > abs(v.translation.height) else { return }
             withAnimation {
@@ -142,7 +143,7 @@ struct PCView: View {
                 }
             }
             .frame(maxWidth: .infinity).frame(height: tall ? 56 : 50)
-            .background(mon == nil ? Color.white.opacity(0.35) : Color.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))
+            .background(mon == nil ? Color.white.opacity(0.12) : Color.white.opacity(0.28), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(isHeld ? Theme.orange : (mon?.id == store.state.buddyID ? Theme.teal : .clear), lineWidth: 3))
             .overlay(alignment: .topTrailing) { if mon?.isShiny == true { Text("✨").font(.system(size: 9)).padding(2) } }
             .scaleEffect(isHeld ? 1.08 : 1)

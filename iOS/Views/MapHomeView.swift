@@ -12,7 +12,7 @@ struct MapHomeView: View {
     enum HomeSheet: String, Identifiable { case menu, encounters, trainer; var id: String { rawValue } }
 
     private var caughtToday: [OwnedPokemon] {
-        store.state.pokemon.filter { Calendar.current.isDateInToday($0.metDate) && $0.metLocation != nil }
+        store.state.pokemon.filter { Calendar.current.isDateInToday($0.metDate) && $0.metLocation != nil && $0.metNote == nil }
     }
 
     var body: some View {
@@ -32,7 +32,7 @@ struct MapHomeView: View {
             case .menu: MainMenuView()
             case .encounters: EncounterListView(open: { enc in sheet = nil; open(enc) })
                     .presentationDetents([.medium, .large])
-            case .trainer: NavigationStack { TrainerCardView() }.presentationDetents([.large])
+            case .trainer: TrainerCardView().presentationDetents([.large])
             }
         }
         .fullScreenCover(item: $store.activeEncounter) { SafariView(wild: $0) }
@@ -139,8 +139,8 @@ struct MapHomeView: View {
             .font(.rounded(14, .heavy))
             .multilineTextAlignment(.center)
             .padding(.horizontal, 16).padding(.vertical, 10)
-            .background(Theme.ink, in: Capsule())
             .foregroundStyle(.white)
+            .glassCapsule(tint: Theme.teal)
             .transition(.move(edge: .top).combined(with: .opacity))
             .onTapGesture { store.toast = nil }
             .task(id: text) {
@@ -159,36 +159,35 @@ struct MapHomeView: View {
                           systemImage: tracker.walkStartedAt == nil ? "figure.walk" : "stop.fill")
                         .font(.rounded(15, .heavy))
                         .padding(.horizontal, 18).frame(height: 44)
-                        .background(.white, in: Capsule())
-                        .foregroundStyle(Theme.ink)
-                        .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
+                        .foregroundStyle(.white)
+                        .glassCapsule(interactive: true)
                 }
             }
             HStack(alignment: .bottom) {
                 Button { sheet = .trainer } label: {
-                    VStack(spacing: 0) {
-                        Text(String(store.state.trainer.name.prefix(2)).uppercased()).font(.rounded(20, .black))
-                        Text("\(store.state.dexCaught.count) caught").font(.rounded(9, .heavy))
-                    }
-                    .frame(width: 64, height: 64)
-                    .background(Theme.teal, in: Circle())
-                    .overlay(Circle().stroke(.white, lineWidth: 3))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
+                    // Your trainer's head (the top of the walking sprite), framed in a glass circle.
+                    TrainerSprite(style: store.state.trainer.style, pose: .head)
+                        .frame(width: 96, height: 96)
+                        .offset(y: 22)
+                        .frame(width: 64, height: 64)
+                        .clipShape(Circle())
+                        .glassCircle(tint: Theme.teal)
+                        .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel("Trainer card")
 
                 Spacer()
 
                 Button { sheet = .menu } label: {
-                    Image(systemName: "square.grid.2x2.fill")
-                        .font(.system(size: 30, weight: .bold))
-                        .frame(width: 80, height: 80)
-                        .background(Theme.ink, in: Circle())
-                        .overlay(Circle().stroke(.white, lineWidth: 4))
+                    BallOutline(lineWidth: 3.5)
                         .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+                        .frame(width: 42, height: 42)
+                        .frame(width: 80, height: 80)
+                        .glassCircle(tint: Color(hex: 0xE04A3F))
+                        .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel("Main menu")
 
                 Spacer()
@@ -196,10 +195,9 @@ struct MapHomeView: View {
                 Button { sheet = .encounters } label: {
                     Image(systemName: "leaf.fill")
                         .font(.system(size: 26, weight: .bold))
+                        .foregroundStyle(.white)
                         .frame(width: 64, height: 64)
-                        .background(Theme.orange, in: Circle())
-                        .overlay(Circle().stroke(.white, lineWidth: 3))
-                        .foregroundStyle(Theme.ink)
+                        .glassCircle(tint: Theme.orange)
                         .overlay(alignment: .topTrailing) {
                             if !store.state.pending.isEmpty {
                                 Text("\(store.state.pending.count)")
@@ -210,8 +208,9 @@ struct MapHomeView: View {
                                     .offset(x: 4, y: -4)
                             }
                         }
-                        .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
+                        .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel("Wild Pokémon waiting: \(store.state.pending.count)")
             }
         }
@@ -220,8 +219,7 @@ struct MapHomeView: View {
     private func card<C: View>(@ViewBuilder _ content: () -> C) -> some View {
         content()
             .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(.white.opacity(0.95), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: Theme.ink.opacity(0.12), radius: 10, y: 4)
+            .glassCard(20)
     }
 }
 
@@ -250,24 +248,23 @@ struct MapPin: View {
     }
 }
 
-/// Your walking buddy follows you around the map.
+/// Your walking buddy's icon in a small circle at your location.
 /// Takes plain values: map annotation content doesn't reliably receive environment objects.
 struct BuddyMarker: View {
     let speciesID: Int?
     var shiny = false
-    @State private var bob = false
 
     var body: some View {
-        VStack(spacing: -6) {
-            if let speciesID {
-                AnimatedSprite(speciesID: speciesID, shiny: shiny)
-                    .frame(width: 84, height: 84)
-                    .offset(y: bob ? -3 : 0)
-                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: bob)
-                    .onAppear { bob = true }
+        VStack(spacing: 0) {
+            ZStack {
+                Circle().fill(.white)
+                if let speciesID { AnimatedSprite(speciesID: speciesID, kind: .icons).padding(6) }
             }
-            Ellipse().fill(Theme.ink.opacity(0.18)).frame(width: 54, height: 12)
-            Circle().fill(Theme.route).frame(width: 14, height: 14).overlay(Circle().stroke(.white, lineWidth: 3))
+            .frame(width: 52, height: 52)
+            .overlay(Circle().stroke(Theme.orange, lineWidth: 4))
+            .shadow(color: .black.opacity(0.3), radius: 5, y: 2)
+            Rectangle().fill(Theme.orange).frame(width: 3, height: 10)
+            Circle().fill(Theme.route).frame(width: 12, height: 12).overlay(Circle().stroke(.white, lineWidth: 2.5))
         }
     }
 }
@@ -284,6 +281,7 @@ struct EncounterListView: View {
                 if store.state.pending.isEmpty {
                     ContentUnavailableView("No wild Pokémon yet", systemImage: "leaf",
                                            description: Text("One appears about every \(store.state.settings.encounterSteps) steps. Keep walking!"))
+                        .listRowBackground(Color.clear)
                 }
                 ForEach(store.state.pending.reversed()) { enc in
                     Button { open(enc) } label: {
@@ -300,10 +298,12 @@ struct EncounterListView: View {
                                 .font(.rounded(11)).foregroundStyle(Theme.inkSoft).multilineTextAlignment(.trailing)
                         }
                     }
+                    .glassRow()
                 }
             }
             .navigationTitle("Wild Pokémon")
             .navigationBarTitleDisplayMode(.inline)
+            .glassScreen()
         }
     }
 }

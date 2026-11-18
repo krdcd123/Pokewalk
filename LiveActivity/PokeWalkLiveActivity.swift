@@ -1,46 +1,39 @@
 import ActivityKit
 import WidgetKit
 import SwiftUI
+import UIKit
 
-/// Lock Screen / Dynamic Island Live Activity. On watchOS 11+ it also appears in the
-/// Apple Watch Smart Stack automatically, so you still see your buddy if the Watch app can't be installed.
+/// Lock Screen card: buddy sprite, name, level and Exp. Nothing in the Dynamic Island.
 struct PokeWalkLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: WalkActivityAttributes.self) { context in
             LockScreenView(state: context.state)
-                .padding(14)
-                .activityBackgroundTint(Theme.ground)
-                .activitySystemActionForegroundColor(Theme.ink)
-        } dynamicIsland: { context in
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .activityBackgroundTint(Color.black.opacity(0.35))
+                .activitySystemActionForegroundColor(.white)
+        } dynamicIsland: { _ in
             DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) {
-                    LocalIcon(speciesID: context.state.speciesID).frame(width: 44, height: 34)
-                }
-                DynamicIslandExpandedRegion(.trailing) {
-                    Text("×\(context.state.balls)").font(.rounded(16, .black))
-                }
-                DynamicIslandExpandedRegion(.center) {
-                    Text("\(context.state.buddyName) Lv \(context.state.level)").font(.rounded(15, .black))
-                }
-                DynamicIslandExpandedRegion(.bottom) {
-                    VStack(spacing: 4) {
-                        ExpBar(progress: context.state.progress, tint: Theme.teal, height: 6)
-                        Text(encounterLine(context.state)).font(.rounded(12)).foregroundStyle(.secondary)
-                    }
-                }
+                DynamicIslandExpandedRegion(.center) { EmptyView() }
             } compactLeading: {
-                LocalIcon(speciesID: context.state.speciesID).frame(width: 26, height: 20)
+                EmptyView()
             } compactTrailing: {
-                Text("\(context.state.stepsToEncounter)").font(.rounded(13, .black)).monospacedDigit()
+                EmptyView()
             } minimal: {
-                LocalIcon(speciesID: context.state.speciesID).frame(width: 22, height: 18)
+                EmptyView()
             }
         }
-        .supplementalActivityFamilies([.small])   // Apple Watch Smart Stack / CarPlay
+        .supplementalActivityFamilies([.small])   // Apple Watch Smart Stack
     }
+}
 
-    private func encounterLine(_ s: WalkActivityAttributes.ContentState) -> String {
-        s.pendingEncounters > 0 ? "\(s.pendingEncounters) wild Pokémon waiting!" : "\(s.stepsToEncounter) steps to next encounter"
+private struct BuddyImage: View {
+    let data: Data?
+    var body: some View {
+        if let data, let ui = UIImage(data: data) {
+            Image(uiImage: ui).resizable().interpolation(.none).scaledToFit()
+        } else {
+            Image(systemName: "figure.walk").resizable().scaledToFit().padding(6)
+        }
     }
 }
 
@@ -50,37 +43,35 @@ private struct LockScreenView: View {
 
     var body: some View {
         if family == .small {
-            // Apple Watch Smart Stack
             HStack(spacing: 8) {
-                LocalIcon(speciesID: state.speciesID).frame(width: 40, height: 30)
+                BuddyImage(data: state.spritePNG).frame(width: 36, height: 36)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(state.buddyName) Lv\(state.level)").font(.rounded(14, .black)).lineLimit(1)
+                    Text("\(state.buddyName) Lv\(state.level)").font(.system(size: 14, weight: .heavy, design: .rounded)).lineLimit(1)
                     ExpBar(progress: state.progress, tint: Theme.teal, height: 4)
-                    Text(state.pendingEncounters > 0 ? "\(state.pendingEncounters) wild waiting" : "\(state.stepsToEncounter) to encounter")
-                        .font(.rounded(11)).foregroundStyle(.secondary)
                 }
             }
         } else {
-            HStack(spacing: 12) {
-                LocalIcon(speciesID: state.speciesID).frame(width: 56, height: 42)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(state.buddyName).font(.rounded(17, .black))
-                        Text("Lv \(state.level)").font(.rounded(15, .heavy)).foregroundStyle(Theme.tealDark)
+            HStack(spacing: 14) {
+                BuddyImage(data: state.spritePNG).frame(width: 64, height: 64)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(state.buddyName).font(.system(size: 19, weight: .black, design: .rounded))
+                        Text("Lv \(state.level)").font(.system(size: 16, weight: .heavy, design: .rounded))
+                            .foregroundStyle(Theme.teal)
                         Spacer()
-                        Text("×\(state.balls) balls").font(.rounded(13, .heavy))
                     }
-                    ExpBar(progress: state.progress, tint: Theme.teal, height: 6)
+                    ExpBar(progress: state.progress, tint: Theme.teal, height: 8)
                     HStack {
-                        Text(state.pendingEncounters > 0 ? "\(state.pendingEncounters) wild Pokémon waiting!"
-                                                         : "\(state.stepsToEncounter) steps to next encounter")
+                        Text("\(state.expToNext.formatted()) Exp to next")
                         Spacer()
-                        Text("\(state.stepsToday.formatted()) steps · \(String(format: "%.1f", state.kmToday)) km")
+                        Text(state.pendingEncounters > 0 ? "\(state.pendingEncounters) wild waiting"
+                                                         : "\(state.stepsToEncounter) steps to encounter")
                     }
-                    .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.75))
                 }
             }
-            .foregroundStyle(Theme.ink)
+            .foregroundStyle(.white)
         }
     }
 }

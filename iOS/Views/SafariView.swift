@@ -55,9 +55,9 @@ struct SafariView: View {
 
                 if !busy {
                     Text(ballsLeft > 0 ? "Tap to throw" : "No \(ball.name)s left")
-                        .font(.rounded(12, .heavy)).foregroundStyle(Theme.ink)
-                        .padding(.horizontal, 10).padding(.vertical, 3)
-                        .background(.white.opacity(0.85), in: Capsule())
+                        .font(.rounded(12, .heavy)).foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 5)
+                        .glassCapsule()
                         .position(x: geo.size.width / 2, y: ballHomeY - 62)
                 }
 
@@ -80,10 +80,10 @@ struct SafariView: View {
     // MARK: Pieces
 
     private var background: some View {
-        LinearGradient(stops: [.init(color: Color(hex: 0xCFEAF6), location: 0),
-                               .init(color: Color(hex: 0xE6F4EA), location: 0.46),
-                               .init(color: Color(hex: 0x9FD58E), location: 0.47),
-                               .init(color: Color(hex: 0x7FC46F), location: 1)],
+        LinearGradient(stops: [.init(color: Color(hex: 0x1D4E63), location: 0),
+                               .init(color: Color(hex: 0x3A7F86), location: 0.46),
+                               .init(color: Color(hex: 0x3F8F4E), location: 0.47),
+                               .init(color: Color(hex: 0x24603A), location: 1)],
                        startPoint: .top, endPoint: .bottom)
             .ignoresSafeArea()
     }
@@ -98,21 +98,21 @@ struct SafariView: View {
                 } label: {
                     Label("Run", systemImage: "arrow.right").font(.rounded(15, .heavy))
                         .padding(.horizontal, 16).frame(height: 40)
-                        .background(.white.opacity(0.92), in: Capsule())
+                        .glassCapsule(interactive: true)
                 }
                 .disabled(busy)
                 Spacer()
                 if let place = wild.location?.placeName {
                     Label(place, systemImage: "mappin.and.ellipse").font(.rounded(13, .heavy)).lineLimit(1)
                         .padding(.horizontal, 12).frame(height: 40)
-                        .background(.white.opacity(0.92), in: Capsule())
+                        .glassCapsule()
                 }
             }
             .foregroundStyle(Theme.ink)
             .padding(.horizontal, 16)
 
             Text(wild.isShiny ? "A SHINY POKÉMON APPEARED!" : "A WILD POKÉMON APPEARED!")
-                .font(.rounded(12, .heavy)).foregroundStyle(wild.isShiny ? Color(hex: 0xB8860B) : Theme.inkSoft)
+                .font(.rounded(12, .heavy)).foregroundStyle(wild.isShiny ? Color(hex: 0xF2C230) : Theme.inkSoft)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(wild.species.name + (wild.isShiny ? " ✨" : "")).font(.rounded(32, .black))
                 Text(wild.gender.symbol).font(.rounded(20, .heavy))
@@ -133,7 +133,7 @@ struct SafariView: View {
         .font(.rounded(13, .heavy))
         .foregroundStyle(Theme.ink)
         .padding(.horizontal, 14).frame(height: 44)
-        .background(.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 14))
+        .glassCard(16)
         .padding(.horizontal, 28)
     }
 
@@ -148,9 +148,8 @@ struct SafariView: View {
                     Text("Bait").font(.rounded(12, .black))
                 }
                 .frame(width: 72, height: 72)
-                .background(Theme.orange, in: Circle())
-                .overlay(Circle().stroke(.white, lineWidth: 3))
-                .foregroundStyle(Theme.ink)
+                .foregroundStyle(.white)
+                .glassCircle(tint: Theme.orange)
             }
             .disabled(busy)
 
@@ -167,9 +166,8 @@ struct SafariView: View {
                     Text(ball.name).font(.rounded(10, .heavy)).foregroundStyle(Theme.inkSoft)
                 }
                 .frame(width: 72, height: 72)
-                .background(.white, in: Circle())
-                .overlay(Circle().stroke(.white, lineWidth: 3))
-                .foregroundStyle(Theme.ink)
+                .foregroundStyle(.white)
+                .glassCircle()
             }
             .disabled(busy)
         }

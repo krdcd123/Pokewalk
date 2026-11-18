@@ -16,6 +16,7 @@ struct StepOutcome {
     var itemsFound: [String] = []
     var newEncounters: [PendingEncounter] = []
     var evolutionReady: (id: UUID, into: Int)?
+    var partyLevelUps: [(id: UUID, level: Int)] = []
 
     var isEmpty: Bool { steps == 0 }
 }
@@ -44,9 +45,11 @@ enum GameRules {
         return Int.random(in: 0..<8) < sp.genderRate ? .female : .male
     }
 
-    static func newGame(trainerName: String, starter: Int, nickname: String?, location: MetLocation?) -> GameState {
+    static func newGame(trainerName: String, appearance: String = "brendan", starter: Int, nickname: String?,
+                        location: MetLocation?) -> GameState {
         var s = GameState()
         s.trainer = Trainer.new(named: trainerName.isEmpty ? "Trainer" : trainerName)
+        s.trainer.appearance = appearance
         var mon = makePokemon(species: starter, level: 5, ball: .poke, trainer: s.trainer, settings: s.settings,
                               location: location, note: "Received as a starter")
         mon.nickname = nickname
@@ -85,20 +88,33 @@ enum GameRules {
         return Int.random(in: (base * 8 / 10)...(base * 12 / 10))
     }
 
-    static func apply(steps: Int, to s: inout GameState, context: EncounterContext, at date: Date = .now) -> StepOutcome {
+    /// Adds fractional Exp, carrying the remainder so slow rates (e.g. 0.25/step) still add up exactly.
+    @discardableResult
+    static func grantExp(_ amount: Double, to mon: inout OwnedPokemon) -> Int {
+        let total = mon.expRemainder + amount
+        let whole = Int(total.rounded(.down))
+        mon.expRemainder = total - Double(whole)
+        let before = mon.exp
+        mon.exp = min(mon.exp + whole, mon.species.growth.maxExp)
+        return mon.exp - before
+    }
+
+    static func apply(steps: Int, meters: Double = 0, to s: inout GameState, context: EncounterContext,
+                      at date: Date = .now) -> StepOutcome {
         var out = StepOutcome()
         s.lastSyncDate = date
         guard steps > 0 else { return out }
         out.steps = steps
         s.lifetimeSteps += steps
 
-        // Buddy: Exp, friendship, steps together
+        // Buddy: Exp, friendship, steps & distance together
+        let buddyExp = Double(steps) * max(0, s.settings.expPerStep)
         if let id = s.buddyID, let i = s.index(of: id) {
             var mon = s.pokemon[i]
             out.oldLevel = mon.level
-            let gained = steps * max(1, s.settings.expMultiplier)
-            mon.exp = min(mon.exp + gained, mon.species.growth.maxExp)
+            let gained = grantExp(buddyExp, to: &mon)
             mon.stepsWalked += steps
+            mon.metersWalked += max(0, meters)
             let f = mon.friendshipStepRemainder + steps
             mon.friendship = min(255, mon.friendship + f / 100)
             mon.friendshipStepRemainder = f % 100
@@ -106,6 +122,17 @@ enum GameRules {
             out.expGained = gained
             out.newLevel = mon.level
             if let into = pendingEvolution(for: mon, at: date) { out.evolutionReady = (id, into) }
+        }
+
+        // Exp Share: the rest of the party (not the PC) gets a fraction of the buddy's Exp
+        for pid in s.partyIDs where pid != s.buddyID {
+            guard let i = s.index(of: pid) else { continue }
+            var mon = s.pokemon[i]
+            let before = mon.level
+            grantExp(buddyExp * max(0, s.settings.partyShare), to: &mon)
+            s.pokemon[i] = mon
+            if mon.level > before { out.partyLevelUps.append((pid, mon.level)) }
+            if out.evolutionReady == nil, let into = pendingEvolution(for: mon, at: date) { out.evolutionReady = (pid, into) }
         }
 
         // Balls

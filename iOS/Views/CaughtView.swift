@@ -28,7 +28,7 @@ struct CaughtView: View {
                         Text("GIVE IT A NICKNAME?").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
                         TextField(mon.species.name, text: $nickname)
                             .font(.rounded(17)).padding(.horizontal, 12).frame(height: 46)
-                            .background(Theme.ground, in: RoundedRectangle(cornerRadius: 12))
+                            .glassCard(12)
                             .submitLabel(.done)
                     }
                     .cardStyle()
@@ -43,17 +43,15 @@ struct CaughtView: View {
                     }
                     .padding(.horizontal)
 
-                    Button {
+                    GlassButton(title: "OK") {
                         if !nickname.isEmpty { store.rename(mon.id, to: nickname) }
                         dismiss()
-                    } label: {
-                        Text("OK").font(.rounded(17, .black)).frame(maxWidth: .infinity).frame(height: 54)
-                            .background(Theme.ink, in: Capsule()).foregroundStyle(.white)
                     }
                     .padding(.horizontal).padding(.bottom, 30)
                 }
             }
-            .background(Theme.ground)
+            .background(AppBackground())
+            .scrollContentBackground(.hidden)
             .ignoresSafeArea(edges: .top)
             .foregroundStyle(Theme.ink)
         }
@@ -65,7 +63,7 @@ struct CaughtView: View {
             Text(label).font(.rounded(11)).foregroundStyle(Theme.inkSoft)
         }
         .frame(maxWidth: .infinity).padding(.vertical, 12)
-        .background(.white, in: RoundedRectangle(cornerRadius: 14))
+        .glassCard(14)
     }
 }
 
@@ -94,17 +92,7 @@ struct MetCard: View {
             }
             .padding(14)
         }
-        .background(.white, in: RoundedRectangle(cornerRadius: 18))
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .shadow(color: Theme.ink.opacity(0.08), radius: 8, y: 2)
-    }
-}
-
-extension View {
-    func cardStyle() -> some View {
-        self.padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white, in: RoundedRectangle(cornerRadius: 18))
-            .shadow(color: Theme.ink.opacity(0.08), radius: 8, y: 2)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .glassCard(20)
     }
 }

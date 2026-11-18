@@ -11,7 +11,7 @@ final class SpriteStore {
     static let shared = SpriteStore()
 
     enum Kind: String, CaseIterable {
-        case front, shiny, icons, items
+        case front, shiny, icons, items, trainers
 
         var exts: [String] { self == .front || self == .shiny ? ["gif", "png", "webp"] : ["png", "gif"] }
 
@@ -22,6 +22,7 @@ final class SpriteStore {
             case .shiny: return id <= 649 ? URL(string: "\(base)/pokemon/versions/generation-v/black-white/animated/shiny/\(id).gif") : nil
             case .icons: return SharedStore.remoteIconURL(id)
             case .items: return URL(string: "\(base)/items/\(key).png")
+            case .trainers: return TrainerStyle.all.first { $0.id == key }?.remoteSpriteURL
             }
         }
     }
@@ -50,6 +51,7 @@ final class SpriteStore {
               shiny/  shiny animated sprites  (same names)
               icons/  party/box icons for the Watch (25.png …)
               items/  item sprites            (poke-ball.png, great-ball.png, rare-candy.png …)
+              trainers/ red-walk.gif, red-head.gif, red-card.png (also leaf, gold, kris, brendan, may)
             Anything missing is downloaded from PokeAPI's sprite repo.
             """.write(to: readme, atomically: true, encoding: .utf8)
         }
@@ -88,6 +90,41 @@ final class SpriteStore {
     }
 
     func itemURL(_ key: String) async -> URL? { await url(.items, id: 0, key: key, name: key) }
+
+    enum TrainerPose: String { case walk, head, card }
+
+    /// Your own trainer sprites first (Sprites/trainers/<id>-<pose>.gif/png), then the downloaded battle sprite.
+    func trainerURL(_ style: TrainerStyle, _ pose: TrainerPose) async -> URL? {
+        let dir = userRoot.appendingPathComponent(Kind.trainers.rawValue)
+        let bundled = Bundle.main.resourceURL?.appendingPathComponent("Sprites/trainers")
+        let names = pose == .head ? ["\(style.id)-head", "\(style.id)-walk"] :
+                    pose == .walk ? ["\(style.id)-walk"] : ["\(style.id)-card", "\(style.id)"]
+        for root in [dir, bundled].compactMap({ $0 }) {
+            if let u = find(in: root, names: names, exts: ["gif", "png"]) { return u }
+        }
+        return await url(.trainers, id: 0, key: style.id, name: style.id)
+    }
+
+    /// True if the player supplied a real walking animation (otherwise the UI fakes a walk with a bob).
+    func hasWalkAnimation(_ style: TrainerStyle) -> Bool {
+        let dir = userRoot.appendingPathComponent(Kind.trainers.rawValue)
+        return find(in: dir, names: ["\(style.id)-walk", "\(style.id)-head"], exts: ["gif"]) != nil
+    }
+
+    /// Small PNG of the buddy for the Live Activity (it has to fit in ActivityKit's ~4 KB payload).
+    func liveActivityImage(speciesID: Int, shiny: Bool) async -> Data? {
+        var candidates: [URL] = []
+        if let u = await url(shiny ? .shiny : .front, speciesID: speciesID) { candidates.append(u) }
+        if let u = await url(.icons, speciesID: speciesID) { candidates.append(u) }
+        for u in candidates {
+            guard let img = GIFCache.shared.image(at: u), let frame = img.images?.first ?? Optional(img),
+                  let cg = frame.cgImage?.croppedToContent() else { continue }
+            for side in [64, 48, 40] {
+                if let data = cg.scaledPNG(maxSide: side), data.count <= 2_400 { return data }
+            }
+        }
+        return nil
+    }
 
     func url(_ kind: Kind, id: Int, key: String, name: String) async -> URL? {
         if let u = localURL(kind, id: id, key: key, name: name) { return u }
@@ -237,6 +274,68 @@ struct PixelImageView: UIViewRepresentable {
         if v.image !== image {
             v.image = image
             if image.images != nil { v.startAnimating() }
+        }
+    }
+}
+
+
+// MARK: - Live Activity image helpers
+
+extension CGImage {
+    /// Trims transparent padding around a sprite.
+    func croppedToContent() -> CGImage? {
+        let w = width, h = height
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return self }
+        ctx.draw(self, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let px = ctx.data?.assumingMemoryBound(to: UInt8.self) else { return self }
+        var minX = w, minY = h, maxX = -1, maxY = -1
+        for y in 0..<h { for x in 0..<w where px[(y * w + x) * 4 + 3] > 8 {
+            minX = Swift.min(minX, x); maxX = Swift.max(maxX, x); minY = Swift.min(minY, y); maxY = Swift.max(maxY, y)
+        } }
+        guard maxX >= minX, maxY >= minY else { return self }
+        // The bitmap's first row in memory is the image's top row, matching cropping(to:)'s top-left origin.
+        return cropping(to: CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)) ?? self
+    }
+
+    /// Nearest-neighbour downscale (keeps pixel art crisp) to PNG.
+    func scaledPNG(maxSide: Int) -> Data? {
+        let scale = Swift.min(1, Double(maxSide) / Double(Swift.max(width, height)))
+        let w = Swift.max(1, Int(Double(width) * scale)), h = Swift.max(1, Int(Double(height) * scale))
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let img = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: format).image { r in
+            r.cgContext.interpolationQuality = .none
+            r.cgContext.translateBy(x: 0, y: CGFloat(h)); r.cgContext.scaleBy(x: 1, y: -1)
+            r.cgContext.draw(self, in: CGRect(x: 0, y: 0, width: w, height: h))
+        }
+        return img.pngData()
+    }
+}
+
+/// A trainer sprite: plays your walking GIF if you added one, otherwise bobs the battle sprite as a walk cycle.
+struct TrainerSprite: View {
+    let style: TrainerStyle
+    var pose: SpriteStore.TrainerPose = .walk
+    @State private var image: UIImage?
+    @State private var step = false
+
+    var body: some View {
+        Group {
+            if let image {
+                PixelImageView(image: image)
+                    .offset(y: image.images == nil && pose != .card && step ? -3 : 0)
+                    .animation(image.images == nil && pose != .card
+                               ? .easeInOut(duration: 0.28).repeatForever(autoreverses: true) : .default, value: step)
+            } else {
+                ProgressView()
+            }
+        }
+        .onAppear { step = true }
+        .task(id: "\(style.id)-\(pose.rawValue)") {
+            guard let url = await SpriteStore.shared.trainerURL(style, pose) else { return }
+            image = await Task.detached { GIFCache.shared.image(at: url) }.value
         }
     }
 }
