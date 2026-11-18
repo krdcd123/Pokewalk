@@ -18,8 +18,7 @@ permissions:
 
 jobs:
   build:
-    # Intel Macs: the Apple Silicon (arm64) pool is often out of capacity on the free tier.
-    runs-on: macos-15-intel
+    runs-on: macos-latest
     timeout-minutes: 45
     env:
       BUNDLE_PREFIX: ${{ github.event.inputs.bundle_prefix || 'com.krdcd123' }}
