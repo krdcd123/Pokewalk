@@ -24,7 +24,8 @@ struct StepSyncSetupView: View {
         Step(id: 2, title: "Add “Find Health Samples”",
              lines: ["Search for Find Health Samples and add it.",
                      "Tap Type › Steps.",
-                     "Tap Add Filter › Start Date › is today."]),
+                     "Tap Add Filter › Start Date › is today.",
+                     "Tap Group by › Day. Important: this matches the Health app's total — without it, steps counted by both your iPhone and Watch are added twice."]),
         Step(id: 3, title: "Add “Calculate Statistics”",
              lines: ["Search for Calculate Statistics and add it.",
                      "Set it to Sum. It should read “Sum of Health Samples”."]),
@@ -125,7 +126,7 @@ struct StepSyncSetupView: View {
             Section {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Want distance too?").font(.rounded(15, .heavy))
-                    Text("In the same Shortcut, add another Find Health Samples (Type: Walking + Running Distance, Start Date is today, Unit: m), then Calculate Statistics › Sum, and put that into Sync Steps' Distance.")
+                    Text("In the same Shortcut, add another Find Health Samples (Type: Walking + Running Distance, Start Date is today, Unit: m, Group by: Day), then Calculate Statistics › Sum, and put that into Sync Steps' Distance.")
                         .font(.rounded(13)).foregroundStyle(Theme.inkSoft)
                 }
                 .glassRow()
