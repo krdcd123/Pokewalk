@@ -179,6 +179,7 @@ struct PokedexView: View {
 // MARK: - Bag
 
 struct BagView: View {
+    @State private var openItem: String?
     @EnvironmentObject private var store: GameStore
 
     var body: some View {
@@ -201,16 +202,13 @@ struct BagView: View {
                 let keys = store.state.bag.keys.sorted { Dex.itemName($0) < Dex.itemName($1) }
                 if keys.isEmpty { Text("Nothing yet — keep walking!").foregroundStyle(Theme.inkSoft).glassRow() }
                 ForEach(keys, id: \.self) { key in
-                    HStack(spacing: 12) {
-                        ItemSprite(key: key).frame(width: 30, height: 30)
-                        Text(Dex.itemName(key)).font(.rounded(16, .heavy))
-                        Spacer()
-                        Text("×\(store.state.bag[key] ?? 0)").font(.rounded(16, .heavy))
+                    BagItemRow(key: key, expanded: openItem == key) {
+                        withAnimation(.snappy) { openItem = openItem == key ? nil : key }
                     }
                     .glassRow()
                 }
             } header: { Text("Items") } footer: {
-                Text("Balls: 1 every \(store.state.settings.ballSteps) steps (every 10th is a Great Ball, every 50th an Ultra Ball). Items: 1 every \(store.state.settings.itemSteps.formatted()) steps — evolution stones, Rare Candies, Link Cables and rare balls. Your buddy also picks up an Exp. Candy about every 300 steps and holds it until you take it from its summary. Use items from a Pokémon's summary.")
+                Text("Balls: 1 every \(store.state.settings.ballSteps) steps (every 10th is a Great Ball, every 50th an Ultra Ball). Items: 1 every \(store.state.settings.itemSteps.formatted()) steps — evolution stones, Rare Candies, Link Cables and rare balls. Your buddy also picks up an Exp. Candy about every 300 steps and holds it until you take it from its summary. Tap an item to use it on a Pokémon in your party.")
             }
         }
         .navigationTitle("Bag")
@@ -571,22 +569,17 @@ private struct StepSyncSection: View {
         .task { await refresh() }
 
         Section {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Watch steps without Health access").font(.rounded(15, .heavy))
-                Text("""
-                If PokéWalk isn't listed in the Health app, your sideloading tool removed its Health permission. A Shortcut can pass your steps across instead:
-                1. Shortcuts › Automation › + › App › PokéWalk › "Is Opened" › Run Immediately.
-                2. Add "Find Health Samples": Type = Steps, Start Date is Today.
-                3. Add "Calculate Statistics": Sum of Health Samples.
-                4. Add PokéWalk's "Sync Steps to PokéWalk" and pass in the Sum.
-                Optional: repeat steps 2–3 for Walking + Running Distance (in metres) and pass it as Distance.
-                Add a second automation (Time of Day, every hour) to keep it synced while you're out.
-                """)
-                .font(.rounded(13)).foregroundStyle(Theme.inkSoft)
+            NavigationLink {
+                StepSyncSetupView()
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Set up Apple Watch step sync").font(.rounded(16, .heavy))
+                    Text(ShortcutSteps.lastSync.map { "Last synced \($0.formatted(.relative(presentation: .named)))" }
+                         ?? "Step-by-step guide · about 3 minutes")
+                        .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                }
             }
             .glassRow()
-            Button("Open Shortcuts") { if let u = URL(string: "shortcuts://") { UIApplication.shared.open(u) } }
-                .glassRow()
         } header: { Text("Shortcut sync") }
     }
 
@@ -609,5 +602,69 @@ private struct StepSyncSection: View {
             Text(value).font(.rounded(16, .heavy)).foregroundStyle(Theme.teal)
         }
         .glassRow()
+    }
+}
+
+
+/// A Bag item: tap to see what it does and pick a party Pokémon to use it on (ABLE / NOT ABLE).
+private struct BagItemRow: View {
+    @EnvironmentObject private var store: GameStore
+    let key: String
+    let expanded: Bool
+    var toggle: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: toggle) {
+                HStack(spacing: 12) {
+                    ItemSprite(key: key).frame(width: 30, height: 30)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(Dex.itemName(key)).font(.rounded(16, .heavy))
+                        Text(GameRules.itemDescription(key)).font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                            .lineLimit(expanded ? nil : 1)
+                    }
+                    Spacer()
+                    Text("×\(store.state.bag[key] ?? 0)").font(.rounded(16, .heavy))
+                    Image(systemName: "chevron.down").font(.system(size: 12, weight: .bold))
+                        .rotationEffect(.degrees(expanded ? 180 : 0)).foregroundStyle(Theme.inkSoft)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                Text("Use on…").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
+                ForEach(store.state.party) { mon in
+                    let able = GameRules.canUse(key, on: mon)
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        let before = mon.level
+                        let outcome = store.use(key, on: mon.id)
+                        switch outcome {
+                        case .leveled:
+                            let now = store.state.mon(mon.id)?.level ?? before
+                            store.toast = now > before ? "\(mon.name) grew to Lv \(now)!" : "\(mon.name) gained Exp!"
+                        case .evolves: break        // the evolution screen takes over
+                        case .noEffect: store.toast = "It won't have any effect."
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            AnimatedSprite(speciesID: mon.speciesID, kind: .icons).frame(width: 34, height: 28)
+                            Text(mon.name).font(.rounded(15, .heavy))
+                            Text("Lv \(mon.level)").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
+                            Spacer()
+                            Text(able ? "ABLE" : "NOT ABLE").font(.rounded(12, .black))
+                                .foregroundStyle(able ? Theme.teal : Theme.inkSoft)
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(.white.opacity(able ? 0.08 : 0.03), in: RoundedRectangle(cornerRadius: 12))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!able)
+                    .opacity(able ? 1 : 0.55)
+                }
+            }
+        }
     }
 }

@@ -303,6 +303,28 @@ enum GameRules {
         return ready[Int(mon.personality % UInt32(ready.count))].into
     }
 
+    /// Whether using `item` on `mon` would do anything (the games' "ABLE / NOT ABLE").
+    static func canUse(_ item: String, on mon: OwnedPokemon, at date: Date = .now) -> Bool {
+        if item == "rare-candy" || ExpCandy.exp(item) != nil { return mon.level < GrowthRate.maxLevel }
+        return itemEvolution(for: mon, item: item, at: date) != nil
+    }
+
+    /// One line for the Bag explaining what an item does in PokéWalk.
+    static func itemDescription(_ item: String) -> String {
+        if item == "rare-candy" { return "Raises a Pokémon by one level." }
+        if let exp = ExpCandy.exp(item) { return "Gives a Pokémon \(exp.formatted()) Exp." }
+        var users: [String] = []
+        for sp in Dex.all {
+            for rule in sp.evolutions where rule.kind == .item && rule.item == item {
+                let into = Dex.species(rule.into).name
+                users.append("\(sp.name) → \(into)" + (rule.time.map { " (\($0.rawValue))" } ?? ""))
+            }
+        }
+        guard !users.isEmpty else { return "No use in PokéWalk yet." }
+        let how = item == "linking-cord" ? "Trade-evolves" : (item.hasSuffix("-stone") ? "Evolves" : "Trade-evolves (held item)")
+        return "\(how): " + users.joined(separator: ", ")
+    }
+
     static func itemEvolution(for mon: OwnedPokemon, item: String, at date: Date = .now) -> Int? {
         let tod = TimeOfDay.at(date)
         return mon.species.evolutions.first { rule in
