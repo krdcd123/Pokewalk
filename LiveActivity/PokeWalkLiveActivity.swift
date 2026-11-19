@@ -9,19 +9,19 @@ struct PokeWalkLiveActivity: Widget {
         ActivityConfiguration(for: WalkActivityAttributes.self) { context in
             LockScreenView(state: context.state)
                 .padding(.horizontal, 16).padding(.vertical, 12)
-                .activityBackgroundTint(Color(hex: 0x4F8A8C).opacity(0.55))
-                .activitySystemActionForegroundColor(.white)
+                // No tint: the same clear system glass as other Lock Screen notifications.
+                .activitySystemActionForegroundColor(.primary)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.center) {
                     LockScreenView(state: context.state)
                 }
             } compactLeading: {
-                BuddyIcon(data: context.state.iconPNG ?? context.state.spritePNG).frame(width: 26, height: 22)
+                BuddyIcon(data: context.state.iconPNG).frame(width: 30, height: 24)
             } compactTrailing: {
                 EmptyView()
             } minimal: {
-                BuddyIcon(data: context.state.iconPNG ?? context.state.spritePNG).frame(width: 22, height: 20)
+                BuddyIcon(data: context.state.iconPNG).frame(width: 24, height: 20)
             }
             .keylineTint(Theme.teal)
         }
@@ -86,10 +86,10 @@ private struct LockScreenView: View {
                                                          : "\(state.stepsToEncounter) steps to encounter")
                     }
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.75))
+                    .foregroundStyle(.secondary)
                 }
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(.primary)
         }
     }
 }

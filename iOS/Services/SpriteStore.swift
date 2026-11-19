@@ -131,8 +131,8 @@ final class SpriteStore {
         guard let u = await url(.icons, speciesID: speciesID),
               let img = GIFCache.shared.image(at: u), let frame = img.images?.first ?? Optional(img),
               let cg = frame.cgImage?.croppedToContent() else { return nil }
-        for side in [32, 26, 20] {
-            if let data = cg.scaledPNG(maxSide: side), data.count <= 520 { return data }
+        for side in [40, 32, 26] {
+            if let data = cg.scaledPNG(maxSide: side), data.count <= 1_000 { return data }
         }
         return nil
     }
@@ -145,7 +145,7 @@ final class SpriteStore {
             guard let img = GIFCache.shared.image(at: u), let frame = img.images?.first ?? Optional(img),
                   let cg = frame.cgImage?.croppedToContent() else { continue }
             for side in [64, 48, 40] {
-                if let data = cg.scaledPNG(maxSide: side), data.count <= 2_000 { return data }   // ActivityKit caps the whole state at 4 KB
+                if let data = cg.scaledPNG(maxSide: side), data.count <= 1_600 { return data }   // ActivityKit caps the whole state at 4 KB
             }
         }
         return nil

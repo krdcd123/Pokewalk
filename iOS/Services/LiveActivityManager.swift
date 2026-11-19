@@ -22,7 +22,7 @@ final class LiveActivityManager {
     private func content(_ store: GameStore) async -> WalkActivityAttributes.ContentState? {
         guard let buddy = store.state.buddy else { return nil }
         let key = "\(buddy.speciesID)-\(buddy.isShiny)"
-        if spriteCache?.key != key {
+        if spriteCache?.key != key || spriteCache?.icon == nil {
             spriteCache = (key, await SpriteStore.shared.liveActivityImage(speciesID: buddy.speciesID, shiny: buddy.isShiny),
                            await SpriteStore.shared.liveActivityIcon(speciesID: buddy.speciesID))
         }
