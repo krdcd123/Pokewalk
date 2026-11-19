@@ -41,6 +41,7 @@ targets:
       path: iOS/Info.plist
       properties:
         CFBundleDisplayName: PokéWalk
+        ITSAppUsesNonExemptEncryption: false
         AppGroupID: group.$(BUNDLE_ID_PREFIX).pokewalk
         NSHealthShareUsageDescription: PokéWalk reads your steps and walking distance (iPhone and Apple Watch) to level up your Pokémon.
         NSMotionUsageDescription: PokéWalk counts your steps live so wild Pokémon can appear while you walk.
