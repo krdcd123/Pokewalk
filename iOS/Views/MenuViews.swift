@@ -429,7 +429,7 @@ struct SettingsView: View {
                 }
                 Button("Clear downloaded sprites") { SpriteStore.shared.clearDownloads() }.glassRow()
             } header: { Text("Sprites") } footer: {
-                Text("Name Pokémon sprites by Pokédex number (25.gif) or name (pikachu.gif). Trainer sprites: red-walk.gif (walking), red-head.gif (map button), red-card.png (trainer card) — also leaf, gold, kris, brendan, may. Missing ones are downloaded. "Download all" saves every Pokémon (animated, shiny and box icon) and every trainer, about 15–25 MB — best on Wi-Fi.")
+                Text("Name Pokémon sprites by Pokédex number (25.gif) or name (pikachu.gif). Trainer sprites: red-walk.gif (walking), red-head.gif (map button), red-card.png (trainer card) — also leaf, gold, kris, brendan, may. Missing ones are downloaded. \"Download all\" saves every Pokémon (animated, shiny and box icon) and every trainer, about 15–25 MB — best on Wi-Fi.")
             }
 
             Section {
