@@ -15,29 +15,18 @@ enum ShortcutSteps {
         return f.string(from: date)
     }
 
+    /// The latest total from the Shortcut replaces the previous one (so a wrong sync can be corrected).
     static func record(steps: Int, meters: Double?) {
         let key = dayKey(Calendar.current.startOfDay(for: .now))
-        let current = self.steps(for: key)                       // where the ramp is right now
-        let target = max(steps, d.integer(forKey: "shortcutTarget.\(key)"))
-        d.set(current, forKey: "shortcutFrom.\(key)")
-        d.set(target, forKey: "shortcutTarget.\(key)")
-        d.set(Date().timeIntervalSince1970, forKey: "shortcutAt.\(key)")
-        d.set(target, forKey: "shortcutSteps.\(key)")
-        if let meters { d.set(max(meters, self.meters(for: key)), forKey: "shortcutMeters.\(key)") }
+        d.set(steps, forKey: "shortcutSteps.\(key)")
+        for old in ["shortcutTarget", "shortcutFrom", "shortcutAt"] { d.removeObject(forKey: "\(old).\(key)") }
+        if let meters { d.set(meters, forKey: "shortcutMeters.\(key)") }
         d.set(Date(), forKey: "shortcutLastSync")
     }
 
-    /// Synced totals count straight away, in one go.
-    static func steps(for dayKey: String) -> Int {
-        max(d.integer(forKey: "shortcutSteps.\(dayKey)"), d.integer(forKey: "shortcutTarget.\(dayKey)"))
-    }
+    static func steps(for dayKey: String) -> Int { d.integer(forKey: "shortcutSteps.\(dayKey)") }
 
-    /// True while a synced total is still being fed in.
-    static var isRamping: Bool {
-        let key = dayKey(Calendar.current.startOfDay(for: .now))
-        let target = d.integer(forKey: "shortcutTarget.\(key)")
-        return target > 0 && steps(for: key) < target
-    }
+    static var isRamping: Bool { false }
     static func meters(for dayKey: String) -> Double { d.double(forKey: "shortcutMeters.\(dayKey)") }
     static var lastSync: Date? { d.object(forKey: "shortcutLastSync") as? Date }
 }
@@ -55,16 +44,9 @@ struct SyncHealthStepsIntent: AppIntent {
     }
 
     @MainActor
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult {
         ShortcutSteps.record(steps: max(0, steps), meters: meters.map { max(0, $0) })
         await GameStore.shared.tick()
-        return .result(dialog: "PokéWalk synced \(steps.formatted()) steps.")
-    }
-}
-
-struct PokeWalkShortcuts: AppShortcutsProvider {
-    static var appShortcuts: [AppShortcut] {
-        AppShortcut(intent: SyncHealthStepsIntent(), phrases: ["Sync steps to \(.applicationName)"],
-                    shortTitle: "Sync Steps", systemImageName: "figure.walk")
+        return .result()
     }
 }

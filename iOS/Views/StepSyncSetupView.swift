@@ -32,7 +32,7 @@ struct StepSyncSetupView: View {
         Step(id: 4, title: "Add “Sync Steps to PokéWalk”",
              lines: ["Search for PokéWalk and add Sync Steps to PokéWalk.",
                      "Tap Steps today › choose Statistics Result (the Sum).",
-                     "Tap Done. Run it once with ▶︎ — it should say “PokéWalk synced … steps”.",
+                     "Tap Done. Run it once with ▶︎ — it finishes silently, and the status at the top of this screen turns green.",
                      "If asked, tap Allow for Health access."]),
         Step(id: 5, title: "Run it whenever you open PokéWalk",
              lines: ["Automation tab › + › App.",
