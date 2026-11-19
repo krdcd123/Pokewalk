@@ -36,7 +36,55 @@ final class GameStore: ObservableObject {
         return dir.appendingPathComponent("pokewalk-save-v2.json")
     }
 
-    init() { load() }
+    init() {
+        load()
+        storage = Self.loadStorage()
+    }
+
+    // MARK: Storage — a box shared by every game on this phone (kept when you start a New Game)
+
+    @Published private(set) var storage: [OwnedPokemon] = []
+
+    static var storageURL: URL {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Storage", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("PokeWalk-Storage.json")
+    }
+
+    private static func loadStorage() -> [OwnedPokemon] {
+        guard let data = try? Data(contentsOf: storageURL) else { return [] }
+        return (try? JSONDecoder().decode([OwnedPokemon].self, from: data)) ?? []
+    }
+
+    private func saveStorage() {
+        if let data = try? JSONEncoder().encode(storage) { try? data.write(to: Self.storageURL, options: .atomic) }
+    }
+
+    /// Moves a Pokémon from a PC box into Storage. Party Pokémon (and your buddy) have to be boxed first.
+    @discardableResult
+    func sendToStorage(_ id: UUID) -> Bool {
+        guard let mon = state.mon(id), !state.partyIDs.contains(id), state.buddyID != id else { return false }
+        storage.append(mon)
+        saveStorage()
+        mutate { GameRules.release(id, in: &$0) }
+        return true
+    }
+
+    /// Moves a Pokémon from Storage into this game's PC.
+    func takeFromStorage(_ id: UUID) {
+        guard let i = storage.firstIndex(where: { $0.id == id }) else { return }
+        let mon = storage.remove(at: i)
+        mutate { GameRules.storeInBox(mon, in: &$0) }
+        saveStorage()
+    }
+
+    /// Adds Storage Pokémon from an imported save (skipping any already here).
+    private func mergeStorage(_ mons: [OwnedPokemon]) {
+        let have = Set(storage.map(\.id)).union(state.pokemon.map(\.id))
+        storage += mons.filter { !have.contains($0.id) }
+        saveStorage()
+    }
 
     // MARK: Persistence
 
@@ -61,6 +109,7 @@ final class GameStore: ObservableObject {
         var exportedAt = Date()
         var state: GameState
         var tracks: [String: [[TrackPoint]]]
+        var storage: [OwnedPokemon]? = nil
     }
 
     private var lastBackup = Date.distantPast
@@ -76,7 +125,7 @@ final class GameStore: ObservableObject {
     private func autoBackup() {
         guard hasGame, Date().timeIntervalSince(lastBackup) > 300 else { return }
         lastBackup = .now
-        if let data = try? JSONEncoder().encode(SaveFile(state: state, tracks: TrackStore.shared.allDays())) {
+        if let data = try? JSONEncoder().encode(SaveFile(state: state, tracks: TrackStore.shared.allDays(), storage: storage)) {
             try? data.write(to: autoBackupURL, options: .atomic)
         }
     }
@@ -87,7 +136,7 @@ final class GameStore: ObservableObject {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
         let enc = JSONEncoder()
         enc.outputFormatting = [.sortedKeys]
-        guard let data = try? enc.encode(SaveFile(state: state, tracks: TrackStore.shared.allDays())),
+        guard let data = try? enc.encode(SaveFile(state: state, tracks: TrackStore.shared.allDays(), storage: storage)),
               (try? data.write(to: url, options: .atomic)) != nil else { return nil }
         return url
     }
@@ -98,10 +147,12 @@ final class GameStore: ObservableObject {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard let data = try? Data(contentsOf: url) else { return "Couldn't read that file." }
         let dec = JSONDecoder()
+        var importedStorage: [OwnedPokemon] = []
         let imported: GameState
         if let file = try? dec.decode(SaveFile.self, from: data) {
             imported = file.state
             TrackStore.shared.importDays(file.tracks)
+            importedStorage = file.storage ?? []
         } else if let bare = try? dec.decode(GameState.self, from: data) {
             imported = bare
         } else {
@@ -114,6 +165,7 @@ final class GameStore: ObservableObject {
         s.distanceLedger.merge(state.distanceLedger) { max($0, $1) }
         state = s
         hasGame = true
+        mergeStorage(importedStorage)
         save()
         start()
         return nil

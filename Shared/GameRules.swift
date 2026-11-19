@@ -482,6 +482,23 @@ enum GameRules {
         put(second, a)
     }
 
+    /// Puts a Pokémon in the first free PC box slot (never the party), adding boxes as needed.
+    @discardableResult
+    static func storeInBox(_ mon: OwnedPokemon, in s: inout GameState) -> PCSlot {
+        if s.index(of: mon.id) == nil { s.pokemon.append(mon) }
+        s.dexSeen.insert(mon.speciesID)
+        s.dexCaught.insert(mon.speciesID)
+        for b in s.boxes.indices {
+            if let i = s.boxes[b].slots.firstIndex(where: { $0 == nil }) {
+                s.boxes[b].slots[i] = mon.id
+                return .box(b, i)
+            }
+        }
+        s.boxes.append(PCBox(name: "Box \(s.boxes.count + 1)", wallpaper: s.boxes.count % 8))
+        s.boxes[s.boxes.count - 1].slots[0] = mon.id
+        return .box(s.boxes.count - 1, 0)
+    }
+
     static func release(_ id: UUID, in s: inout GameState) {
         guard s.buddyID != id else { return }
         if s.partyIDs.contains(id), s.partyIDs.count <= 1 { return }

@@ -38,6 +38,12 @@ struct PCView: View {
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search names, species, places")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink { StorageView() } label: {
+                    Image(systemName: "shippingbox.fill")
+                }
+                .accessibilityLabel("Storage")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button(moving ? "Done" : "Move") { moving.toggle(); held = nil }
                     .font(.rounded(16, .heavy))
             }

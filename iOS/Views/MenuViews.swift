@@ -500,7 +500,7 @@ struct SettingsView: View {
         .sheet(isPresented: Binding(get: { exportURL != nil }, set: { if !$0 { exportURL = nil } })) {
             if let url = exportURL { ShareSheet(items: [url]).presentationDetents([.medium, .large]) }
         }
-        .confirmationDialog("Erase your Pokémon, PC, items and progress? Walk tracks are kept.", isPresented: $confirmReset,
+        .confirmationDialog("Erase your Pokémon, PC, items and progress? Walk tracks and Pokémon in Storage are kept.", isPresented: $confirmReset,
                             titleVisibility: .visible) {
             Button("Erase everything", role: .destructive) { store.resetGame() }
         }
