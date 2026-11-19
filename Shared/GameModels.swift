@@ -251,7 +251,7 @@ struct GameSettings: Codable, Hashable {
     var expPerStep: Double = 0.25       // buddy Exp per step (1.0 = original Pokéwalker)
     var partyShare: Double = 0.2        // the rest of the party gets this fraction of the buddy's Exp
     var encounterSteps = 500        // average steps between wild encounters
-    var ballSteps = 100             // steps per Poké Ball
+    var ballSteps = 1_000           // steps per Poké Ball
     var itemSteps = 1_500           // steps per found item
     var shinyOdds = 1_000           // each Pokémon has a 1-in-N random chance (not a guaranteed every-Nth)
     var maxPendingEncounters = 5

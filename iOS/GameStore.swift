@@ -128,6 +128,11 @@ final class GameStore: ObservableObject {
 
     func start() {
         guard hasGame else { return }
+        // One-time: balls now come every 1,000 steps
+        if !UserDefaults.standard.bool(forKey: "ballSteps1000") {
+            UserDefaults.standard.set(true, forKey: "ballSteps1000")
+            mutate { $0.settings.ballSteps = 1_000 }
+        }
         tracker.onMovement = { [weak self] _ in self?.requestTick(minInterval: 20) }
         tracker.apply(mode: state.settings.trackingMode)
         engine.startLiveUpdates { [weak self] in self?.requestTick(minInterval: 15) }

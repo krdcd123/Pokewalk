@@ -386,7 +386,7 @@ struct SettingsView: View {
                 .glassRow()
                 Stepper("Encounter every ~\(store.state.settings.encounterSteps) steps",
                         value: binding(\.encounterSteps), in: 100...2_000, step: 50).glassRow()
-                Stepper("Ball every \(store.state.settings.ballSteps) steps", value: binding(\.ballSteps), in: 25...500, step: 25).glassRow()
+                Stepper("Ball every \(store.state.settings.ballSteps) steps", value: binding(\.ballSteps), in: 50...2_000, step: 50).glassRow()
                 Stepper("Item every \(store.state.settings.itemSteps.formatted()) steps", value: binding(\.itemSteps), in: 250...5_000, step: 250).glassRow()
                 Picker("Shiny chance", selection: binding(\.shinyOdds)) {
                     Text("1 in 4096").tag(4096); Text("1 in 1000").tag(1000); Text("1 in 512").tag(512); Text("1 in 128").tag(128)
