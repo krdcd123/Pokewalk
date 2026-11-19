@@ -9,8 +9,10 @@ struct PokeWalkLiveActivity: Widget {
         ActivityConfiguration(for: WalkActivityAttributes.self) { context in
             LockScreenView(state: context.state)
                 .padding(.horizontal, 16).padding(.vertical, 12)
-                // No tint: the same clear system glass as other Lock Screen notifications.
-                .activitySystemActionForegroundColor(.primary)
+                // iOS paints untinted third-party cards solid black; a light, mostly-clear neutral tint
+                // lets the system blur through, matching the music player's glass.
+                .activityBackgroundTint(Color(white: 0.62).opacity(0.28))
+                .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.center) {
@@ -86,10 +88,10 @@ private struct LockScreenView: View {
                                                          : "\(state.stepsToEncounter) steps to encounter")
                     }
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.75))
                 }
             }
-            .foregroundStyle(.primary)
+            .foregroundStyle(.white)
         }
     }
 }
