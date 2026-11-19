@@ -210,7 +210,7 @@ struct BagView: View {
                     .glassRow()
                 }
             } header: { Text("Items") } footer: {
-                Text("Balls: 1 every \(store.state.settings.ballSteps) steps (every 10th is a Great Ball, every 50th an Ultra Ball). Items: 1 every \(store.state.settings.itemSteps.formatted()) steps — evolution stones, Rare Candies, Link Cables and rare balls. Your buddy also picks up an Exp. Candy about every 300 steps; take them from its summary. Use items from a Pokémon's summary.")
+                Text("Balls: 1 every \(store.state.settings.ballSteps) steps (every 10th is a Great Ball, every 50th an Ultra Ball). Items: 1 every \(store.state.settings.itemSteps.formatted()) steps — evolution stones, Rare Candies, Link Cables and rare balls. Your buddy also picks up an Exp. Candy about every 300 steps and holds it until you take it from its summary. Use items from a Pokémon's summary.")
             }
         }
         .navigationTitle("Bag")
@@ -375,7 +375,7 @@ struct SettingsView: View {
 
             Section {
                 Picker("Buddy Exp per step", selection: binding(\.expPerStep)) {
-                    Text("0.2").tag(0.2); Text("0.25").tag(0.25); Text("0.3").tag(0.3)
+                    Text("0.1").tag(0.1); Text("0.2").tag(0.2); Text("0.25").tag(0.25); Text("0.3").tag(0.3)
                     Text("0.5").tag(0.5); Text("1 (Pokéwalker)").tag(1.0)
                 }
                 .glassRow()

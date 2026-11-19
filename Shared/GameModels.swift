@@ -98,8 +98,8 @@ enum ExpCandy {
         ("exp-candy-l", 10_000, 9), ("exp-candy-xl", 30_000, 3),
     ]
     static func exp(_ key: String) -> Int? { all.first { $0.key == key }?.exp }
-    /// How many candies a Pokémon can carry before it stops picking more up.
-    static let carryLimit = 5
+    /// A Pokémon holds one item at a time; it won't pick up another until you take it.
+    static let carryLimit = 1
 }
 
 struct MetLocation: Codable, Hashable {
