@@ -543,6 +543,9 @@ private struct StepSyncSection: View {
         Section {
             row("Apple Health (incl. Watch)", health.map { $0.formatted() } ?? (healthError == nil ? "…" : "Not connected"))
             row("iPhone motion chip", phone.map { $0.formatted() } ?? "…")
+            row("Shortcut (Health)", ShortcutSteps.lastSync.map { _ in
+                ShortcutSteps.steps(for: TrackStore.key(for: Calendar.current.startOfDay(for: .now))).formatted()
+            } ?? "Not set up")
             row("PokéWalk today", store.stepsToday.formatted())
             if let healthError {
                 Text(healthError).font(.rounded(12)).foregroundStyle(Theme.inkSoft).glassRow()
@@ -566,6 +569,25 @@ private struct StepSyncSection: View {
             Text("PokéWalk uses whichever is higher. If Apple Health shows 0 here but more in the Health app, PokéWalk isn't allowed to read it: in the Health app tap your profile picture › Apps › PokéWalk and turn on Steps and Walking + Running Distance. (Settings › Privacy & Security › Health › PokéWalk works too.) Steps earned before the fix are added on the next sync — from today and yesterday.")
         }
         .task { await refresh() }
+
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Watch steps without Health access").font(.rounded(15, .heavy))
+                Text("""
+                If PokéWalk isn't listed in the Health app, your sideloading tool removed its Health permission. A Shortcut can pass your steps across instead:
+                1. Shortcuts › Automation › + › App › PokéWalk › "Is Opened" › Run Immediately.
+                2. Add "Find Health Samples": Type = Steps, Start Date is Today.
+                3. Add "Calculate Statistics": Sum of Health Samples.
+                4. Add PokéWalk's "Sync Steps to PokéWalk" and pass in the Sum.
+                Optional: repeat steps 2–3 for Walking + Running Distance (in metres) and pass it as Distance.
+                Add a second automation (Time of Day, every hour) to keep it synced while you're out.
+                """)
+                .font(.rounded(13)).foregroundStyle(Theme.inkSoft)
+            }
+            .glassRow()
+            Button("Open Shortcuts") { if let u = URL(string: "shortcuts://") { UIApplication.shared.open(u) } }
+                .glassRow()
+        } header: { Text("Shortcut sync") }
     }
 
     private func refresh() async {
