@@ -342,6 +342,7 @@ struct SettingsView: View {
     @State private var exportURL: URL?
     @State private var liveActivity = LiveActivityManager.shared.enabled
     @StateObject private var downloader = SpriteDownloader.shared
+    @StateObject private var cries = CryPlayer.shared
 
     var body: some View {
         Form {
@@ -429,6 +430,30 @@ struct SettingsView: View {
                 Button("Clear downloaded sprites") { SpriteStore.shared.clearDownloads() }.glassRow()
             } header: { Text("Sprites") } footer: {
                 Text("Name Pokémon sprites by Pokédex number (25.gif) or name (pikachu.gif). Trainer sprites: red-walk.gif (walking), red-head.gif (map button), red-card.png (trainer card) — also leaf, gold, kris, brendan, may. Missing ones are downloaded. "Download all" saves every Pokémon (animated, shiny and box icon) and every trainer, about 15–25 MB — best on Wi-Fi.")
+            }
+
+            Section {
+                Toggle("Play cries", isOn: Binding(get: { cries.enabled }, set: { cries.enabled = $0 })).glassRow()
+                if let p = cries.progress {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Downloading cries… \(Int(p * 100))%")
+                        ProgressView(value: p).tint(Theme.teal)
+                    }
+                    .glassRow()
+                } else {
+                    Button(cries.finished || cries.downloadedCount >= Dex.count ? "Download all cries again" : "Download all cries for offline") {
+                        cries.downloadAll()
+                    }
+                    .glassRow()
+                    if cries.finished {
+                        Text(cries.failed == 0 ? "All \(Dex.count) cries saved."
+                                               : "Saved all but \(cries.failed). Tap again on Wi-Fi to fill the gaps.")
+                            .font(.rounded(13)).foregroundStyle(Theme.inkSoft).glassRow()
+                    }
+                }
+                Button("Delete downloaded cries") { cries.clear() }.glassRow()
+            } header: { Text("Sounds") } footer: {
+                Text("A Pokémon cries when you open its summary or meet it in the wild. Cries follow your silent switch and play over music. Each one is saved the first time you hear it; Download all saves all \(Dex.count) (about 5 MB).")
             }
 
             Section {

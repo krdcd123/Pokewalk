@@ -78,7 +78,7 @@ struct SafariView: View {
         }
         .ignoresSafeArea(edges: .bottom)
         .fullScreenCover(item: $caught, onDismiss: { dismiss() }) { CaughtView(pokemonID: $0.id, safari: safari) }
-        .onAppear { pickAvailableBall() }
+        .onAppear { pickAvailableBall(); CryPlayer.shared.play(wild.speciesID) }
     }
 
     // MARK: Pieces

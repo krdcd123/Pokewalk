@@ -90,6 +90,7 @@ struct SummaryView: View {
             }
             .navigationTitle(mon.name)
             .glassScreen(transparent: true)
+            .onAppear { CryPlayer.shared.play(mon.speciesID) }
             .background {
                 ZStack {
                     AppBackground()
