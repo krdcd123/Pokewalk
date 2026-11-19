@@ -67,6 +67,10 @@ struct BallGlyph: View {
                     Capsule().fill(Color(hex: 0xE04A3F)).frame(width: s * 0.22, height: s * 0.3).offset(x: -s * 0.24, y: -s * 0.22)
                     Capsule().fill(Color(hex: 0xE04A3F)).frame(width: s * 0.22, height: s * 0.3).offset(x: s * 0.24, y: -s * 0.22)
                 }
+                if kind == .master {
+                    Circle().fill(Color(hex: 0xE05FA0)).frame(width: s * 0.2).offset(x: -s * 0.24, y: -s * 0.22)
+                    Circle().fill(Color(hex: 0xE05FA0)).frame(width: s * 0.2).offset(x: s * 0.24, y: -s * 0.22)
+                }
                 if kind == .ultra {
                     Rectangle().fill(Color(hex: 0xF2C230)).frame(width: s * 0.16, height: s * 0.38).offset(x: -s * 0.2, y: -s * 0.2)
                     Rectangle().fill(Color(hex: 0xF2C230)).frame(width: s * 0.16, height: s * 0.38).offset(x: s * 0.2, y: -s * 0.2)

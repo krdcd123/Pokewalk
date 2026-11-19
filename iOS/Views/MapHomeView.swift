@@ -112,8 +112,8 @@ struct MapHomeView: View {
         Map(position: $camera) {
             ForEach(Array(tracks.today.enumerated()), id: \.offset) { _, seg in
                 if seg.count > 1 {
-                    MapPolyline(coordinates: seg.map(\.coordinate)).stroke(.white, lineWidth: 10)
-                    MapPolyline(coordinates: seg.map(\.coordinate)).stroke(Theme.route, lineWidth: 5)
+                    MapPolyline(coordinates: seg.map(\.coordinate)).stroke(.white, lineWidth: 6)
+                    MapPolyline(coordinates: seg.map(\.coordinate)).stroke(Theme.route, lineWidth: 3)
                 }
             }
             ForEach(caughtOnMap) { mon in

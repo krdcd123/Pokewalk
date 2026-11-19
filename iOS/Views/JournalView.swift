@@ -55,8 +55,8 @@ struct JournalView: View {
                 Map(position: $camera) {
                     ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
                         if seg.count > 1 {
-                            MapPolyline(coordinates: seg.map(\.coordinate)).stroke(.white, lineWidth: 8)
-                            MapPolyline(coordinates: seg.map(\.coordinate)).stroke(Theme.route, lineWidth: 4)
+                            MapPolyline(coordinates: seg.map(\.coordinate)).stroke(.white, lineWidth: 5)
+                            MapPolyline(coordinates: seg.map(\.coordinate)).stroke(Theme.route, lineWidth: 2.5)
                         }
                     }
                     ForEach(caught) { mon in

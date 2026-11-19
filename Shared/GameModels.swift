@@ -4,33 +4,73 @@ import Foundation
 
 enum BallKind: String, Codable, CaseIterable, Identifiable {
     case poke, great, ultra
+    // Rare balls: only found as items while walking (Gen 3 set)
+    case net, dive, nest, repeatBall = "repeat", timer, luxury, premier, safari, master
     var id: String { rawValue }
+
+    /// Earned every 100 steps; everything else is a rare find.
+    var isStepBall: Bool { self == .poke || self == .great || self == .ultra }
 
     var name: String {
         switch self {
         case .poke: return "Poké Ball"
         case .great: return "Great Ball"
         case .ultra: return "Ultra Ball"
+        case .net: return "Net Ball"
+        case .dive: return "Dive Ball"
+        case .nest: return "Nest Ball"
+        case .repeatBall: return "Repeat Ball"
+        case .timer: return "Timer Ball"
+        case .luxury: return "Luxury Ball"
+        case .premier: return "Premier Ball"
+        case .safari: return "Safari Ball"
+        case .master: return "Master Ball"
         }
     }
 
-    /// Catch-rate multiplier (the main-series values).
+    /// Base catch-rate multiplier (the main-series values; conditional balls use `bonus(...)`).
     var bonus: Double {
         switch self {
-        case .poke: return 1
-        case .great: return 1.5
+        case .poke, .premier, .luxury: return 1
+        case .great, .safari: return 1.5
         case .ultra: return 2
+        case .net, .dive, .nest, .repeatBall, .timer: return 1
+        case .master: return 255
+        }
+    }
+
+    /// Gen 3 rules for the conditional balls.
+    func bonus(species: Species, level: Int, turn: Int, caughtBefore: Bool, nearWater: Bool) -> Double {
+        switch self {
+        case .net: return species.types.contains(.water) || species.types.contains(.bug) ? 3 : 1
+        case .dive: return species.types.contains(.water) || nearWater ? 3.5 : 1
+        case .nest: return max(1, Double(40 - level) / 10)
+        case .repeatBall: return caughtBefore ? 3 : 1
+        case .timer: return min(4, Double(turn + 10) / 10)
+        default: return bonus
+        }
+    }
+
+    /// One line for the Bag.
+    var effect: String {
+        switch self {
+        case .poke: return "Catch bonus ×1"
+        case .great: return "Catch bonus ×1.5"
+        case .ultra: return "Catch bonus ×2"
+        case .net: return "×3 on Water and Bug Pokémon"
+        case .dive: return "×3.5 on Water Pokémon or near water"
+        case .nest: return "Better the lower the Pokémon's level"
+        case .repeatBall: return "×3 on species you've caught before"
+        case .timer: return "Gets better each throw (up to ×4)"
+        case .luxury: return "Pokémon caught in it grow friendly faster"
+        case .premier: return "A rare commemorative ball"
+        case .safari: return "Catch bonus ×1.5"
+        case .master: return "Catches any Pokémon without fail"
         }
     }
 
     /// File name used for user-supplied / PokeAPI item sprites.
-    var itemKey: String {
-        switch self {
-        case .poke: return "poke-ball"
-        case .great: return "great-ball"
-        case .ultra: return "ultra-ball"
-        }
-    }
+    var itemKey: String { self == .poke ? "poke-ball" : "\(rawValue)-ball" }
 
     /// Two-tone colours for the built-in ball drawing (used when no sprite is supplied).
     var topHex: UInt32 {
@@ -38,8 +78,28 @@ enum BallKind: String, Codable, CaseIterable, Identifiable {
         case .poke: return 0xE04A3F
         case .great: return 0x3D7BE0
         case .ultra: return 0x2D2D2D
+        case .net: return 0x3FB8C9
+        case .dive: return 0x3A6FD8
+        case .nest: return 0x8DBF3F
+        case .repeatBall: return 0xE8902A
+        case .timer: return 0xE04A3F
+        case .luxury: return 0x2D2D2D
+        case .premier: return 0xF4F7F6
+        case .safari: return 0x6E8B3D
+        case .master: return 0x7A3FB8
         }
     }
+}
+
+/// Exp. Candies your buddy picks up while walking.
+enum ExpCandy {
+    static let all: [(key: String, exp: Int, weight: Double)] = [
+        ("exp-candy-xs", 100, 40), ("exp-candy-s", 800, 30), ("exp-candy-m", 3_000, 18),
+        ("exp-candy-l", 10_000, 9), ("exp-candy-xl", 30_000, 3),
+    ]
+    static func exp(_ key: String) -> Int? { all.first { $0.key == key }?.exp }
+    /// How many candies a Pokémon can carry before it stops picking more up.
+    static let carryLimit = 5
 }
 
 struct MetLocation: Codable, Hashable {
@@ -96,6 +156,7 @@ struct OwnedPokemon: Codable, Identifiable, Hashable {
 
     var evolutionDeclinedAtLevel: Int?
     var evolvedOn: Date?
+    var heldItems: [String] = []    // Exp. Candies picked up on walks, until you take them
 
     var species: Species { Dex.species(speciesID) }
     var name: String { (nickname?.isEmpty == false) ? nickname! : species.name }
@@ -182,6 +243,8 @@ struct StepCounters: Codable, Hashable {
     var ballProgress = 0
     var ballsEarnedTotal = 0
     var itemProgress = 0
+    var pickupProgress = 0
+    var nextPickupAt = 300
 
     var stepsToEncounter: Int { max(0, nextEncounterAt - encounterProgress) }
 }
@@ -280,6 +343,7 @@ extension OwnedPokemon {
         otID = c.value(.otID, 0)
         evolutionDeclinedAtLevel = c.value(.evolutionDeclinedAtLevel, nil)
         evolvedOn = c.value(.evolvedOn, nil)
+        heldItems = c.value(.heldItems, [])
     }
 }
 
@@ -321,5 +385,20 @@ extension GameState {
         distanceLedger = c.value(.distanceLedger, [:])
         settings = c.value(.settings, d.settings)
         lastSyncDate = c.value(.lastSyncDate, Date())
+    }
+}
+
+
+extension StepCounters {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = StepCounters()
+        encounterProgress = c.value(.encounterProgress, d.encounterProgress)
+        nextEncounterAt = c.value(.nextEncounterAt, d.nextEncounterAt)
+        ballProgress = c.value(.ballProgress, d.ballProgress)
+        ballsEarnedTotal = c.value(.ballsEarnedTotal, d.ballsEarnedTotal)
+        itemProgress = c.value(.itemProgress, d.itemProgress)
+        pickupProgress = c.value(.pickupProgress, d.pickupProgress)
+        nextPickupAt = c.value(.nextPickupAt, d.nextPickupAt)
     }
 }

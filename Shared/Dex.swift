@@ -207,8 +207,16 @@ enum Dex {
 
     private static let itemNames: [String: String] = Dictionary(uniqueKeysWithValues: file.items.map { ($0.key, $0.name) })
     static var items: [ItemInfo] { file.items }
+    private static let extraNames: [String: String] = [
+        "linking-cord": "Link Cable",
+        "exp-candy-xs": "Exp. Candy XS", "exp-candy-s": "Exp. Candy S", "exp-candy-m": "Exp. Candy M",
+        "exp-candy-l": "Exp. Candy L", "exp-candy-xl": "Exp. Candy XL",
+    ]
+
     static func itemName(_ key: String) -> String {
-        itemNames[key] ?? key.split(separator: "-").map { $0.capitalized }.joined(separator: " ")
+        if let n = extraNames[key] { return n }
+        if let b = BallKind.allCases.first(where: { $0.itemKey == key }) { return b.name }
+        return itemNames[key] ?? key.split(separator: "-").map { $0.capitalized }.joined(separator: " ")
     }
 
     static let starterChoices: [Int] = [1, 4, 7, 152, 155, 158, 252, 255, 258, 25, 133]

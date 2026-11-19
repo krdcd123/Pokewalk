@@ -14,6 +14,7 @@ struct StepOutcome {
     var newLevel = 0
     var ballsEarned: [BallKind: Int] = [:]
     var itemsFound: [String] = []
+    var pickedUp: [String] = []          // Exp. Candies the buddy picked up
     var newEncounters: [PendingEncounter] = []
     var evolutionReady: (id: UUID, into: Int)?
     var partyLevelUps: [(id: UUID, level: Int)] = []
@@ -115,7 +116,7 @@ enum GameRules {
             let gained = grantExp(buddyExp, to: &mon)
             mon.stepsWalked += steps
             mon.metersWalked += max(0, meters)
-            let f = mon.friendshipStepRemainder + steps
+            let f = mon.friendshipStepRemainder + steps * (mon.ball == .luxury ? 2 : 1)   // Luxury Ball: twice as fast
             mon.friendship = min(255, mon.friendship + f / 100)
             mon.friendshipStepRemainder = f % 100
             s.pokemon[i] = mon
@@ -152,8 +153,24 @@ enum GameRules {
         while s.counters.itemProgress >= s.settings.itemSteps {
             s.counters.itemProgress -= s.settings.itemSteps
             let item = rollItem()
-            s.bag[item, default: 0] += 1
+            if let ball = BallKind.allCases.first(where: { $0.itemKey == item }) {
+                s.balls[ball, default: 0] += 1
+            } else {
+                s.bag[item, default: 0] += 1
+            }
             out.itemsFound.append(item)
+        }
+
+        // Pickup: about every 300 steps your buddy finds an Exp. Candy and holds onto it
+        s.counters.pickupProgress += steps
+        while s.counters.pickupProgress >= s.counters.nextPickupAt {
+            s.counters.pickupProgress -= s.counters.nextPickupAt
+            s.counters.nextPickupAt = Int.random(in: 250...350)
+            guard let id = s.buddyID, let i = s.index(of: id),
+                  s.pokemon[i].heldItems.count < ExpCandy.carryLimit else { continue }
+            let candy = weightedPick(ExpCandy.all.map { ($0.key, $0.weight) })
+            s.pokemon[i].heldItems.append(candy)
+            out.pickedUp.append(candy)
         }
 
         // Encounters
@@ -228,16 +245,31 @@ enum GameRules {
                                 location: context.location, habitat: matched)
     }
 
+    /// Items found while walking: evolution stones, Rare Candies, Link Cables and rare balls.
     static func rollItem() -> String {
-        var table: [(String, Double)] = [("rare-candy", 12), ("exp-candy-s", 20), ("exp-candy-m", 6)]
-        let common = ["fire-stone", "water-stone", "thunder-stone", "leaf-stone", "moon-stone"]
-        let uncommon = ["sun-stone", "shiny-stone", "dusk-stone", "dawn-stone", "ice-stone", "linking-cord", "oval-stone"]
-        let keys = Set(Dex.items.map(\.key))
-        for k in common where keys.contains(k) { table.append((k, 5)) }
-        for k in uncommon where keys.contains(k) { table.append((k, 2.5)) }
-        let skip = Set(["rare-candy", "exp-candy-s", "exp-candy-m", "poke-ball", "great-ball", "ultra-ball"] + common + uncommon)
-        for k in keys where !skip.contains(k) { table.append((k, 1.2)) }   // held/trade evolution items
+        var table: [(String, Double)] = [
+            ("rare-candy", 16),
+            ("fire-stone", 8), ("water-stone", 8), ("thunder-stone", 8), ("leaf-stone", 8), ("moon-stone", 7), ("sun-stone", 4),
+            ("linking-cord", 7),                                   // Link Cable: trade evolutions
+        ]
+        // Rare balls (Poké/Great/Ultra come every 100 steps instead)
+        for b in BallKind.allCases where !b.isStepBall {
+            table.append((b.itemKey, b == .master ? 0.15 : 2.5))
+        }
+        // Held items some trade evolutions need (Onix → Steelix, Seadra → Kingdra…), kept rare
+        for k in ["kings-rock", "metal-coat", "dragon-scale", "up-grade", "deep-sea-tooth", "deep-sea-scale", "prism-scale"] {
+            table.append((k, 0.8))
+        }
         return weightedPick(table)
+    }
+
+    /// Takes everything your Pokémon is holding and puts it in the Bag.
+    static func takeHeldItems(from id: UUID, in s: inout GameState) -> [String] {
+        guard let i = s.index(of: id) else { return [] }
+        let items = s.pokemon[i].heldItems
+        for k in items { s.bag[k, default: 0] += 1 }
+        s.pokemon[i].heldItems = []
+        return items
     }
 
     static func weightedPick<T>(_ options: [(T, Double)]) -> T {
@@ -323,9 +355,9 @@ enum GameRules {
             mon.exp = growth.exp(forLevel: mon.level + 1)
             mon.friendship = min(255, mon.friendship + 3)
             outcome = .leveled(mon.level)
-        case "exp-candy-s", "exp-candy-m":
+        case _ where ExpCandy.exp(item) != nil:
             guard mon.level < GrowthRate.maxLevel else { return .noEffect }
-            mon.exp = min(mon.exp + (item == "exp-candy-s" ? 800 : 3_000), growth.maxExp)
+            mon.exp = min(mon.exp + ExpCandy.exp(item)!, growth.maxExp)
             outcome = .leveled(mon.level)
         default:
             guard let into = itemEvolution(for: mon, item: item, at: date) else { return .noEffect }
@@ -426,6 +458,7 @@ struct SafariEncounter {
     var throwCount = 0
     var bestThrow: String?
     var log: [String] = []
+    var caughtBefore = false        // for the Repeat Ball
 
     /// Flat bonus so Safari catching feels fair with limited balls (the Safari Ball was 1.5x).
     static let safariBonus = 1.5
@@ -452,7 +485,11 @@ struct SafariEncounter {
     func modifiedRate(ball: BallKind, quality: Double?) -> Double {
         let throwBonus = 1 + 0.85 * (quality ?? 0)
         let bait = baitTurns > 0 ? 0.9 : 1
-        return Double(wild.species.captureRate) * ball.bonus * throwBonus * bait * Self.safariBonus / 3
+        if ball == .master { return 255 }
+        let ballBonus = ball.bonus(species: wild.species, level: wild.level, turn: throwCount,
+                                   caughtBefore: caughtBefore,
+                                   nearWater: wild.habitat == .sea || wild.habitat == .watersEdge)
+        return Double(wild.species.captureRate) * ballBonus * throwBonus * bait * Self.safariBonus / 3
     }
 
     /// Probability of passing one shake check.

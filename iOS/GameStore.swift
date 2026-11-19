@@ -249,6 +249,9 @@ final class GameStore: ObservableObject {
         if o.newLevel > o.oldLevel, let buddy = state.buddy {
             lines.append("\(buddy.name) grew to Lv. \(o.newLevel)!")
         }
+        if let buddy = state.buddy {
+            for candy in o.pickedUp { lines.append("\(buddy.name) picked up an \(Dex.itemName(candy))!") }
+        }
         if !o.itemsFound.isEmpty {
             lines.append("Found " + o.itemsFound.map(Dex.itemName).joined(separator: ", ") + "!")
         }
@@ -339,6 +342,14 @@ final class GameStore: ObservableObject {
 
     func move(from a: PCSlot, to b: PCSlot) { mutate { GameRules.move(from: a, to: b, in: &$0) } }
     func release(_ id: UUID) { mutate { GameRules.release(id, in: &$0) } }
+
+    /// Moves a Pokémon's held Exp. Candies into the Bag.
+    @discardableResult
+    func takeHeldItems(_ id: UUID) -> [String] {
+        var taken: [String] = []
+        mutate { taken = GameRules.takeHeldItems(from: id, in: &$0) }
+        return taken
+    }
 
     func rename(_ id: UUID, to name: String) {
         mutate { s in

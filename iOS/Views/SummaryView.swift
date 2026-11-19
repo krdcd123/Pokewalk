@@ -61,6 +61,14 @@ struct SummaryView: View {
                     .glassCard(20)
                     .padding(.horizontal)
 
+                    if !mon.heldItems.isEmpty {
+                        HeldItemsCard(mon: mon) {
+                            let taken = store.takeHeldItems(mon.id)
+                            store.toast = "Took \(taken.count == 1 ? Dex.itemName(taken[0]) : "\(taken.count) Exp. Candies") from \(mon.name)."
+                        }
+                        .padding(.horizontal)
+                    }
+
                     MetCard(mon: mon).padding(.horizontal)
 
                     VStack(spacing: 10) {
@@ -200,5 +208,46 @@ struct ItemPicker: View {
             .glassScreen()
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+}
+
+
+/// Exp. Candies a Pokémon picked up on walks; "Take" moves them into the Bag.
+private struct HeldItemsCard: View {
+    let mon: OwnedPokemon
+    var take: () -> Void
+
+    var body: some View {
+        let counts = Dictionary(grouping: mon.heldItems, by: { $0 }).mapValues(\.count)
+        let order = ExpCandy.all.map(\.key).filter { counts[$0] != nil } + counts.keys.filter { ExpCandy.exp($0) == nil }.sorted()
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Holding").font(.rounded(15, .heavy))
+                Spacer()
+                Text("\(mon.heldItems.count)/\(ExpCandy.carryLimit)").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
+            }
+            ForEach(order, id: \.self) { key in
+                HStack(spacing: 10) {
+                    ItemSprite(key: key).frame(width: 26, height: 26)
+                    Text(Dex.itemName(key)).font(.rounded(15, .heavy))
+                    Spacer()
+                    Text("×\(counts[key] ?? 0)").font(.rounded(15, .heavy)).foregroundStyle(Theme.inkSoft)
+                }
+            }
+            Button(action: take) {
+                Label("Take items", systemImage: "arrow.down.to.line")
+                    .font(.rounded(15, .heavy))
+                    .frame(maxWidth: .infinity).frame(height: 42)
+                    .glassCapsule(tint: Theme.teal, interactive: true)
+            }
+            .buttonStyle(.plain)
+            if mon.heldItems.count >= ExpCandy.carryLimit {
+                Text("\(mon.name)'s hands are full — take its candies so it can pick up more.")
+                    .font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
+            }
+        }
+        .foregroundStyle(Theme.ink)
+        .padding(16)
+        .glassCard(20)
     }
 }

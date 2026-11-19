@@ -79,7 +79,10 @@ struct SafariView: View {
         }
         .ignoresSafeArea(edges: .bottom)
         .fullScreenCover(item: $caught, onDismiss: { dismiss() }) { CaughtView(pokemonID: $0.id, safari: safari) }
-        .onAppear { pickAvailableBall(); CryPlayer.shared.play(wild.speciesID) }
+        .onAppear {
+            safari.caughtBefore = store.state.dexCaught.contains(wild.speciesID)
+            pickAvailableBall(); CryPlayer.shared.play(wild.speciesID)
+        }
     }
 
     // MARK: Pieces
@@ -173,7 +176,7 @@ struct SafariView: View {
             Spacer()
 
             Menu {
-                ForEach(BallKind.allCases) { k in
+                ForEach(BallKind.allCases.filter { $0.isStepBall || store.state.balls[$0, default: 0] > 0 }) { k in
                     Button("\(k.name) ×\(store.state.balls[k, default: 0])") { ball = k }
                         .disabled(store.state.balls[k, default: 0] == 0)
                 }

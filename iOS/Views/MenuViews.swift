@@ -184,12 +184,12 @@ struct BagView: View {
     var body: some View {
         List {
             Section("Balls") {
-                ForEach(BallKind.allCases) { k in
+                ForEach(BallKind.allCases.filter { $0.isStepBall || store.state.balls[$0, default: 0] > 0 }) { k in
                     HStack(spacing: 12) {
                         ItemSprite(key: k.itemKey).frame(width: 30, height: 30)
                         VStack(alignment: .leading) {
                             Text(k.name).font(.rounded(16, .heavy))
-                            Text("Catch bonus ×\(k.bonus.formatted())").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                            Text(k.effect).font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                         }
                         Spacer()
                         Text("×\(store.state.balls[k, default: 0])").font(.rounded(16, .heavy))
@@ -210,7 +210,7 @@ struct BagView: View {
                     .glassRow()
                 }
             } header: { Text("Items") } footer: {
-                Text("Balls: 1 every \(store.state.settings.ballSteps) steps (every 10th is a Great Ball, every 50th an Ultra Ball). Items: 1 every \(store.state.settings.itemSteps.formatted()) steps. Use items from a Pokémon's summary.")
+                Text("Balls: 1 every \(store.state.settings.ballSteps) steps (every 10th is a Great Ball, every 50th an Ultra Ball). Items: 1 every \(store.state.settings.itemSteps.formatted()) steps — evolution stones, Rare Candies, Link Cables and rare balls. Your buddy also picks up an Exp. Candy about every 300 steps; take them from its summary. Use items from a Pokémon's summary.")
             }
         }
         .navigationTitle("Bag")
