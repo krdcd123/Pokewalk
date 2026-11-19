@@ -9,7 +9,7 @@ final class SoundKit: ObservableObject {
     static let shared = SoundKit()
 
     enum Effect: String, CaseIterable, Identifiable {
-        case select, menuOpen, trainerCard, ballThrow, ballShake, ballCatch
+        case select, menuOpen, openPC, trainerCard, ballThrow, ballShake, ballCatch, runAway, ballOpen, shiny, useItem
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -19,6 +19,11 @@ final class SoundKit: ObservableObject {
             case .ballThrow: return "Ball thrown"
             case .ballShake: return "Ball shakes"
             case .ballCatch: return "Caught!"
+            case .openPC: return "PC opens"
+            case .runAway: return "Run away"
+            case .ballOpen: return "Ball opens (summary)"
+            case .shiny: return "Shiny sparkle"
+            case .useItem: return "Item used"
             }
         }
     }
@@ -226,6 +231,11 @@ private enum Synth {
         case .ballThrow:   notes = (0..<10).map { (1800 - Double($0) * 120, 0.018) }; noise = true
         case .ballShake:   notes = [(220, 0.04), (0, 0.03), (196, 0.05)]
         case .ballCatch:   notes = [(0, 0.05), (2637, 0.04), (0, 0.06), (523, 0.09), (659, 0.09), (784, 0.09), (1047, 0.22)]; duty = 0.25
+        case .openPC:      notes = [(523, 0.06), (0, 0.02), (784, 0.06), (0, 0.02), (1047, 0.1)]; duty = 0.125
+        case .runAway:     notes = (0..<8).map { (900 - Double($0) * 80, 0.03) }
+        case .ballOpen:    notes = (0..<8).map { (600 + Double($0) * 180, 0.025) }; noise = true
+        case .shiny:       notes = [(2637, 0.05), (3136, 0.05), (3951, 0.05), (0, 0.03), (3951, 0.08)]; duty = 0.125
+        case .useItem:     notes = [(1319, 0.06), (1568, 0.06), (2093, 0.1)]
         }
         let rate = 22_050.0
         var samples: [Int16] = []

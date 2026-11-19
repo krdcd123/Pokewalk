@@ -217,6 +217,10 @@ enum GameRules {
         }
     }
 
+    /// Set by the app from live weather. Shared code can't see the weather service directly.
+    nonisolated(unsafe) static var currentWeather: WeatherCondition?
+    static let weatherBoost = 1.05
+
     static func encounterWeight(_ sp: Species, context: EncounterContext, lifetimeSteps: Int) -> Double {
         if sp.isLegendary || sp.isMythical { return 0 }     // handled separately (legendaryChance)
         var w = rarityWeight(sp)
@@ -228,6 +232,8 @@ enum GameRules {
         if !context.habitats.isDisjoint(with: sp.habitats) { w *= 1.5 }   // a gentle nudge, still mostly random
         let spooky = sp.types.contains(.ghost) || sp.types.contains(.dark)
         if spooky { w *= context.isNight ? 1.5 : 0.8 }
+        // Weather where you are: matching types are ~5% more likely (rain → Water, sun → Fire…)
+        if let weather = currentWeather, !weather.boostedTypes.isDisjoint(with: sp.types) { w *= weatherBoost }
         return w
     }
 

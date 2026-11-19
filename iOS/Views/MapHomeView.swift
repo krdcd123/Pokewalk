@@ -13,7 +13,8 @@ struct MapHomeView: View {
     @AppStorage("showCaughtOnMap") private var showCaught = false
     @State private var infoID: UUID?
     @State private var panelSession = 0
-    @ObservedObject private var sound = SoundKit.shared      // new identity each time a panel opens, so menus start at the top
+    @ObservedObject private var sound = SoundKit.shared
+    @ObservedObject private var weather = WeatherService.shared      // new identity each time a panel opens, so menus start at the top
 
     enum HomeSheet: Hashable, Identifiable {
         case menu, encounters, bag, journal, summary(UUID)
@@ -30,11 +31,18 @@ struct MapHomeView: View {
         ZStack {
             ZStack {
                 map
-                    .onAppear { SoundKit.shared.setScene(.map) }
+                    .onAppear {
+                        SoundKit.shared.setScene(.map)
+                        WeatherService.shared.update(for: tracker.currentLocation())
+                    }
                 VStack(spacing: 10) {
                     topCards
                     if let toast = store.toast { toastView(toast) }
-                    HStack {
+                    HStack(alignment: .top) {
+                        if let w = weather.condition {
+                            WeatherPill(condition: w, isDay: weather.isDay, temperature: weather.temperature)
+                                .transition(.scale.combined(with: .opacity))
+                        }
                         Spacer()
                         Button { withAnimation(.snappy) { showCaught.toggle() } } label: {
                             Image(systemName: showCaught ? "eye.fill" : "eye.slash.fill")
@@ -535,5 +543,65 @@ struct CaughtPinCard: View {
         }
         .font(.rounded(14, .heavy))
         .padding(.horizontal, 14).padding(.vertical, 9)
+    }
+}
+
+
+/// Animated weather badge: live conditions where you are, which nudge the wild Pokémon you meet.
+struct WeatherPill: View {
+    let condition: WeatherCondition
+    let isDay: Bool
+    let temperature: Double?
+    @State private var showInfo = false
+
+    private var symbol: String {
+        switch condition {
+        case .clear: return isDay ? "sun.max.fill" : "moon.stars.fill"
+        case .partlyCloudy: return isDay ? "cloud.sun.fill" : "cloud.moon.fill"
+        case .cloudy: return "cloud.fill"
+        case .fog: return "cloud.fog.fill"
+        case .drizzle: return "cloud.drizzle.fill"
+        case .rain: return "cloud.rain.fill"
+        case .snow: return "cloud.snow.fill"
+        case .thunder: return "cloud.bolt.rain.fill"
+        }
+    }
+
+    var body: some View {
+        Button { withAnimation(.snappy) { showInfo.toggle() } } label: {
+            HStack(spacing: 8) {
+                icon
+                    .font(.system(size: 22, weight: .semibold))
+                    .symbolRenderingMode(.multicolor)
+                    .frame(width: 30, height: 30)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(temperature.map { "\(Int($0.rounded()))°" } ?? condition.name).font(.rounded(15, .heavy))
+                    if showInfo {
+                        Text(condition.name).font(.rounded(11, .heavy)).foregroundStyle(.white.opacity(0.8))
+                        Text("More " + condition.boostedTypes.map(\.rawValue.capitalized).sorted().joined(separator: ", ") + " types")
+                            .font(.rounded(11)).foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .glassCard(18)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Weather: \(condition.name)")
+    }
+
+    @ViewBuilder private var icon: some View {
+        let img = Image(systemName: symbol)
+        switch condition {
+        case .clear where isDay:
+            img.symbolEffect(.rotate.byLayer, options: .repeat(.periodic(delay: 2)))
+        case .drizzle, .rain, .snow, .fog:
+            img.symbolEffect(.variableColor.iterative.dimInactiveLayers, options: .repeating)
+        case .thunder:
+            img.symbolEffect(.bounce.byLayer, options: .repeat(.periodic(delay: 1.2)))
+        default:
+            img.symbolEffect(.breathe.pulse.byLayer, options: .repeating)
+        }
     }
 }

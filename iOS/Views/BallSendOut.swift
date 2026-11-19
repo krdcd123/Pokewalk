@@ -7,6 +7,7 @@ struct BallSendOut: View {
     let shiny: Bool
     let ball: BallKind
     var skip = false
+    var playSounds = true
     var onRelease: () -> Void = {}
 
     @State private var stage = 0          // 0 ball drops · 1 wobble · 2 burst · 3 out
@@ -90,6 +91,7 @@ struct BallSendOut: View {
             stage = 1                                                              // the ball, briefly
             try? await Task.sleep(for: .milliseconds(300))
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            if playSounds { SoundKit.shared.play(.ballOpen) }
             withAnimation(.easeOut(duration: 0.12)) { stage = 2; flash = 1 }        // pops open
             withAnimation(.easeOut(duration: 0.7)) { burst = true }
             withAnimation(.spring(response: 0.42, dampingFraction: 0.62).delay(0.05)) { stage = 3 }
@@ -98,6 +100,7 @@ struct BallSendOut: View {
             withAnimation(.easeOut(duration: 0.4)) { flash = 0 }
             if shiny {
                 try? await Task.sleep(for: .milliseconds(250))
+                if playSounds { SoundKit.shared.play(.shiny) }
                 withAnimation(.easeOut(duration: 0.9)) { sparkle = true }
             }
         }

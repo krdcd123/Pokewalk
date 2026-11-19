@@ -131,7 +131,9 @@ struct SummaryView: View {
             .sheet(isPresented: $showItems) {
                 ItemPicker { item in
                     showItems = false
-                    switch store.use(item, on: mon.id) {
+                    let outcome = store.use(item, on: mon.id)
+                    if outcome != .noEffect { SoundKit.shared.play(.useItem) }
+                    switch outcome {
                     case .noEffect: message = "It won't have any effect."
                     case .leveled(let l): message = "\(mon.name) is now Lv \(l)!"
                     case .evolves: break

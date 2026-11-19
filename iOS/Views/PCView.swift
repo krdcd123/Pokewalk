@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct PCView: View {
+    @State private var playedOpen = false
     @EnvironmentObject private var store: GameStore
     @State private var boxIndex = 0
     @State private var moving = false
@@ -34,6 +35,7 @@ struct PCView: View {
             .padding()
         }
         .navigationTitle("PC")
+        .onAppear { if !playedOpen { playedOpen = true; SoundKit.shared.play(.openPC) } }
         .glassScreen()
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search names, species, places")
         .toolbar {

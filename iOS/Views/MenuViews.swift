@@ -671,6 +671,7 @@ private struct BagItemRow: View {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         let before = mon.level
                         let outcome = store.use(key, on: mon.id)
+                        if outcome != .noEffect { SoundKit.shared.play(.useItem) }
                         switch outcome {
                         case .leveled:
                             let now = store.state.mon(mon.id)?.level ?? before

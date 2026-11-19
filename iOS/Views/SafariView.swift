@@ -82,6 +82,9 @@ struct SafariView: View {
         .onDisappear { SoundKit.shared.setScene(.map) }
         .onAppear {
             SoundKit.shared.setScene(.battle)
+            if wild.isShiny {
+                Task { try? await Task.sleep(for: .milliseconds(450)); SoundKit.shared.play(.shiny) }
+            }
             safari.caughtBefore = store.state.dexCaught.contains(wild.speciesID)
             pickAvailableBall(); CryPlayer.shared.play(wild.speciesID)
         }
@@ -114,6 +117,7 @@ struct SafariView: View {
         VStack(spacing: 6) {
             HStack {
                 Button {
+                    SoundKit.shared.play(.runAway)
                     safari.run()
                     store.finish(safari)
                     dismiss()

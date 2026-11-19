@@ -75,7 +75,11 @@ struct OnboardingView: View {
                             let shiny = shinies.contains(id)
                             Button { withAnimation(.spring) { starter = id } } label: {
                                 VStack(spacing: 4) {
-                                    AnimatedSprite(speciesID: id, shiny: shiny).frame(width: 72, height: 72)
+                                    BallSendOut(speciesID: id, shiny: shiny, ball: .poke, skip: resets == 0,
+                                                playSounds: id == Dex.starterChoices.first || shiny)
+                                        .scaleEffect(0.55)
+                                        .frame(width: 100, height: 78)
+                                        .id("\(id)-\(resets)")
                                         .overlay(alignment: .topTrailing) {
                                             if shiny {
                                                 Image(systemName: "sparkles").font(.system(size: 16, weight: .black))

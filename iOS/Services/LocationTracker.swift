@@ -214,6 +214,7 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
 
     private func handle(_ loc: CLLocation) {
         lastLocation = loc
+        WeatherService.shared.update(for: loc)
         // Keep walking-speed fixes with decent accuracy; ignore driving and GPS noise.
         guard loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 35 else { return }
         if loc.speed > 4.5 { return }
