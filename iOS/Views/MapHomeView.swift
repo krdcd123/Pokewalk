@@ -331,18 +331,20 @@ struct MapPin: View {
 struct BuddyMarker: View {
     let speciesID: Int?
     var shiny = false
-    @State private var hop = false
 
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
                 Circle().fill(.white)
                 // Hops up and down like a party icon in the games.
+                // Map pins are rebuilt on every location update, which kills SwiftUI's repeating
+                // animations, so drive the hop from the clock instead: two frames, like the games.
                 if let speciesID {
-                    AnimatedSprite(speciesID: speciesID, kind: .icons).padding(6)
-                        .offset(y: hop ? -3 : 1)
-                        .animation(.easeInOut(duration: 0.28).repeatForever(autoreverses: true), value: hop)
-                        .onAppear { hop = true }
+                    TimelineView(.periodic(from: .now, by: 0.22)) { tl in
+                        let up = Int(tl.date.timeIntervalSinceReferenceDate / 0.22) % 2 == 0
+                        AnimatedSprite(speciesID: speciesID, kind: .icons).padding(6)
+                            .offset(y: up ? -4 : 0)
+                    }
                 }
             }
             .frame(width: 52, height: 52)
