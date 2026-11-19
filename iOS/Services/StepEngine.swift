@@ -47,6 +47,16 @@ final class StepEngine {
         return max(await hk ?? 0, await pm ?? 0)
     }
 
+    /// Every step and metre since a date (the trainer card's lifetime totals).
+    /// HealthKit keeps your full history; the pedometer only covers the last 7 days.
+    func totals(since start: Date) async -> (steps: Int, meters: Double) {
+        async let hkSteps = try? health.steps(from: start)
+        async let hkMeters = try? health.distance(from: start)
+        async let pmSteps = pedometerSteps(from: max(start, Date().addingTimeInterval(-7 * 86_400)), to: .now)
+        async let pmMeters = pedometerDistance(from: max(start, Date().addingTimeInterval(-7 * 86_400)), to: .now)
+        return (max(await hkSteps ?? 0, await pmSteps ?? 0), max(await hkMeters ?? 0, await pmMeters ?? 0))
+    }
+
     /// Live pedometer callbacks while the app is running (foreground, or background with location on).
     func startLiveUpdates(_ onUpdate: @escaping () -> Void) {
         guard pedometerAvailable else { return }

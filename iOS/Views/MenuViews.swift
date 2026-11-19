@@ -224,6 +224,7 @@ struct TrainerCardView: View {
     @EnvironmentObject private var store: GameStore
     var popup = false
     @State private var totalMeters: Double = 0
+    @State private var totalSteps: Int = 0
 
     private let gold = Color(hex: 0xF2CC4A)
 
@@ -274,7 +275,7 @@ struct TrainerCardView: View {
                 VStack(spacing: 10) {
                     row("NAME", t.name.uppercased())
                     row("POKéDEX", "\(store.state.dexCaught.count)")
-                    row("STEPS", store.state.lifetimeSteps.formatted())
+                    row("STEPS", max(totalSteps, store.state.lifetimeSteps).formatted())
                     row("DISTANCE", Distance.text(totalMeters))
                     row("STARTED", t.startedOn.formatted(.dateTime.day().month(.abbreviated).year(.twoDigits)))
                     HStack(spacing: 4) {
@@ -318,6 +319,11 @@ struct TrainerCardView: View {
             let tracked = tracks.daysWithTracks.reduce(0) { $0 + tracks.meters(on: $1) }
             let buddies = store.state.pokemon.reduce(0) { $0 + $1.metersWalked }
             totalMeters = max(tracked, buddies)
+            // Lifetime: everything since the day you started your adventure, not just today.
+            let since = Calendar.current.startOfDay(for: store.state.trainer.startedOn)
+            let all = await StepEngine.shared.totals(since: since)
+            totalSteps = all.steps
+            totalMeters = max(totalMeters, all.meters)
         }
     }
 }
