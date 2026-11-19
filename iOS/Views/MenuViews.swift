@@ -341,6 +341,7 @@ struct SettingsView: View {
     @State private var confirmImport: URL?
     @State private var exportURL: URL?
     @State private var liveActivity = LiveActivityManager.shared.enabled
+    @StateObject private var downloader = SpriteDownloader.shared
 
     var body: some View {
         Form {
@@ -408,9 +409,26 @@ struct SettingsView: View {
                     PhoneConnectivity.shared.resetSentSprites(); store.pushOutward()
                 }
                 .glassRow()
+                if let p = downloader.progress {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Downloading sprites… \(Int(p * 100))%")
+                        ProgressView(value: p).tint(Theme.teal)
+                    }
+                    .glassRow()
+                } else {
+                    Button(downloader.finished ? "Download all sprites again" : "Download all sprites for offline") {
+                        downloader.start()
+                    }
+                    .glassRow()
+                    if downloader.finished {
+                        Text(downloader.failed == 0 ? "All sprites saved — PokéWalk looks complete offline."
+                                                    : "Saved all but \(downloader.failed). Tap again on Wi-Fi to fill the gaps.")
+                            .font(.rounded(13)).foregroundStyle(Theme.inkSoft).glassRow()
+                    }
+                }
                 Button("Clear downloaded sprites") { SpriteStore.shared.clearDownloads() }.glassRow()
             } header: { Text("Sprites") } footer: {
-                Text("Name Pokémon sprites by Pokédex number (25.gif) or name (pikachu.gif). Trainer sprites: red-walk.gif (walking), red-head.gif (map button), red-card.png (trainer card) — also leaf, gold, kris, brendan, may. Missing ones are downloaded.")
+                Text("Name Pokémon sprites by Pokédex number (25.gif) or name (pikachu.gif). Trainer sprites: red-walk.gif (walking), red-head.gif (map button), red-card.png (trainer card) — also leaf, gold, kris, brendan, may. Missing ones are downloaded. "Download all" saves every Pokémon (animated, shiny and box icon) and every trainer, about 15–25 MB — best on Wi-Fi.")
             }
 
             Section {

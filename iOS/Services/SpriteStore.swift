@@ -461,3 +461,50 @@ enum OverworldSheet {
         return ctx.makeImage()
     }
 }
+
+
+/// "Download all sprites": saves every Gen 1–3 Pokémon's animated, shiny and box sprites (plus all
+/// trainer sprites) so the app looks complete with no signal. Keeps running if you leave Settings.
+@MainActor
+final class SpriteDownloader: ObservableObject {
+    static let shared = SpriteDownloader()
+    @Published private(set) var progress: Double?      // nil = not running
+    @Published private(set) var failed = 0
+    @Published private(set) var finished = false
+
+    func start() {
+        guard progress == nil else { return }
+        progress = 0; failed = 0; finished = false
+        Task.detached(priority: .utility) {
+            var jobs: [(SpriteStore.Kind, Int)] = []
+            for id in 1...Dex.count { for k in [SpriteStore.Kind.front, .icons, .shiny] { jobs.append((k, id)) } }
+            let total = Double(jobs.count + TrainerStyle.all.count)
+            var done = 0, bad = 0
+            await withTaskGroup(of: Bool.self) { group in
+                var next = 0
+                while next < min(8, jobs.count) {     // 8 downloads at a time
+                    let (k, id) = jobs[next]; next += 1
+                    group.addTask { await SpriteStore.shared.url(k, speciesID: id) != nil }
+                }
+                for await ok in group {
+                    done += 1; if !ok { bad += 1 }
+                    if next < jobs.count {
+                        let (k, id) = jobs[next]; next += 1
+                        group.addTask { await SpriteStore.shared.url(k, speciesID: id) != nil }
+                    }
+                    if done % 12 == 0 {
+                        let p = Double(done) / total, b = bad
+                        await MainActor.run { self.progress = p; self.failed = b }
+                    }
+                }
+            }
+            for style in TrainerStyle.all {
+                _ = await SpriteStore.shared.trainerCardURL(style)
+                _ = await SpriteStore.shared.trainerWalk(style)
+                done += 1
+            }
+            let b = bad
+            await MainActor.run { self.progress = nil; self.failed = b; self.finished = true }
+        }
+    }
+}
