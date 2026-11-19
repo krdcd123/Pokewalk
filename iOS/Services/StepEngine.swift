@@ -37,7 +37,7 @@ final class StepEngine {
         let end = min(Date(), day.addingTimeInterval(86_400))
         async let hk = try? health.steps(from: day, to: end)
         async let pm = pedometerSteps(from: day, to: end)
-        let viaShortcut = ShortcutSteps.steps(for: TrackStore.key(for: day))
+        let viaShortcut = ShortcutSteps.steps(for: ShortcutSteps.dayKey(day))
         return max(await hk ?? 0, await pm ?? 0, viaShortcut)
     }
 
@@ -45,7 +45,7 @@ final class StepEngine {
         let start = Calendar.current.startOfDay(for: .now)
         async let hk = try? health.distance(from: start)
         async let pm = pedometerDistance(from: start, to: .now)
-        return max(await hk ?? 0, await pm ?? 0, ShortcutSteps.meters(for: TrackStore.key(for: start)))
+        return max(await hk ?? 0, await pm ?? 0, ShortcutSteps.meters(for: ShortcutSteps.dayKey(start)))
     }
 
     /// Every step and metre since a date (the trainer card's lifetime totals).

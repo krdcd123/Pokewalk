@@ -4,10 +4,19 @@ import AppIntents
 /// Steps handed over by a Shortcut ("Find Health Samples" → this action). Lets PokéWalk see Apple Watch
 /// steps even when the sideloading tool stripped the app's own Apple Health permission.
 enum ShortcutSteps {
-    private static let d = UserDefaults.standard
+    private static var d: UserDefaults { .standard }
+
+    /// Same "yyyy-MM-dd" day key as TrackStore, usable off the main actor.
+    static func dayKey(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
+    }
 
     static func record(steps: Int, meters: Double?) {
-        let key = TrackStore.key(for: Calendar.current.startOfDay(for: .now))
+        let key = dayKey(Calendar.current.startOfDay(for: .now))
         d.set(max(steps, self.steps(for: key)), forKey: "shortcutSteps.\(key)")
         if let meters { d.set(max(meters, self.meters(for: key)), forKey: "shortcutMeters.\(key)") }
         d.set(Date(), forKey: "shortcutLastSync")
