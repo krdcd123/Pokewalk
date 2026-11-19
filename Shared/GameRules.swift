@@ -161,6 +161,11 @@ enum GameRules {
             out.itemsFound.append(item)
         }
 
+        // Pocket money: ₽0.01 per step
+        s.counters.moneyProgress += steps
+        s.money += s.counters.moneyProgress / 100
+        s.counters.moneyProgress %= 100
+
         // Pickup: about every 300 steps your buddy finds an Exp. Candy and holds onto it
         s.counters.pickupProgress += steps
         while s.counters.pickupProgress >= s.counters.nextPickupAt {

@@ -717,7 +717,7 @@ struct ShopView: View {
                 }
                 .glassRow()
             } footer: {
-                Text("Earn money by selling valuables (Pearls, Stardust, Nuggets…) from your Bag. Buy 10 Poké Balls at once for a free Premier Ball.")
+                Text("You earn ₽1 for every 100 steps (₽0.01 a step), plus whatever you get selling valuables (Pearls, Stardust, Nuggets…) from your Bag. Buy 10 Poké Balls at once for a free Premier Ball.")
             }
 
             Section {

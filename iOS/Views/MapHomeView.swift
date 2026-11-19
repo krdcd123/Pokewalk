@@ -12,6 +12,7 @@ struct MapHomeView: View {
     @State private var showCard = false
     @AppStorage("showCaughtOnMap") private var showCaught = false
     @State private var infoID: UUID?
+    @State private var panelSession = 0      // new identity each time a panel opens, so menus start at the top
 
     enum HomeSheet: Hashable, Identifiable {
         case menu, encounters, bag, journal, summary(UUID)
@@ -85,6 +86,7 @@ struct MapHomeView: View {
                     case .summary(let id): NavigationStack { SummaryView(pokemonID: id) }
                     }
                 }
+                .id(panelSession)
                 .transition(.move(edge: .bottom))
                 .zIndex(1)
             }
@@ -116,7 +118,10 @@ struct MapHomeView: View {
         .animation(.spring(duration: 0.4), value: store.toast)
     }
 
-    private func close() { withAnimation(.spring(duration: 0.4)) { sheet = nil } }
+    private func close() {
+        withAnimation(.spring(duration: 0.4)) { sheet = nil }
+        panelSession += 1
+    }
 
     private func open(_ enc: PendingEncounter) {
         Task { try? await Task.sleep(for: .milliseconds(350)); store.activeEncounter = enc }

@@ -15,6 +15,7 @@ final class GameStore: ObservableObject {
     @Published var toast: String?
     @Published var activeEncounter: PendingEncounter?
     @Published var evolutionCandidate: EvolutionCandidate?
+    private var rampTimer: Timer?
     @Published var healthError: String?
 
     struct EvolutionCandidate: Identifiable, Equatable {
@@ -130,6 +131,11 @@ final class GameStore: ObservableObject {
         tracker.onMovement = { [weak self] _ in self?.requestTick(minInterval: 20) }
         tracker.apply(mode: state.settings.trackingMode)
         engine.startLiveUpdates { [weak self] in self?.requestTick(minInterval: 15) }
+        // While Shortcut-synced steps are being fed in, keep the counters moving smoothly.
+        rampTimer?.invalidate()
+        rampTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            Task { @MainActor in if ShortcutSteps.isRamping { await self?.tick() } }
+        }
         startHealthObserver()
         requestTick(minInterval: 0)
         LiveActivityManager.shared.startIfNeeded(with: self)
@@ -309,8 +315,25 @@ final class GameStore: ObservableObject {
         var caught: OwnedPokemon?
         mutate { s in
             s.pending.removeAll { $0.id == safari.wild.id }
-            guard case .caught(let ball) = safari.phase else { return }
             let w = safari.wild
+            var entry = EncounterLogEntry(id: w.id, speciesID: w.speciesID, level: w.level, isShiny: w.isShiny,
+                                          date: w.appearedAt, location: w.location ?? self.tracker.currentLocation().map {
+                                              MetLocation(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
+                                          }, outcome: .waiting)
+            switch safari.phase {
+            case .caught(let b): entry.outcome = .caught; entry.ball = b
+            case .fled: entry.outcome = .fled
+            case .ranAway: entry.outcome = .ranAway
+            case .active: break
+            }
+            defer {
+                if entry.outcome != .waiting {
+                    s.encounterLog.removeAll { $0.id == entry.id }
+                    s.encounterLog.append(entry)
+                    if s.encounterLog.count > 2_000 { s.encounterLog.removeFirst(s.encounterLog.count - 2_000) }
+                }
+            }
+            guard case .caught(let ball) = safari.phase else { return }
             var mon = GameRules.makePokemon(species: w.speciesID, level: w.level, ball: ball, trainer: s.trainer,
                                             settings: s.settings, location: w.location, date: .now)
             mon.gender = w.gender; mon.isShiny = w.isShiny; mon.nature = w.nature; mon.personality = w.personality
@@ -319,6 +342,8 @@ final class GameStore: ObservableObject {
                 mon.metLocation = MetLocation(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
             }
             GameRules.store(mon, in: &s)
+            entry.caughtID = mon.id
+            entry.location = mon.metLocation
             caught = mon
         }
         if let caught, caught.metLocation?.placeName == nil, let met = caught.metLocation {

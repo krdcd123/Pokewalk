@@ -21,7 +21,10 @@ struct SummaryView: View {
             ScrollView {
                 VStack(spacing: 12) {
                     VStack(spacing: 6) {
-                        AnimatedSprite(speciesID: mon.speciesID, shiny: mon.isShiny).frame(width: 130, height: 130)
+                        BallSendOut(speciesID: mon.speciesID, shiny: mon.isShiny, ball: mon.ball, skip: isBuddy) {
+                            CryPlayer.shared.play(mon.speciesID)
+                        }
+                        .id(mon.speciesID)
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(mon.name).font(.rounded(28, .black))
                             Text(mon.gender.symbol).font(.rounded(18, .heavy))
@@ -99,7 +102,7 @@ struct SummaryView: View {
             }
             .navigationTitle(mon.name)
             .glassScreen(transparent: true)
-            .onAppear { CryPlayer.shared.play(mon.speciesID) }
+            .onAppear { if isBuddy { CryPlayer.shared.play(mon.speciesID) } }
             .background {
                 ZStack {
                     if !overMap { AppBackground() }

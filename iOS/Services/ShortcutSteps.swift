@@ -15,14 +15,37 @@ enum ShortcutSteps {
         return f.string(from: date)
     }
 
+    /// New totals don't land all at once: they're fed in at walking pace (or faster for a big gap,
+    /// finishing within ~3 minutes), so your steps, Exp and the Lock Screen count climb smoothly.
     static func record(steps: Int, meters: Double?) {
         let key = dayKey(Calendar.current.startOfDay(for: .now))
-        d.set(max(steps, self.steps(for: key)), forKey: "shortcutSteps.\(key)")
+        let current = self.steps(for: key)                       // where the ramp is right now
+        let target = max(steps, d.integer(forKey: "shortcutTarget.\(key)"))
+        d.set(current, forKey: "shortcutFrom.\(key)")
+        d.set(target, forKey: "shortcutTarget.\(key)")
+        d.set(Date().timeIntervalSince1970, forKey: "shortcutAt.\(key)")
+        d.set(target, forKey: "shortcutSteps.\(key)")
         if let meters { d.set(max(meters, self.meters(for: key)), forKey: "shortcutMeters.\(key)") }
         d.set(Date(), forKey: "shortcutLastSync")
     }
 
-    static func steps(for dayKey: String) -> Int { d.integer(forKey: "shortcutSteps.\(dayKey)") }
+    static func steps(for dayKey: String) -> Int {
+        let target = d.integer(forKey: "shortcutTarget.\(dayKey)")
+        guard target > 0 else { return d.integer(forKey: "shortcutSteps.\(dayKey)") }   // older saves
+        let from = d.integer(forKey: "shortcutFrom.\(dayKey)")
+        let gap = Double(target - from)
+        guard gap > 0 else { return target }
+        let elapsed = Date().timeIntervalSince1970 - d.double(forKey: "shortcutAt.\(dayKey)")
+        let rate = max(2.0, gap / 180)                            // ≥ 2 steps/s, done within 3 min
+        return min(target, from + Int(elapsed * rate))
+    }
+
+    /// True while a synced total is still being fed in.
+    static var isRamping: Bool {
+        let key = dayKey(Calendar.current.startOfDay(for: .now))
+        let target = d.integer(forKey: "shortcutTarget.\(key)")
+        return target > 0 && steps(for: key) < target
+    }
     static func meters(for dayKey: String) -> Double { d.double(forKey: "shortcutMeters.\(dayKey)") }
     static var lastSync: Date? { d.object(forKey: "shortcutLastSync") as? Date }
 }

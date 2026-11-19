@@ -194,6 +194,29 @@ enum PCSlot: Hashable {
 
 // MARK: - Encounters
 
+/// A wild Pokémon you met and what happened, shown in the Journal.
+struct EncounterLogEntry: Codable, Identifiable, Hashable {
+    enum Outcome: String, Codable { case caught, fled, ranAway, waiting }
+    var id: UUID                 // same as the encounter's id
+    var speciesID: Int
+    var level: Int
+    var isShiny: Bool
+    var date: Date
+    var location: MetLocation?
+    var outcome: Outcome
+    var caughtID: UUID?          // the Pokémon you got, if caught
+    var ball: BallKind?
+
+    var outcomeText: String {
+        switch outcome {
+        case .caught: return "Caught"
+        case .fled: return "Fled"
+        case .ranAway: return "You ran"
+        case .waiting: return "Waiting"
+        }
+    }
+}
+
 struct PendingEncounter: Codable, Identifiable, Hashable {
     var id = UUID()
     var speciesID: Int
@@ -245,6 +268,7 @@ struct StepCounters: Codable, Hashable {
     var itemProgress = 0
     var pickupProgress = 0
     var nextPickupAt = 300
+    var moneyProgress = 0            // ₽0.01 per step → ₽1 every 100 steps
 
     var stepsToEncounter: Int { max(0, nextEncounterAt - encounterProgress) }
 }
@@ -264,6 +288,7 @@ struct GameState: Codable {
     var lifetimeSteps = 0
     var counters = StepCounters()
     var pending: [PendingEncounter] = []
+    var encounterLog: [EncounterLogEntry] = []     // every wild Pokémon you met, for the Journal
     var dexSeen: Set<Int> = []
     var dexCaught: Set<Int> = []
     var stepLedger: [String: Int] = [:]     // "yyyy-MM-dd" -> steps already turned into rewards
@@ -381,6 +406,7 @@ extension GameState {
         lifetimeSteps = c.value(.lifetimeSteps, 0)
         counters = c.value(.counters, d.counters)
         pending = c.value(.pending, [])
+        encounterLog = c.value(.encounterLog, [])
         dexSeen = c.value(.dexSeen, [])
         dexCaught = c.value(.dexCaught, [])
         stepLedger = c.value(.stepLedger, [:])
@@ -402,6 +428,7 @@ extension StepCounters {
         itemProgress = c.value(.itemProgress, d.itemProgress)
         pickupProgress = c.value(.pickupProgress, d.pickupProgress)
         nextPickupAt = c.value(.nextPickupAt, d.nextPickupAt)
+        moneyProgress = c.value(.moneyProgress, d.moneyProgress)
     }
 }
 
