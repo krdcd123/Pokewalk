@@ -331,12 +331,19 @@ struct MapPin: View {
 struct BuddyMarker: View {
     let speciesID: Int?
     var shiny = false
+    @State private var hop = false
 
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
                 Circle().fill(.white)
-                if let speciesID { AnimatedSprite(speciesID: speciesID, kind: .icons).padding(6) }
+                // Hops up and down like a party icon in the games.
+                if let speciesID {
+                    AnimatedSprite(speciesID: speciesID, kind: .icons).padding(6)
+                        .offset(y: hop ? -3 : 1)
+                        .animation(.easeInOut(duration: 0.28).repeatForever(autoreverses: true), value: hop)
+                        .onAppear { hop = true }
+                }
             }
             .frame(width: 52, height: 52)
             .overlay(Circle().stroke(Theme.orange, lineWidth: 4))

@@ -253,8 +253,9 @@ enum GameRules {
     // MARK: Evolution
 
     /// Level / friendship evolutions that are ready now (item evolutions need the item).
-    static func pendingEvolution(for mon: OwnedPokemon, at date: Date = .now) -> Int? {
-        if let declined = mon.evolutionDeclinedAtLevel, declined >= mon.level { return nil }
+    /// `ignoringDecline`: the Summary's Evolve button still works after you picked "Not now".
+    static func pendingEvolution(for mon: OwnedPokemon, at date: Date = .now, ignoringDecline: Bool = false) -> Int? {
+        if !ignoringDecline, let declined = mon.evolutionDeclinedAtLevel, declined >= mon.level { return nil }
         let tod = TimeOfDay.at(date)
         let ready = mon.species.evolutions.filter { rule in
             if let t = rule.time, t != tod { return false }

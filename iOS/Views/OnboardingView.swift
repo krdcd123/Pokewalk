@@ -102,6 +102,7 @@ struct EvolutionView: View {
     @State private var stage = 0
     @State private var flash = false
     @State private var originalName: String?
+    @State private var stopped = false
 
     private var mon: OwnedPokemon? { store.state.mon(candidate.pokemonID) }
 
@@ -123,15 +124,27 @@ struct EvolutionView: View {
                 .brightness(stage == 1 ? 0.9 : 0)
                 .scaleEffect(stage == 2 ? 1.1 : 1)
 
-                Text(stage < 2 ? "What? \(oldName) is evolving!" : "Congratulations! Your \(oldName) evolved into \(newSpecies.name)!")
+                Text(stopped ? "Huh? \(oldName) stopped evolving!"
+                     : stage == 0 ? "\(oldName) is ready to evolve into \(newSpecies.name)!"
+                     : stage == 1 ? "What? \(oldName) is evolving!"
+                     : "Congratulations! Your \(oldName) evolved into \(newSpecies.name)!")
                     .font(.rounded(20, .black)).foregroundStyle(.white).multilineTextAlignment(.center).padding()
                 Spacer()
-                if stage == 0 {
-                    HStack(spacing: 16) {
-                        Button("Stop (B)") { store.declineEvolution(candidate); dismiss() }
-                            .buttonStyle(.bordered).tint(.white)
-                        Button("Evolve!") { run() }.buttonStyle(.borderedProminent).tint(Theme.teal)
+                if stopped {
+                    Button("Continue") { dismiss() }.buttonStyle(.borderedProminent).tint(Theme.teal)
+                } else if stage == 0 {
+                    VStack(spacing: 12) {
+                        HStack(spacing: 16) {
+                            Button("Not now") { store.declineEvolution(candidate); dismiss() }
+                                .buttonStyle(.bordered).tint(.white)
+                            Button("Evolve!") { run() }.buttonStyle(.borderedProminent).tint(Theme.teal)
+                        }
+                        Text("You can evolve it any time from its Summary.")
+                            .font(.rounded(13, .heavy)).foregroundStyle(.white.opacity(0.6))
                     }
+                } else if stage == 1 {
+                    Button("Stop (B)") { stopped = true; store.declineEvolution(candidate) }
+                        .buttonStyle(.bordered).tint(.white)
                 } else if stage == 2 {
                     Button("Continue") { dismiss() }.buttonStyle(.borderedProminent).tint(Theme.teal)
                 }
@@ -145,9 +158,11 @@ struct EvolutionView: View {
         stage = 1
         Task {
             for i in 0..<14 {
+                if stopped { withAnimation { flash = false; stage = 0 }; return }
                 withAnimation(.easeInOut(duration: 0.18)) { flash.toggle() }
                 try? await Task.sleep(for: .milliseconds(max(70, 260 - i * 15)))
             }
+            if stopped { withAnimation { flash = false; stage = 0 }; return }
             store.evolve(candidate)
             withAnimation(.spring(duration: 0.6)) { stage = 2 }
         }

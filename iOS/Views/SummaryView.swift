@@ -10,6 +10,7 @@ struct SummaryView: View {
     @State private var showItems = false
     @State private var message: String?
     @State private var confirmRelease = false
+    @Environment(\.overMap) private var overMap
 
     private var mon: OwnedPokemon? { store.state.mon(pokemonID) }
 
@@ -63,7 +64,7 @@ struct SummaryView: View {
                     MetCard(mon: mon).padding(.horizontal)
 
                     VStack(spacing: 10) {
-                        if let into = GameRules.pendingEvolution(for: mon) {
+                        if let into = GameRules.pendingEvolution(for: mon, ignoringDecline: true) {
                             actionButton("Evolve into \(Dex.species(into).name)", "sparkles", filled: true) {
                                 store.evolutionCandidate = .init(pokemonID: mon.id, into: into)
                             }
@@ -93,11 +94,13 @@ struct SummaryView: View {
             .onAppear { CryPlayer.shared.play(mon.speciesID) }
             .background {
                 ZStack {
-                    AppBackground()
-                    LinearGradient(stops: [.init(color: tint.opacity(0.55), location: 0),
-                                           .init(color: tint.opacity(0.28), location: 0.3),
-                                           .init(color: tint.opacity(0.08), location: 0.55),
-                                           .init(color: .clear, location: 0.8)],
+                    if !overMap { AppBackground() }
+                    // Fades in from clear at the top, so there's no hard edge under the panel's handle.
+                    LinearGradient(stops: [.init(color: tint.opacity(0), location: 0),
+                                           .init(color: tint.opacity(0.42), location: 0.16),
+                                           .init(color: tint.opacity(0.24), location: 0.38),
+                                           .init(color: tint.opacity(0.07), location: 0.6),
+                                           .init(color: .clear, location: 0.85)],
                                    startPoint: .top, endPoint: .bottom)
                         .ignoresSafeArea()
                 }
