@@ -11,9 +11,9 @@ final class SpriteStore {
     static let shared = SpriteStore()
 
     enum Kind: String, CaseIterable {
-        case front, shiny, icons, items, trainers
+        case front, shiny, back, backShiny, icons, items, trainers
 
-        var exts: [String] { self == .front || self == .shiny ? ["gif", "png", "webp"] : ["png", "gif"] }
+        var exts: [String] { [.front, .shiny, .back, .backShiny].contains(self) ? ["gif", "png", "webp"] : ["png", "gif"] }
 
         /// Items and trainers are cached by name; Pokémon by Pokédex number.
         var keyedByName: Bool { self == .items || self == .trainers }
@@ -23,6 +23,8 @@ final class SpriteStore {
             switch self {
             case .front: return id <= 649 ? URL(string: "\(base)/pokemon/versions/generation-v/black-white/animated/\(id).gif") : nil
             case .shiny: return id <= 649 ? URL(string: "\(base)/pokemon/versions/generation-v/black-white/animated/shiny/\(id).gif") : nil
+            case .back: return id <= 649 ? URL(string: "\(base)/pokemon/versions/generation-v/black-white/animated/back/\(id).gif") : nil
+            case .backShiny: return id <= 649 ? URL(string: "\(base)/pokemon/versions/generation-v/black-white/animated/back/shiny/\(id).gif") : nil
             case .icons: return SharedStore.remoteIconURL(id)
             case .items: return URL(string: "\(base)/items/\(key).png")
             case .trainers: return TrainerStyle.all.first { $0.id == key }?.remoteSpriteURL
@@ -259,6 +261,8 @@ struct AnimatedSprite: View {
             let k = kind ?? (shiny ? .shiny : .front)
             var url = await SpriteStore.shared.url(k, speciesID: speciesID)
             if url == nil && k == .shiny { url = await SpriteStore.shared.url(.front, speciesID: speciesID) }
+            if url == nil && k == .backShiny { url = await SpriteStore.shared.url(.back, speciesID: speciesID) }
+            if url == nil && (k == .back || k == .backShiny) { url = await SpriteStore.shared.url(shiny ? .shiny : .front, speciesID: speciesID) }
             if url == nil { url = await SpriteStore.shared.url(.icons, speciesID: speciesID) }
             guard let url else { return }
             image = await Task.detached { GIFCache.shared.image(at: url) }.value
@@ -477,7 +481,7 @@ final class SpriteDownloader: ObservableObject {
         progress = 0; failed = 0; finished = false
         Task.detached(priority: .utility) {
             var jobs: [(SpriteStore.Kind, Int)] = []
-            for id in 1...Dex.count { for k in [SpriteStore.Kind.front, .icons, .shiny] { jobs.append((k, id)) } }
+            for id in 1...Dex.count { for k in [SpriteStore.Kind.front, .icons, .shiny, .back, .backShiny] { jobs.append((k, id)) } }
             let total = Double(jobs.count + TrainerStyle.all.count)
             var done = 0, bad = 0
             await withTaskGroup(of: Bool.self) { group in

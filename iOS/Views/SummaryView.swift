@@ -21,7 +21,7 @@ struct SummaryView: View {
             ScrollView {
                 VStack(spacing: 12) {
                     VStack(spacing: 6) {
-                        BallSendOut(speciesID: mon.speciesID, shiny: mon.isShiny, ball: mon.ball, skip: isBuddy) {
+                        BallSendOut(speciesID: mon.speciesID, shiny: mon.isShiny, ball: mon.ball, skip: isBuddy, interactive: true) {
                             CryPlayer.shared.play(mon.speciesID)
                         }
                         .id(mon.speciesID)

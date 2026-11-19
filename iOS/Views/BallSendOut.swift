@@ -8,6 +8,8 @@ struct BallSendOut: View {
     let ball: BallKind
     var skip = false
     var playSounds = true
+    /// Summary screen: tap to hear its cry again, hold to see its back sprite.
+    var interactive = false
     var onRelease: () -> Void = {}
 
     @State private var stage = 0          // 0 ball drops · 1 wobble · 2 burst · 3 out
@@ -19,7 +21,7 @@ struct BallSendOut: View {
 
     var body: some View {
         if skip {
-            AnimatedSprite(speciesID: speciesID, shiny: shiny).frame(width: 130, height: 130)
+            pokemon.frame(width: 130, height: 130)
         } else {
             sendOut
         }
@@ -38,7 +40,7 @@ struct BallSendOut: View {
             }
 
             // The Pokémon
-            AnimatedSprite(speciesID: speciesID, shiny: shiny)
+            pokemon
                 .frame(width: 130, height: 130)
                 .scaleEffect(stage >= 3 ? 1 : 0.05, anchor: .bottom)
                 .brightness(stage >= 3 ? 0 : 1)
@@ -72,6 +74,37 @@ struct BallSendOut: View {
         }
         .frame(width: 180, height: 140)
         .onAppear(perform: run)
+    }
+
+    @State private var showBack = false
+    @State private var pressing = false
+    @State private var bounce = false
+
+    @ViewBuilder private var pokemon: some View {
+        let sprite = AnimatedSprite(speciesID: speciesID, shiny: shiny,
+                                    kind: showBack ? (shiny ? .backShiny : .back) : nil)
+            .offset(y: bounce ? -10 : 0)
+        if interactive {
+            sprite
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    CryPlayer.shared.play(speciesID)
+                    withAnimation(.spring(response: 0.18, dampingFraction: 0.5)) { bounce = true }
+                    Task { try? await Task.sleep(for: .milliseconds(160))
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) { bounce = false } }
+                }
+                .onLongPressGesture(minimumDuration: 0.3, perform: {}, onPressingChanged: { down in
+                    pressing = down
+                    if down {
+                        Task { try? await Task.sleep(for: .milliseconds(300))
+                            if pressing { UIImpactFeedbackGenerator(style: .soft).impactOccurred(); showBack = true } }
+                    } else {
+                        showBack = false
+                    }
+                })
+        } else {
+            sprite
+        }
     }
 
     @ViewBuilder private func particle(_ i: Int) -> some View {

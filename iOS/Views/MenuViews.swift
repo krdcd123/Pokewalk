@@ -517,6 +517,8 @@ struct SettingsView: View {
         switch k {
         case .front: return "animated (front)"
         case .shiny: return "shiny"
+        case .back: return "animated (back)"
+        case .backShiny: return "shiny (back)"
         case .icons: return "party icon"
         case .items: return "item"
         case .trainers: return "trainer"
