@@ -79,7 +79,9 @@ struct SafariView: View {
         }
         .ignoresSafeArea(edges: .bottom)
         .fullScreenCover(item: $caught, onDismiss: { dismiss() }) { CaughtView(pokemonID: $0.id, safari: safari) }
+        .onDisappear { SoundKit.shared.setScene(.map) }
         .onAppear {
+            SoundKit.shared.setScene(.battle)
             safari.caughtBefore = store.state.dexCaught.contains(wild.speciesID)
             pickAvailableBall(); CryPlayer.shared.play(wild.speciesID)
         }
@@ -203,6 +205,7 @@ struct SafariView: View {
         throwing = "You threw a \(ball.name)!"
         Task { @MainActor in
             // Ball arcs up to the Pokémon
+            SoundKit.shared.play(.ballThrow)
             withAnimation(.easeOut(duration: 0.45)) { ballOffset = distance; ballScale = 0.55 }
             try? await Task.sleep(for: .milliseconds(480))
 
@@ -213,6 +216,7 @@ struct SafariView: View {
             withAnimation(.easeIn(duration: 0.3)) { ballOffset += 70 }
             try? await Task.sleep(for: .milliseconds(500))
             for _ in 0..<result.shakes {
+                SoundKit.shared.play(.ballShake)
                 withAnimation(.easeInOut(duration: 0.15)) { wobble = -22 }
                 try? await Task.sleep(for: .milliseconds(160))
                 withAnimation(.easeInOut(duration: 0.15)) { wobble = 22 }
@@ -224,6 +228,7 @@ struct SafariView: View {
             if result.caught {
                 // Third shake done — a beat of silence, then the click.
                 try? await Task.sleep(for: .milliseconds(250))
+                SoundKit.shared.play(.ballCatch)
                 throwing = nil
                 await show("Gotcha!\n\(wild.species.name) was caught!", duration: 1.4)
                 caught = store.finish(safari)

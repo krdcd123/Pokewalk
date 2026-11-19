@@ -356,6 +356,13 @@ struct SettingsView: View {
                 .glassRow()
             }
 
+            Section {
+                NavigationLink { SoundSettingsView() } label: {
+                    Label("Sounds & music", systemImage: "speaker.wave.2.fill").font(.rounded(16, .heavy))
+                }
+                .glassRow()
+            }
+
             StepSyncSection()
 
             Section {

@@ -9,6 +9,7 @@ struct OnboardingView: View {
     @State private var starting = false
     /// Rolled fresh every time this page opens (each New Game), 1 in 4096 per starter.
     @State private var shinies = GameRules.rollStarterShinies()
+    @State private var resets = 0
 
     var body: some View {
         NavigationStack {
@@ -46,7 +47,28 @@ struct OnboardingView: View {
                             .textInputAutocapitalization(.words)
                     }
 
-                    Text("CHOOSE YOUR PARTNER").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
+                    HStack {
+                        Text("CHOOSE YOUR PARTNER").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
+                        Spacer()
+                        // Shiny hunting: re-roll every starter (1 in 8192 each), like soft-resetting.
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            withAnimation(.spring) {
+                                shinies = GameRules.rollStarterShinies()
+                                resets += 1
+                            }
+                        } label: {
+                            Label(resets == 0 ? "Reset" : "Reset · \(resets)", systemImage: "arrow.clockwise")
+                                .font(.rounded(13, .heavy)).foregroundStyle(.white)
+                                .padding(.horizontal, 12).frame(height: 32)
+                                .background(.white.opacity(0.12), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if !shinies.isEmpty {
+                        Text("✨ A shiny partner appeared! ✨").font(.rounded(14, .black))
+                            .foregroundStyle(Color(hex: 0xFFD54A))
+                    }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 10)], spacing: 10) {
                         ForEach(Dex.starterChoices, id: \.self) { id in
                             let sp = Dex.species(id)

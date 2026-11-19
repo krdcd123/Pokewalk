@@ -46,12 +46,15 @@ struct PokeWalkApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {
                     case .active:
+                        SoundKit.shared.installTapSound()
+                        SoundKit.shared.appBecameActive()
                         Task {
                             await store.tick()
                             store.checkPendingEvolutions()
                             LiveActivityManager.shared.startIfNeeded(with: store)
                         }
                     case .background:
+                        SoundKit.shared.appWentToBackground()
                         TrackStore.shared.flush()
                     default: break
                     }

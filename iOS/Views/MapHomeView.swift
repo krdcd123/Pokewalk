@@ -12,7 +12,8 @@ struct MapHomeView: View {
     @State private var showCard = false
     @AppStorage("showCaughtOnMap") private var showCaught = false
     @State private var infoID: UUID?
-    @State private var panelSession = 0      // new identity each time a panel opens, so menus start at the top
+    @State private var panelSession = 0
+    @ObservedObject private var sound = SoundKit.shared      // new identity each time a panel opens, so menus start at the top
 
     enum HomeSheet: Hashable, Identifiable {
         case menu, encounters, bag, journal, summary(UUID)
@@ -29,6 +30,7 @@ struct MapHomeView: View {
         ZStack {
             ZStack {
                 map
+                    .onAppear { SoundKit.shared.setScene(.map) }
                 VStack(spacing: 10) {
                     topCards
                     if let toast = store.toast { toastView(toast) }
@@ -62,6 +64,23 @@ struct MapHomeView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Show my location")
+                    }
+                    if !sound.routeFiles.isEmpty {
+                        HStack {
+                            Spacer()
+                            Button { withAnimation(.snappy) { sound.routeMusicOn.toggle() } } label: {
+                                Image(systemName: sound.routeMusicOn ? "music.note" : "speaker.slash.fill")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .contentTransition(.symbolEffect(.replace))
+                                    .frame(width: 48, height: 48)
+                                    .contentShape(Circle())
+                                    .glassCircle(tint: sound.routeMusicOn ? Theme.teal : nil)
+                                    .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(sound.routeMusicOn ? "Turn route music off" : "Turn route music on")
+                        }
                     }
                     Spacer()
                     bottomBar
@@ -262,7 +281,7 @@ struct MapHomeView: View {
                 }
             }
             HStack(alignment: .bottom) {
-                Button { withAnimation(.spring(duration: 0.35)) { showCard = true } } label: {
+                Button { SoundKit.shared.play(.trainerCard); withAnimation(.spring(duration: 0.35)) { showCard = true } } label: {
                     // Your trainer's small overworld sprite, walking on the spot.
                     TrainerSprite(style: store.state.trainer.style, pose: .walk, animating: walking.isWalking)
                         .frame(width: 44, height: 46)
@@ -276,7 +295,7 @@ struct MapHomeView: View {
 
                 Spacer()
 
-                Button { withAnimation(.spring(duration: 0.4)) { sheet = .menu } } label: {
+                Button { SoundKit.shared.play(.menuOpen); withAnimation(.spring(duration: 0.4)) { sheet = .menu } } label: {
                     BallOutline(lineWidth: 3.5)
                         .foregroundStyle(.white)
                         .frame(width: 42, height: 42)
