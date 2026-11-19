@@ -17,6 +17,7 @@ struct WalkActivityAttributes: ActivityAttributes {
         var kmToday: Double            // shown as miles
         var spritePNG: Data?
         var iconPNG: Data? = nil       // party/box icon for the Dynamic Island
+        var hop = false                // flips as you walk, so the icon bobs like the PC box icons
     }
     var trainerName: String
 }

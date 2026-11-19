@@ -55,10 +55,24 @@ final class LiveActivityManager {
     func update(with store: GameStore) {
         guard let activity, activity.activityState == .active else { return }
         Task {
-            guard let state = await content(store), state != lastState else { return }
+            guard var state = await content(store) else { return }
+            state.hop = lastState?.hop ?? false
+            guard state != lastState else { return }
             lastState = state
             await activity.update(.init(state: state, staleDate: Date().addingTimeInterval(8 * 3600)))
         }
+    }
+
+    private var lastHop = Date.distantPast
+
+    /// Called on each step while you're walking: bobs the buddy's icon (at most every 1.5 s).
+    func hop() {
+        guard let activity, activity.activityState == .active, var state = lastState,
+              Date().timeIntervalSince(lastHop) >= 1.5 else { return }
+        lastHop = .now
+        state.hop.toggle()
+        lastState = state
+        Task { await activity.update(.init(state: state, staleDate: Date().addingTimeInterval(8 * 3600))) }
     }
 
     func end() {

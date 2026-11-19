@@ -20,10 +20,12 @@ struct PokeWalkLiveActivity: Widget {
                 }
             } compactLeading: {
                 BuddyIcon(data: context.state.iconPNG).frame(width: 30, height: 24)
+                    .offset(y: context.state.hop ? -3 : 0)
             } compactTrailing: {
                 EmptyView()
             } minimal: {
                 BuddyIcon(data: context.state.iconPNG).frame(width: 24, height: 20)
+                    .offset(y: context.state.hop ? -2 : 0)
             }
             .keylineTint(Theme.teal)
         }

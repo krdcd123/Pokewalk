@@ -100,6 +100,7 @@ final class WalkingDetector: ObservableObject {
                     guard let self else { return }
                     if steps > self.lastSteps { self.lastSteps = steps; self.lastStepAt = .now }
                     self.refresh()
+                    if self.isWalking { LiveActivityManager.shared.hop() }
                 }
             }
         }
