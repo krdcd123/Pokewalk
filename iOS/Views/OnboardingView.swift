@@ -7,12 +7,14 @@ struct OnboardingView: View {
     @State private var starter: Int?
     @State private var nickname = ""
     @State private var starting = false
+    /// Rolled fresh every time this page opens (each New Game), 1 in 4096 per starter.
+    @State private var shinies = GameRules.rollStarterShinies()
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("Walk with your Apple Watch to level up your buddy, find a wild Pokémon (Gen 1–3) about every 500 steps, and earn a ball every 100.")
+                    Text("Walk with your Apple Watch to level up your buddy, find a wild Pokémon (Gen 1–3) about every 500 steps, and earn a ball every 1,000.")
                         .font(.rounded(15)).foregroundStyle(Theme.inkSoft)
 
                     Text("ARE YOU…").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
@@ -48,10 +50,18 @@ struct OnboardingView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 10)], spacing: 10) {
                         ForEach(Dex.starterChoices, id: \.self) { id in
                             let sp = Dex.species(id)
+                            let shiny = shinies.contains(id)
                             Button { withAnimation(.spring) { starter = id } } label: {
                                 VStack(spacing: 4) {
-                                    AnimatedSprite(speciesID: id).frame(width: 72, height: 72)
-                                    Text(sp.name).font(.rounded(14, .heavy))
+                                    AnimatedSprite(speciesID: id, shiny: shiny).frame(width: 72, height: 72)
+                                        .overlay(alignment: .topTrailing) {
+                                            if shiny {
+                                                Image(systemName: "sparkles").font(.system(size: 16, weight: .black))
+                                                    .foregroundStyle(Color(hex: 0xFFD54A))
+                                                    .symbolEffect(.pulse, options: .repeating)
+                                            }
+                                        }
+                                    Text(sp.name + (shiny ? " ✨" : "")).font(.rounded(14, .heavy))
                                     TypeChip(type: sp.primaryType)
                                 }
                                 .frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -73,7 +83,8 @@ struct OnboardingView: View {
                             let name = trainerName.isEmpty ? TrainerStyle.style(look).name : trainerName
                             Task {
                                 await store.newGame(trainerName: name, appearance: look ?? TrainerStyle.all[4].id,
-                                                    starter: starter, nickname: nickname.isEmpty ? nil : nickname)
+                                                    starter: starter, nickname: nickname.isEmpty ? nil : nickname,
+                                                    shiny: shinies.contains(starter))
                             }
                         }
                         .disabled(look == nil)
