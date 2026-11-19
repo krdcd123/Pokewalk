@@ -46,8 +46,8 @@ enum GameRules {
         return Int.random(in: 0..<8) < sp.genderRate ? .female : .male
     }
 
-    /// Starters on the "Choose your partner" page are each rolled at 1 in 4096 (the main-series odds).
-    static let starterShinyOdds = 4_096
+    /// Starters on the "Choose your partner" page are each rolled at 1 in 8192 (the Gen 3 odds).
+    static let starterShinyOdds = 8_192
     static func rollStarterShinies() -> Set<Int> {
         Set(Dex.starterChoices.filter { _ in Int.random(in: 0..<starterShinyOdds) == 0 })
     }
