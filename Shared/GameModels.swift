@@ -259,6 +259,7 @@ struct GameState: Codable {
     var boxes: [PCBox] = (1...8).map { PCBox(name: "Box \($0)", wallpaper: ($0 - 1) % 8) }
     var buddyID: UUID?
     var bag: [String: Int] = [:]
+    var money = 0                    // Pokédollars from selling valuables
     var balls: [BallKind: Int] = [.poke: 10]
     var lifetimeSteps = 0
     var counters = StepCounters()
@@ -375,6 +376,7 @@ extension GameState {
         boxes = c.value(.boxes, d.boxes)
         buddyID = c.value(.buddyID, nil)
         bag = c.value(.bag, [:])
+        money = c.value(.money, 0)
         balls = c.value(.balls, d.balls)
         lifetimeSteps = c.value(.lifetimeSteps, 0)
         counters = c.value(.counters, d.counters)
@@ -401,4 +403,28 @@ extension StepCounters {
         pickupProgress = c.value(.pickupProgress, d.pickupProgress)
         nextPickupAt = c.value(.nextPickupAt, d.nextPickupAt)
     }
+}
+
+
+/// Walking finds that aren't evolution items: friendship berries, bitter herbs, and valuables to sell.
+enum ItemCatalog {
+    /// Gen 3 friendship berries (the EV-lowering berries — here they just make your Pokémon like you more).
+    static let berries = ["pomeg-berry", "kelpsy-berry", "qualot-berry", "hondew-berry", "grepa-berry", "tamato-berry"]
+    /// Bitter medicine: Pokémon dislike it, so it lowers friendship.
+    static let herbs: [String: Int] = ["energy-powder": 5, "heal-powder": 5, "energy-root": 10, "revival-herb": 15]
+    /// Valuables: no use on Pokémon, sell them for Pokédollars.
+    static let sellPrice: [String: Int] = [
+        "shoal-salt": 20, "shoal-shell": 20, "tiny-mushroom": 50, "heart-scale": 50, "pearl": 100,
+        "stardust": 150, "big-mushroom": 250, "big-pearl": 400, "star-piece": 500, "nugget": 1_000,
+    ]
+    /// Shop prices — dearer than the games, since balls also come free every 100 steps.
+    static let shop: [(ball: BallKind, price: Int)] = [
+        (.poke, 400), (.great, 1_200), (.ultra, 2_400),
+        (.net, 2_000), (.dive, 2_000), (.nest, 2_000), (.repeatBall, 2_000), (.timer, 2_000), (.luxury, 2_000),
+    ]
+
+    static func isBerry(_ k: String) -> Bool { berries.contains(k) }
+
+    /// Gen 3: bigger boost the less a Pokémon likes you.
+    static func berryBoost(_ friendship: Int) -> Int { friendship < 100 ? 10 : friendship < 200 ? 5 : 2 }
 }

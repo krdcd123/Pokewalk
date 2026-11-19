@@ -8,7 +8,7 @@ struct MainMenuView: View {
     var close: () -> Void = {}
 
     enum Dest: Hashable {
-        case pc, dex, bag, journal, trainer, settings, summary(UUID)
+        case pc, dex, bag, shop, journal, trainer, settings, summary(UUID)
     }
 
     private struct Item: Identifiable { let dest: Dest; let title: String; let symbol: String; var id: String { title } }
@@ -16,6 +16,7 @@ struct MainMenuView: View {
         .init(dest: .pc, title: "Pokémon", symbol: "square.grid.3x3.fill"),
         .init(dest: .dex, title: "Pokédex", symbol: "book.closed.fill"),
         .init(dest: .bag, title: "Bag", symbol: "bag.fill"),
+        .init(dest: .shop, title: "Poké Mart", symbol: "cart.fill"),
         .init(dest: .journal, title: "Journal", symbol: "map.fill"),
         .init(dest: .trainer, title: "Trainer", symbol: "person.text.rectangle.fill"),
         .init(dest: .settings, title: "Settings", symbol: "gearshape.fill"),
@@ -54,6 +55,7 @@ struct MainMenuView: View {
                 case .pc: PCView()
                 case .dex: PokedexView()
                 case .bag: BagView()
+                case .shop: ShopView()
                 case .journal: JournalView()
                 case .trainer: TrainerCardView()
                 case .settings: SettingsView()
@@ -273,6 +275,7 @@ struct TrainerCardView: View {
                 VStack(spacing: 10) {
                     row("NAME", t.name.uppercased())
                     row("POKéDEX", "\(store.state.dexCaught.count)")
+                    row("MONEY", "₽\(store.state.money.formatted())")
                     row("STEPS", max(totalSteps, store.state.lifetimeSteps).formatted())
                     row("DISTANCE", Distance.text(totalMeters))
                     row("STARTED", t.startedOn.formatted(.dateTime.day().month(.abbreviated).year(.twoDigits)))
@@ -606,9 +609,24 @@ private struct StepSyncSection: View {
 }
 
 
+extension BagItemRow {
+    func sellButton(_ title: String, count: Int) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            let earned = store.sell(key, count: count)
+            if earned > 0 { store.toast = "Sold for ₽\(earned.formatted()). You have ₽\(store.state.money.formatted())." }
+        } label: {
+            Text(title).font(.rounded(14, .heavy)).foregroundStyle(.white)
+                .padding(.horizontal, 14).frame(height: 36)
+                .background(Theme.teal.opacity(0.75), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 /// A Bag item: tap to see what it does and pick a party Pokémon to use it on (ABLE / NOT ABLE).
 private struct BagItemRow: View {
-    @EnvironmentObject private var store: GameStore
+    @EnvironmentObject var store: GameStore
     let key: String
     let expanded: Bool
     var toggle: () -> Void
@@ -632,7 +650,13 @@ private struct BagItemRow: View {
             }
             .buttonStyle(.plain)
 
-            if expanded {
+            if expanded, let price = ItemCatalog.sellPrice[key] {
+                let have = store.state.bag[key] ?? 0
+                HStack(spacing: 10) {
+                    sellButton("Sell 1 · ₽\(price)", count: 1)
+                    if have > 1 { sellButton("Sell all · ₽\((price * have).formatted())", count: have) }
+                }
+            } else if expanded {
                 Text("Use on…").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
                 ForEach(store.state.party) { mon in
                     let able = GameRules.canUse(key, on: mon)
@@ -645,6 +669,8 @@ private struct BagItemRow: View {
                             let now = store.state.mon(mon.id)?.level ?? before
                             store.toast = now > before ? "\(mon.name) grew to Lv \(now)!" : "\(mon.name) gained Exp!"
                         case .evolves: break        // the evolution screen takes over
+                        case .friendship(let up):
+                            store.toast = up ? "\(mon.name) became more friendly!" : "\(mon.name) looks bitter…"
                         case .noEffect: store.toast = "It won't have any effect."
                         }
                     } label: {
@@ -666,5 +692,78 @@ private struct BagItemRow: View {
                 }
             }
         }
+    }
+}
+
+
+// MARK: - Poké Mart
+
+/// Spend Pokédollars from selling valuables on balls (pricier than the games — balls also come free every 100 steps).
+struct ShopView: View {
+    @EnvironmentObject private var store: GameStore
+    @State private var amounts: [BallKind: Int] = [:]
+
+    var body: some View {
+        List {
+            Section {
+                HStack {
+                    Image(systemName: "yensign.circle.fill").font(.system(size: 28)).foregroundStyle(Theme.teal)
+                    VStack(alignment: .leading) {
+                        Text("Money").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
+                        Text("₽\(store.state.money.formatted())").font(.rounded(26, .black))
+                            .contentTransition(.numericText(value: Double(store.state.money)))
+                    }
+                    Spacer()
+                }
+                .glassRow()
+            } footer: {
+                Text("Earn money by selling valuables (Pearls, Stardust, Nuggets…) from your Bag. Buy 10 Poké Balls at once for a free Premier Ball.")
+            }
+
+            Section {
+                ForEach(ItemCatalog.shop, id: \.ball) { entry in
+                    let n = amounts[entry.ball, default: 1]
+                    let total = entry.price * n
+                    let afford = store.state.money >= total
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 12) {
+                            ItemSprite(key: entry.ball.itemKey).frame(width: 32, height: 32)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.ball.name).font(.rounded(16, .heavy))
+                                Text(entry.ball.effect).font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("₽\(entry.price.formatted())").font(.rounded(15, .heavy))
+                                Text("have \(store.state.balls[entry.ball, default: 0])").font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft)
+                            }
+                        }
+                        HStack(spacing: 10) {
+                            Stepper("×\(n)", value: Binding(get: { amounts[entry.ball, default: 1] },
+                                                            set: { amounts[entry.ball] = $0 }), in: 1...99)
+                                .font(.rounded(15, .heavy))
+                            Button {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                if store.buy(entry.ball, count: n) {
+                                    let bonus = entry.ball == .poke && n >= 10 ? " + \(n / 10) Premier Ball\(n >= 20 ? "s" : "")" : ""
+                                    store.toast = "Bought \(n) \(entry.ball.name)\(n > 1 ? "s" : "")\(bonus)!"
+                                    amounts[entry.ball] = 1
+                                }
+                            } label: {
+                                Text("Buy · ₽\(total.formatted())").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                                    .padding(.horizontal, 14).frame(height: 36)
+                                    .background(afford ? Theme.teal.opacity(0.8) : .white.opacity(0.1), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(!afford)
+                        }
+                    }
+                    .glassRow()
+                }
+            } header: { Text("Balls") }
+        }
+        .scrollContentBackground(.hidden)
+        .navigationTitle("Poké Mart")
+        .glassScreen()
     }
 }

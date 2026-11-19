@@ -132,6 +132,7 @@ struct SummaryView: View {
                     case .noEffect: message = "It won't have any effect."
                     case .leveled(let l): message = "\(mon.name) is now Lv \(l)!"
                     case .evolves: break
+                    case .friendship(let up): message = up ? "\(mon.name) became more friendly!" : "\(mon.name) looks bitter…"
                     }
                 }
                 .presentationDetents([.medium, .large])

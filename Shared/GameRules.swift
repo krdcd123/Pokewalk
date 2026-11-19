@@ -248,19 +248,46 @@ enum GameRules {
     /// Items found while walking: evolution stones, Rare Candies, Link Cables and rare balls.
     static func rollItem() -> String {
         var table: [(String, Double)] = [
-            ("rare-candy", 16),
-            ("fire-stone", 8), ("water-stone", 8), ("thunder-stone", 8), ("leaf-stone", 8), ("moon-stone", 7), ("sun-stone", 4),
-            ("linking-cord", 7),                                   // Link Cable: trade evolutions
+            ("rare-candy", 8),
+            ("fire-stone", 4), ("water-stone", 4), ("thunder-stone", 4), ("leaf-stone", 4), ("moon-stone", 3.5), ("sun-stone", 2),
+            ("linking-cord", 0.8),                                 // Link Cable: trade evolutions — rare
         ]
+        // Friendship berries (common) and bitter herbs
+        for k in ItemCatalog.berries { table.append((k, 6)) }
+        for k in ItemCatalog.herbs.keys { table.append((k, 2.5)) }
+        // Valuables to sell — the cheaper, the more common
+        for (k, price) in ItemCatalog.sellPrice { table.append((k, price <= 50 ? 6 : price <= 250 ? 3.5 : price <= 500 ? 1.5 : 0.6)) }
         // Rare balls (Poké/Great/Ultra come every 100 steps instead)
         for b in BallKind.allCases where !b.isStepBall {
-            table.append((b.itemKey, b == .master ? 0.15 : 2.5))
+            table.append((b.itemKey, b == .master ? 0.08 : 2.5))
         }
-        // Held items some trade evolutions need (Onix → Steelix, Seadra → Kingdra…), kept rare
+        // Held items some trade evolutions need (Onix → Steelix, Seadra → Kingdra…) — very rare
         for k in ["kings-rock", "metal-coat", "dragon-scale", "up-grade", "deep-sea-tooth", "deep-sea-scale", "prism-scale"] {
-            table.append((k, 0.8))
+            table.append((k, 0.12))
         }
         return weightedPick(table)
+    }
+
+    /// Sells valuables. Returns the Pokédollars earned.
+    @discardableResult
+    static func sell(_ item: String, count: Int, in s: inout GameState) -> Int {
+        guard let price = ItemCatalog.sellPrice[item] else { return 0 }
+        let n = min(count, s.bag[item, default: 0])
+        guard n > 0 else { return 0 }
+        s.bag[item, default: 0] -= n
+        if s.bag[item] == 0 { s.bag[item] = nil }
+        s.money += n * price
+        return n * price
+    }
+
+    /// Buys balls. Like the games, every 10 Poké Balls at once comes with a free Premier Ball.
+    static func buy(_ ball: BallKind, count: Int, in s: inout GameState) -> Bool {
+        guard let price = ItemCatalog.shop.first(where: { $0.ball == ball })?.price, count > 0,
+              s.money >= price * count else { return false }
+        s.money -= price * count
+        s.balls[ball, default: 0] += count
+        if ball == .poke, count >= 10 { s.balls[.premier, default: 0] += count / 10 }
+        return true
     }
 
     /// Takes everything your Pokémon is holding and puts it in the Bag.
@@ -306,6 +333,9 @@ enum GameRules {
     /// Whether using `item` on `mon` would do anything (the games' "ABLE / NOT ABLE").
     static func canUse(_ item: String, on mon: OwnedPokemon, at date: Date = .now) -> Bool {
         if item == "rare-candy" || ExpCandy.exp(item) != nil { return mon.level < GrowthRate.maxLevel }
+        if ItemCatalog.isBerry(item) { return mon.friendship < 255 }
+        if ItemCatalog.herbs[item] != nil { return mon.friendship > 0 }
+        if ItemCatalog.sellPrice[item] != nil { return false }
         return itemEvolution(for: mon, item: item, at: date) != nil
     }
 
@@ -313,6 +343,9 @@ enum GameRules {
     static func itemDescription(_ item: String) -> String {
         if item == "rare-candy" { return "Raises a Pokémon by one level." }
         if let exp = ExpCandy.exp(item) { return "Gives a Pokémon \(exp.formatted()) Exp." }
+        if ItemCatalog.isBerry(item) { return "Makes a Pokémon more friendly (more so if it doesn't like you much yet)." }
+        if let drop = ItemCatalog.herbs[item] { return "Bitter medicine — lowers friendship by \(drop)." }
+        if let price = ItemCatalog.sellPrice[item] { return "Can't be used on Pokémon. Sells for ₽\(price)." }
         var users: [String] = []
         for sp in Dex.all {
             for rule in sp.evolutions where rule.kind == .item && rule.item == item {
@@ -364,7 +397,7 @@ enum GameRules {
 
     // MARK: Items
 
-    enum ItemOutcome: Equatable { case leveled(Int), evolves(into: Int), noEffect }
+    enum ItemOutcome: Equatable { case leveled(Int), evolves(into: Int), friendship(up: Bool), noEffect }
 
     static func use(_ item: String, on id: UUID, in s: inout GameState, at date: Date = .now) -> ItemOutcome {
         guard let i = s.index(of: id), s.bag[item, default: 0] > 0 else { return .noEffect }
@@ -377,6 +410,16 @@ enum GameRules {
             mon.exp = growth.exp(forLevel: mon.level + 1)
             mon.friendship = min(255, mon.friendship + 3)
             outcome = .leveled(mon.level)
+        case _ where ItemCatalog.isBerry(item):
+            guard mon.friendship < 255 else { return .noEffect }
+            mon.friendship = min(255, mon.friendship + ItemCatalog.berryBoost(mon.friendship))
+            outcome = .friendship(up: true)
+        case _ where ItemCatalog.herbs[item] != nil:
+            guard mon.friendship > 0 else { return .noEffect }
+            mon.friendship = max(0, mon.friendship - ItemCatalog.herbs[item]!)
+            outcome = .friendship(up: false)
+        case _ where ItemCatalog.sellPrice[item] != nil:
+            return .noEffect
         case _ where ExpCandy.exp(item) != nil:
             guard mon.level < GrowthRate.maxLevel else { return .noEffect }
             mon.exp = min(mon.exp + ExpCandy.exp(item)!, growth.maxExp)

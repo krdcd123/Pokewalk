@@ -343,6 +343,19 @@ final class GameStore: ObservableObject {
     func move(from a: PCSlot, to b: PCSlot) { mutate { GameRules.move(from: a, to: b, in: &$0) } }
     func release(_ id: UUID) { mutate { GameRules.release(id, in: &$0) } }
 
+    @discardableResult
+    func sell(_ item: String, count: Int) -> Int {
+        var earned = 0
+        mutate { earned = GameRules.sell(item, count: count, in: &$0) }
+        return earned
+    }
+
+    func buy(_ ball: BallKind, count: Int) -> Bool {
+        var ok = false
+        mutate { ok = GameRules.buy(ball, count: count, in: &$0) }
+        return ok
+    }
+
     /// Moves a Pokémon's held Exp. Candies into the Bag.
     @discardableResult
     func takeHeldItems(_ id: UUID) -> [String] {
@@ -398,7 +411,7 @@ final class GameStore: ObservableObject {
             if let mon = state.mon(id), let into = GameRules.pendingEvolution(for: mon) {
                 evolutionCandidate = EvolutionCandidate(pokemonID: id, into: into)
             }
-        case .noEffect: break
+        case .friendship, .noEffect: break
         }
         return outcome
     }
