@@ -9,7 +9,7 @@ final class LiveActivityManager {
     private var activity: Activity<WalkActivityAttributes>?
     private var startedAt: Date?
     private var lastState: WalkActivityAttributes.ContentState?
-    private var spriteCache: (key: String, data: Data?)?
+    private var spriteCache: (key: String, data: Data?, icon: Data?)?
 
     var enabled: Bool {
         get { UserDefaults.standard.object(forKey: "liveActivityEnabled") as? Bool ?? true }
@@ -23,13 +23,14 @@ final class LiveActivityManager {
         guard let buddy = store.state.buddy else { return nil }
         let key = "\(buddy.speciesID)-\(buddy.isShiny)"
         if spriteCache?.key != key {
-            spriteCache = (key, await SpriteStore.shared.liveActivityImage(speciesID: buddy.speciesID, shiny: buddy.isShiny))
+            spriteCache = (key, await SpriteStore.shared.liveActivityImage(speciesID: buddy.speciesID, shiny: buddy.isShiny),
+                           await SpriteStore.shared.liveActivityIcon(speciesID: buddy.speciesID))
         }
         return .init(buddyName: buddy.name, speciesID: buddy.speciesID, level: buddy.level,
                      progress: buddy.levelProgress, expToNext: buddy.expToNext, stepsToday: store.stepsToday,
                      stepsToEncounter: store.state.counters.stepsToEncounter,
                      pendingEncounters: store.state.pending.count, kmToday: store.metersToday / 1000,
-                     spritePNG: spriteCache?.data)
+                     spritePNG: spriteCache?.data, iconPNG: spriteCache?.icon)
     }
 
     /// Activities can only be started while the app is in the foreground.

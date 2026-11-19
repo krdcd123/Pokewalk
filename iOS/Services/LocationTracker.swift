@@ -190,7 +190,9 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         guard !isRunning else { return }
         requestPermission()
         isRunning = true
-        backgroundSession = CLBackgroundActivitySession()
+        // The background session is what puts the blue location arrow in the status bar / Dynamic Island.
+        // With "Always" permission iOS keeps delivering walk updates without it, so skip it then.
+        if manager.authorizationStatus != .authorizedAlways { backgroundSession = CLBackgroundActivitySession() }
         updatesTask = Task { [weak self] in
             do {
                 for try await update in CLLocationUpdate.liveUpdates(.fitness) {

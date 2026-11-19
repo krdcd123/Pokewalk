@@ -57,3 +57,51 @@ final class StepEngine {
 
     func stopLiveUpdates() { pedometer.stopUpdates() }
 }
+
+
+/// Knows whether you're walking right now, so the trainer only walks on the map when you do.
+@MainActor
+final class WalkingDetector: ObservableObject {
+    static let shared = WalkingDetector()
+    @Published private(set) var isWalking = false
+
+    private let motion = CMMotionActivityManager()
+    private let pedometer = CMPedometer()
+    private var motionSaysMoving = false
+    private var lastStepAt = Date.distantPast
+    private var lastSteps = 0
+    private var timer: Timer?
+
+    private init() {
+        if CMMotionActivityManager.isActivityAvailable() {
+            motion.startActivityUpdates(to: .main) { [weak self] a in
+                guard let self, let a else { return }
+                Task { @MainActor in
+                    self.motionSaysMoving = (a.walking || a.running) && a.confidence != .low
+                    if a.stationary && a.confidence != .low { self.motionSaysMoving = false; self.lastStepAt = .distantPast }
+                    self.refresh()
+                }
+            }
+        }
+        if CMPedometer.isStepCountingAvailable() {
+            pedometer.startUpdates(from: .now) { [weak self] data, _ in
+                guard let steps = data?.numberOfSteps.intValue else { return }
+                Task { @MainActor in
+                    guard let self else { return }
+                    if steps > self.lastSteps { self.lastSteps = steps; self.lastStepAt = .now }
+                    self.refresh()
+                }
+            }
+        }
+        timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
+        }
+    }
+
+    private func refresh() {
+        let recentSteps = Date().timeIntervalSince(lastStepAt) < 4
+        let speed = LocationTracker.shared.lastLocation.map { $0.speed > 0.6 && Date().timeIntervalSince($0.timestamp) < 6 } ?? false
+        let now = motionSaysMoving || recentSteps || speed
+        if now != isWalking { isWalking = now }
+    }
+}

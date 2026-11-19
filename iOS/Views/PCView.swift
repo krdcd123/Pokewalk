@@ -27,7 +27,7 @@ struct PCView: View {
                     boxHeader
                     boxGrid
                     Text(moving ? (held == nil ? "Tap a Pokémon to pick it up." : "Tap a slot to place or swap it.")
-                                : "Tap a Pokémon for its summary. Use Move to rearrange.")
+                                : "Tap a Pokémon for its summary. Hold one in your party to make it your buddy.")
                         .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                 }
             }
@@ -35,7 +35,7 @@ struct PCView: View {
         }
         .navigationTitle("PC")
         .glassScreen()
-        .searchable(text: $search, prompt: "Search names, species, places")
+        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search names, species, places")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button(moving ? "Done" : "Move") { moving.toggle(); held = nil }
@@ -149,6 +149,18 @@ struct PCView: View {
             .scaleEffect(isHeld ? 1.08 : 1)
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            if let mon, case .party = slot, !moving {
+                if mon.id == store.state.buddyID {
+                    Label("\(mon.name) is your buddy", systemImage: "star.fill")
+                } else {
+                    Button("Make lead buddy", systemImage: "figure.walk") {
+                        Task { await store.setBuddy(mon.id) }
+                    }
+                }
+                Button("Summary", systemImage: "info.circle") { open = mon.id }
+            }
+        }
         .accessibilityLabel(mon.map { "\($0.name), level \($0.level)" } ?? "Empty slot")
     }
 

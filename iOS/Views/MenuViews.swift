@@ -360,7 +360,7 @@ struct SettingsView: View {
                     .glassRow()
                 Toggle("Encounter notifications", isOn: binding(\.notifyEncounters)).glassRow()
             } header: { Text("Walking") } footer: {
-                Text("Adventure mode records where you walk all day and pauses automatically when you stop. iOS ends Live Activities after 8 hours; PokéWalk starts a new one each time you open it.")
+                Text("Adventure mode records where you walk all day and pauses automatically when you stop. iOS ends Live Activities after 8 hours; PokéWalk starts a new one each time you open it. Set Location to \"Always\" in iOS Settings to get rid of the blue location arrow.")
             }
 
             Section {

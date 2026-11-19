@@ -19,7 +19,11 @@ struct AppBackground: View {
 extension View {
     /// Full-screen background + dark appearance + hidden list/form backgrounds.
     /// `transparent`: no background of its own, for sheets that float over the blurred map.
-    @ViewBuilder func glassScreen(transparent: Bool = false) -> some View {
+    func glassScreen(transparent: Bool = false) -> some View {
+        modifier(GlassScreen(transparent: transparent))
+    }
+
+    @ViewBuilder fileprivate func glassScreenBody(transparent: Bool) -> some View {
         if transparent {
             self.scrollContentBackground(.hidden)
                 .containerBackground(.clear, for: .navigation)   // NavigationStack otherwise paints solid black
@@ -33,6 +37,9 @@ extension View {
                 .toolbarBackground(.hidden, for: .navigationBar)
         }
     }
+
+    /// Marks content shown in a panel over the blurred map, so every screen pushed inside it stays see-through.
+    func overMap() -> some View { environment(\.overMap, true) }
 
     /// Sheets over the map: see-through, so the blurred map shows behind like the trainer card.
     func blurredMapSheet() -> some View {
@@ -128,5 +135,22 @@ struct BallOutline: View {
             .position(x: geo.size.width / 2, y: geo.size.height / 2)
         }
         .aspectRatio(1, contentMode: .fit)
+    }
+}
+
+
+private struct OverMapKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var overMap: Bool {
+        get { self[OverMapKey.self] }
+        set { self[OverMapKey.self] = newValue }
+    }
+}
+
+private struct GlassScreen: ViewModifier {
+    let transparent: Bool
+    @Environment(\.overMap) private var overMap
+    func body(content: Content) -> some View {
+        content.glassScreenBody(transparent: transparent || overMap)
     }
 }

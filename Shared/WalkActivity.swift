@@ -16,6 +16,7 @@ struct WalkActivityAttributes: ActivityAttributes {
         var pendingEncounters: Int
         var kmToday: Double            // shown as miles
         var spritePNG: Data?
+        var iconPNG: Data? = nil       // party/box icon for the Dynamic Island
     }
     var trainerName: String
 }

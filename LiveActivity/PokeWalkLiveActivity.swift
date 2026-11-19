@@ -3,24 +3,27 @@ import WidgetKit
 import SwiftUI
 import UIKit
 
-/// Lock Screen card: buddy sprite, name, level and Exp. Nothing in the Dynamic Island.
+/// Lock Screen card: buddy sprite, name, level and Exp. Dynamic Island: just the buddy's box icon.
 struct PokeWalkLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: WalkActivityAttributes.self) { context in
             LockScreenView(state: context.state)
                 .padding(.horizontal, 16).padding(.vertical, 12)
-                .activityBackgroundTint(Color.black.opacity(0.35))
+                .activityBackgroundTint(Color(hex: 0x4F8A8C).opacity(0.55))
                 .activitySystemActionForegroundColor(.white)
-        } dynamicIsland: { _ in
+        } dynamicIsland: { context in
             DynamicIsland {
-                DynamicIslandExpandedRegion(.center) { EmptyView() }
+                DynamicIslandExpandedRegion(.center) {
+                    LockScreenView(state: context.state)
+                }
             } compactLeading: {
-                EmptyView()
+                BuddyIcon(data: context.state.iconPNG ?? context.state.spritePNG).frame(width: 26, height: 22)
             } compactTrailing: {
                 EmptyView()
             } minimal: {
-                EmptyView()
+                BuddyIcon(data: context.state.iconPNG ?? context.state.spritePNG).frame(width: 22, height: 20)
             }
+            .keylineTint(Theme.teal)
         }
         .supplementalActivityFamilies([.small])   // Apple Watch Smart Stack
     }
@@ -33,6 +36,17 @@ private struct BuddyImage: View {
             Image(uiImage: ui).resizable().interpolation(.none).scaledToFit()
         } else {
             Image(systemName: "figure.walk").resizable().scaledToFit().padding(6)
+        }
+    }
+}
+
+private struct BuddyIcon: View {
+    let data: Data?
+    var body: some View {
+        if let data, let ui = UIImage(data: data) {
+            Image(uiImage: ui).resizable().interpolation(.none).scaledToFit()
+        } else {
+            Image(systemName: "pawprint.fill").resizable().scaledToFit().foregroundStyle(Theme.teal)
         }
     }
 }
@@ -53,16 +67,20 @@ private struct LockScreenView: View {
         } else {
             HStack(spacing: 14) {
                 BuddyImage(data: state.spritePNG).frame(width: 64, height: 64)
+                    .id(state.level)
+                    .transition(.push(from: .bottom))
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(state.buddyName).font(.system(size: 19, weight: .black, design: .rounded))
                         Text("Lv \(state.level)").font(.system(size: 16, weight: .heavy, design: .rounded))
+                            .contentTransition(.numericText(value: Double(state.level)))
                             .foregroundStyle(Theme.teal)
                         Spacer()
                     }
                     ExpBar(progress: state.progress, tint: Theme.teal, height: 8)
                     HStack {
                         Text("\(state.expToNext.formatted()) Exp to next")
+                            .contentTransition(.numericText(value: Double(state.expToNext)))
                         Spacer()
                         Text(state.pendingEncounters > 0 ? "\(state.pendingEncounters) wild waiting"
                                                          : "\(state.stepsToEncounter) steps to encounter")

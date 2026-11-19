@@ -399,6 +399,11 @@ enum GameRules {
             }
         }
         s.buddyID = id
+        // The buddy always leads the party.
+        if let i = s.partyIDs.firstIndex(of: id), i != 0 {
+            s.partyIDs.remove(at: i)
+            s.partyIDs.insert(id, at: 0)
+        }
     }
 }
 

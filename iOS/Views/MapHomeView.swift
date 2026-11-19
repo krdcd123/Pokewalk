@@ -5,6 +5,7 @@ struct MapHomeView: View {
     @EnvironmentObject private var store: GameStore
     @EnvironmentObject private var tracker: LocationTracker
     @EnvironmentObject private var tracks: TrackStore
+    @StateObject private var walking = WalkingDetector.shared
 
     @State private var camera: MapCameraPosition = .userLocation(fallback: .automatic)
     @State private var sheet: HomeSheet?
@@ -203,7 +204,7 @@ struct MapHomeView: View {
             HStack(alignment: .bottom) {
                 Button { withAnimation(.spring(duration: 0.35)) { showCard = true } } label: {
                     // Your trainer's small overworld sprite, walking on the spot.
-                    TrainerSprite(style: store.state.trainer.style, pose: .walk)
+                    TrainerSprite(style: store.state.trainer.style, pose: .walk, animating: walking.isWalking)
                         .frame(width: 44, height: 46)
                         .frame(width: 64, height: 64, alignment: .center)
                         .contentShape(Circle())
@@ -366,6 +367,7 @@ struct MapPanel<Content: View>: View {
                         withAnimation(.spring(duration: 0.3)) { drag = 0 }
                     })
             content
+                .overMap()
                 // Close button at the bottom middle, within thumb reach; content scrolls clear of it.
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     Button(action: close) {

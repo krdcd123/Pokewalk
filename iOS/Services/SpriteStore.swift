@@ -126,6 +126,17 @@ final class SpriteStore {
     }
 
     /// Small PNG of the buddy for the Live Activity (it has to fit in ActivityKit's ~4 KB payload).
+    /// Tiny party/box icon for the Dynamic Island.
+    func liveActivityIcon(speciesID: Int) async -> Data? {
+        guard let u = await url(.icons, speciesID: speciesID),
+              let img = GIFCache.shared.image(at: u), let frame = img.images?.first ?? Optional(img),
+              let cg = frame.cgImage?.croppedToContent() else { return nil }
+        for side in [32, 26, 20] {
+            if let data = cg.scaledPNG(maxSide: side), data.count <= 520 { return data }
+        }
+        return nil
+    }
+
     func liveActivityImage(speciesID: Int, shiny: Bool) async -> Data? {
         var candidates: [URL] = []
         if let u = await url(shiny ? .shiny : .front, speciesID: speciesID) { candidates.append(u) }
@@ -134,7 +145,7 @@ final class SpriteStore {
             guard let img = GIFCache.shared.image(at: u), let frame = img.images?.first ?? Optional(img),
                   let cg = frame.cgImage?.croppedToContent() else { continue }
             for side in [64, 48, 40] {
-                if let data = cg.scaledPNG(maxSide: side), data.count <= 2_400 { return data }
+                if let data = cg.scaledPNG(maxSide: side), data.count <= 2_000 { return data }   // ActivityKit caps the whole state at 4 KB
             }
         }
         return nil
@@ -342,11 +353,15 @@ extension CGImage {
 struct TrainerSprite: View {
     let style: TrainerStyle
     var pose: SpriteStore.TrainerPose = .walk
+    /// false = standing still (first frame of the walk cycle).
+    var animating: Bool = true
     @State private var image: UIImage?
 
     var body: some View {
         Group {
-            if let image { PixelImageView(image: image) } else { ProgressView() }
+            if let image {
+                PixelImageView(image: animating ? image : (image.images?.first ?? image))
+            } else { ProgressView() }
         }
         .spriteHitArea()
         .task(id: "\(style.id)-\(pose.rawValue)") {
