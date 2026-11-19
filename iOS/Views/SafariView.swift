@@ -16,6 +16,7 @@ struct SafariView: View {
     @State private var spriteHidden = false
     @State private var bannerText: String?
     @State private var caught: OwnedPokemon?
+    @State private var throwing: String?        // shown instead of the result while the ball is shaking
 
     init(wild: PendingEncounter) { _safari = State(initialValue: SafariEncounter(wild: wild)) }
 
@@ -141,7 +142,7 @@ struct SafariView: View {
 
     private var statusCard: some View {
         HStack {
-            Text(safari.log.last ?? "")
+            Text(throwing ?? safari.log.last ?? "")
             Spacer(minLength: 8)
             Text(safari.baitTurns > 0 ? "Eating · calmer" : "\(Int((safari.catchChance(ball: ball) * 100).rounded()))% catch")
                 .foregroundStyle(safari.baitTurns > 0 ? Theme.tealDark : Theme.inkSoft)
@@ -196,6 +197,7 @@ struct SafariView: View {
     private func throwBall(distance: CGFloat) {
         guard !busy, safari.phase == .active, store.useBall(ball) else { return }
         busy = true
+        throwing = "You threw a \(ball.name)!"
         Task { @MainActor in
             // Ball arcs up to the Pokémon
             withAnimation(.easeOut(duration: 0.45)) { ballOffset = distance; ballScale = 0.55 }
@@ -217,11 +219,15 @@ struct SafariView: View {
             }
 
             if result.caught {
-                await show("Gotcha!", duration: 0.9)
+                // Third shake done — a beat of silence, then the click.
+                try? await Task.sleep(for: .milliseconds(250))
+                throwing = nil
+                await show("Gotcha!\n\(wild.species.name) was caught!", duration: 1.4)
                 caught = store.finish(safari)
                 return
             }
             withAnimation(.spring(duration: 0.3)) { spriteHidden = false }
+            throwing = nil
             await show(safari.log.last ?? "It broke free!", duration: 0.8)
             if result.fled { endFled(); return }
             withAnimation(.spring(duration: 0.4)) { ballOffset = 0; ballScale = 1; wobble = 0 }

@@ -10,11 +10,18 @@ struct MapHomeView: View {
     @State private var camera: MapCameraPosition = .userLocation(fallback: .automatic)
     @State private var sheet: HomeSheet?
     @State private var showCard = false
+    @AppStorage("showCaughtOnMap") private var showCaught = false
+    @State private var infoID: UUID?
 
-    enum HomeSheet: String, Identifiable { case menu, encounters, bag, journal; var id: String { rawValue } }
+    enum HomeSheet: Hashable, Identifiable {
+        case menu, encounters, bag, journal, summary(UUID)
+        var id: Self { self }
+    }
 
-    private var caughtToday: [OwnedPokemon] {
-        store.state.pokemon.filter { Calendar.current.isDateInToday($0.metDate) && $0.metLocation != nil && $0.metNote == nil }
+    /// Every Pokémon you caught on a walk, pinned where you caught it (only while the eye is on).
+    private var caughtOnMap: [OwnedPokemon] {
+        guard showCaught else { return [] }
+        return store.state.pokemon.filter { $0.metLocation != nil && $0.metNote == nil }
     }
 
     var body: some View {
@@ -24,14 +31,29 @@ struct MapHomeView: View {
                 VStack(spacing: 10) {
                     topCards
                     if let toast = store.toast { toastView(toast) }
+                    HStack {
+                        Spacer()
+                        Button { withAnimation(.snappy) { showCaught.toggle() } } label: {
+                            Image(systemName: showCaught ? "eye.fill" : "eye.slash.fill")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(.white)
+                                .contentTransition(.symbolEffect(.replace))
+                                .frame(width: 48, height: 48)
+                                .contentShape(Circle())
+                                .glassCircle(tint: showCaught ? Theme.orange : nil)
+                                .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(showCaught ? "Hide caught Pokémon" : "Show caught Pokémon")
+                    }
                     Spacer()
                     bottomBar
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
             }
-            .blur(radius: showCard || sheet != nil ? 16 : 0)
-            .allowsHitTesting(!showCard && sheet == nil)
+            .blur(radius: showCard || sheet != nil || infoID != nil ? 16 : 0)
+            .allowsHitTesting(!showCard && sheet == nil && infoID == nil)
 
             // Menu / Wild Pokémon: our own panel over the live, blurred map (a system sheet dims it to grey)
             if let which = sheet {
@@ -44,10 +66,24 @@ struct MapHomeView: View {
                     case .encounters: EncounterListView(open: { enc in close(); open(enc) })
                     case .bag: NavigationStack { BagView() }
                     case .journal: NavigationStack { JournalView() }
+                    case .summary(let id): NavigationStack { SummaryView(pokemonID: id) }
                     }
                 }
                 .transition(.move(edge: .bottom))
                 .zIndex(1)
+            }
+
+            if let id = infoID, let mon = store.state.mon(id) {
+                // Tapped a caught Pokémon on the map: where and when you caught it.
+                Color.black.opacity(0.25).ignoresSafeArea()
+                    .onTapGesture { withAnimation(.spring(duration: 0.35)) { infoID = nil } }
+                CaughtPinCard(mon: mon) {
+                    withAnimation(.spring(duration: 0.35)) { infoID = nil }
+                    withAnimation(.spring(duration: 0.4)) { sheet = .summary(mon.id) }
+                }
+                .padding(.horizontal, 22)
+                .transition(.scale(scale: 0.85).combined(with: .opacity))
+                .onAppear { CryPlayer.shared.play(mon.speciesID) }
             }
 
             if showCard {
@@ -80,10 +116,13 @@ struct MapHomeView: View {
                     MapPolyline(coordinates: seg.map(\.coordinate)).stroke(Theme.route, lineWidth: 5)
                 }
             }
-            ForEach(caughtToday) { mon in
+            ForEach(caughtOnMap) { mon in
                 Annotation(mon.name, coordinate: CLLocationCoordinate2D(latitude: mon.metLocation!.latitude,
                                                                         longitude: mon.metLocation!.longitude)) {
-                    MapPin(speciesID: mon.speciesID, ring: Theme.orange)
+                    Button { withAnimation(.spring(duration: 0.35)) { infoID = mon.id } } label: {
+                        MapPin(speciesID: mon.speciesID, ring: Theme.orange)
+                    }
+                    .buttonStyle(.plain)
                 }.annotationTitles(.hidden)
             }
             ForEach(store.state.pending.filter { $0.location != nil }) { enc in
@@ -390,5 +429,62 @@ struct MapPanel<Content: View>: View {
         .padding(.top, 54)
         .ignoresSafeArea(edges: .bottom)
         .offset(y: drag)
+    }
+}
+
+
+/// Pop-up for a caught Pokémon's map pin: sprite, level, where/when you caught it, and who caught it.
+struct CaughtPinCard: View {
+    let mon: OwnedPokemon
+    var openSummary: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 14) {
+                AnimatedSprite(speciesID: mon.speciesID, shiny: mon.isShiny)
+                    .frame(width: 84, height: 84)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(mon.name + (mon.isShiny ? " ✨" : "")).font(.rounded(24, .black))
+                        Text(mon.gender.symbol).font(.rounded(16, .heavy))
+                    }
+                    if mon.nickname?.isEmpty == false {
+                        Text(mon.species.name).font(.rounded(13, .heavy)).foregroundStyle(.white.opacity(0.7))
+                    }
+                    Text("Lv \(mon.level)").font(.rounded(16, .heavy)).foregroundStyle(Theme.teal)
+                    HStack { ForEach(mon.species.types, id: \.self) { TypeChip(type: $0) } }
+                }
+                Spacer(minLength: 0)
+            }
+            VStack(spacing: 0) {
+                info("mappin.and.ellipse", "Caught at", mon.metLocation?.displayName ?? mon.metNote ?? "Unknown")
+                info("calendar", "Caught on", mon.metDate.formatted(date: .abbreviated, time: .shortened))
+                info("star.circle", "Met at", "Lv \(mon.metLevel)")
+                info("circle.circle", "Ball", mon.ball.name)
+                info("person.fill", "OT", "\(mon.otName) · ID \(mon.otIDString)")
+                info("figure.walk", "Walked together", Distance.text(mon.metersWalked))
+            }
+            .glassCard(16)
+            Button(action: openSummary) {
+                Text("View summary").font(.rounded(16, .heavy))
+                    .frame(maxWidth: .infinity).frame(height: 46)
+                    .glassCapsule(tint: Theme.teal, interactive: true)
+            }
+            .buttonStyle(.plain)
+        }
+        .foregroundStyle(.white)
+        .padding(18)
+        .glassCard(28)
+    }
+
+    private func info(_ icon: String, _ label: String, _ value: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).frame(width: 20).foregroundStyle(Theme.teal)
+            Text(label).foregroundStyle(.white.opacity(0.7))
+            Spacer(minLength: 8)
+            Text(value).multilineTextAlignment(.trailing).lineLimit(2)
+        }
+        .font(.rounded(14, .heavy))
+        .padding(.horizontal, 14).padding(.vertical, 9)
     }
 }
