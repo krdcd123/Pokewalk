@@ -46,6 +46,22 @@ struct MapHomeView: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel(showCaught ? "Hide caught Pokémon" : "Show caught Pokémon")
                     }
+                    HStack {
+                        Spacer()
+                        Button {
+                            withAnimation(.smooth(duration: 0.6)) { camera = .userLocation(followsHeading: false, fallback: .automatic) }
+                        } label: {
+                            Image(systemName: camera.followsUserLocation ? "location.fill" : "location")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 48, height: 48)
+                                .contentShape(Circle())
+                                .glassCircle(tint: camera.followsUserLocation ? Theme.teal : nil)
+                                .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Show my location")
+                    }
                     Spacer()
                     bottomBar
                 }

@@ -30,7 +30,8 @@ final class LiveActivityManager {
                      progress: buddy.levelProgress, expToNext: buddy.expToNext, stepsToday: store.stepsToday,
                      stepsToEncounter: store.state.counters.stepsToEncounter,
                      pendingEncounters: store.state.pending.count, kmToday: store.metersToday / 1000,
-                     spritePNG: spriteCache?.data, iconPNG: spriteCache?.icon)
+                     spritePNG: spriteCache?.data, iconPNG: spriteCache?.icon,
+                     tintHex: buddy.species.primaryType.hex)
     }
 
     /// Activities can only be started while the app is in the foreground.

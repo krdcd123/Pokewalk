@@ -61,13 +61,25 @@ private struct LockScreenView: View {
 
     var body: some View {
         if family == .small {
+            // Apple Watch Smart Stack: tinted with the buddy's type colour
+            let accent = state.tintHex.map { Color(hex: $0) } ?? Theme.teal
             HStack(spacing: 8) {
                 BuddyImage(data: state.spritePNG).frame(width: 36, height: 36)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text("\(state.buddyName) Lv\(state.level)").font(.system(size: 14, weight: .heavy, design: .rounded)).lineLimit(1)
-                    ExpBar(progress: state.progress, tint: Theme.teal, height: 4)
+                    ExpBar(progress: state.progress, tint: accent, height: 4)
+                    Text("\(state.expToNext.formatted()) Exp to next")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .contentTransition(.numericText(value: Double(state.expToNext)))
+                        .lineLimit(1)
                 }
             }
+            .padding(.horizontal, 2)
+            .background(
+                LinearGradient(colors: [accent.opacity(0.45), accent.opacity(0.12)], startPoint: .leading, endPoint: .trailing)
+                    .padding(-12)
+            )
         } else {
             HStack(spacing: 14) {
                 BuddyImage(data: state.spritePNG).frame(width: 64, height: 64)
