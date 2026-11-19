@@ -64,7 +64,7 @@ struct StepSyncSetupView: View {
                 }
                 .glassRow()
             } footer: {
-                Text("Your sideloading tool can't give PokéWalk Apple Health access, but Shortcuts can read Health and hand the total over. Each sync is fed in smoothly over a few minutes, so your steps climb rather than jump.")
+                Text("Your sideloading tool can't give PokéWalk Apple Health access, but Shortcuts can read Health and hand the total over. Each time it runs, the new steps are added straight away.")
             }
 
             ForEach(steps) { step in
