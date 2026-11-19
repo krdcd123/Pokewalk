@@ -138,6 +138,7 @@ struct JournalView: View {
                     }
                     .buttonStyle(.plain)
                 }
+            }
             .padding()
         }
         .navigationTitle("Journal")
