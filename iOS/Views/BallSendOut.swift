@@ -13,11 +13,18 @@ struct BallSendOut: View {
     @State private var burst = false
     @State private var flash = 0.0
     @State private var sparkle = false
-    @State private var tilt = 0.0
 
     private var effect: BallEffect { BallEffect(ball) }
 
     var body: some View {
+        if skip {
+            AnimatedSprite(speciesID: speciesID, shiny: shiny).frame(width: 130, height: 130)
+        } else {
+            sendOut
+        }
+    }
+
+    private var sendOut: some View {
         ZStack {
             // Particles from the ball's colours
             ForEach(0..<effect.count, id: \.self) { i in
@@ -25,7 +32,7 @@ struct BallSendOut: View {
                 let dist: CGFloat = burst ? CGFloat(58 + (i % 3) * 16) : 0
                 particle(i)
                     .offset(x: cos(angle) * dist, y: sin(angle) * dist * effect.squash - (burst && effect.rises ? 24 : 0))
-                    .opacity(burst ? 0 : (stage >= 2 ? 1 : 0))
+                    .opacity(stage >= 2 && !burst ? 1 : 0)
                     .scaleEffect(burst ? 0.4 : 1.1)
             }
 
@@ -51,8 +58,7 @@ struct BallSendOut: View {
             // The ball
             ItemSprite(key: ball.itemKey)
                 .frame(width: 34, height: 34)
-                .rotationEffect(.degrees(stage == 0 ? -200 : tilt), anchor: .bottom)
-                .offset(y: stage == 0 ? -90 : 40)
+                .offset(y: 40)
                 .opacity(stage >= 2 ? 0 : 1)
 
             // White flash as it opens
@@ -81,12 +87,8 @@ struct BallSendOut: View {
     private func run() {
         if skip { stage = 3; return }
         Task { @MainActor in
-            withAnimation(.easeOut(duration: 0.35)) { stage = 1 }                    // drops in, spinning
-            try? await Task.sleep(for: .milliseconds(380))
-            for t in [-16.0, 14, -8, 0] {                                           // wobble
-                withAnimation(.easeInOut(duration: 0.1)) { tilt = t }
-                try? await Task.sleep(for: .milliseconds(110))
-            }
+            stage = 1                                                              // the ball, briefly
+            try? await Task.sleep(for: .milliseconds(300))
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             withAnimation(.easeOut(duration: 0.12)) { stage = 2; flash = 1 }        // pops open
             withAnimation(.easeOut(duration: 0.7)) { burst = true }
