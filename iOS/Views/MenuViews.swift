@@ -355,6 +355,8 @@ struct SettingsView: View {
                 .glassRow()
             }
 
+            StepSyncSection()
+
             Section {
                 Picker("Location tracking", selection: binding(\.trackingMode)) {
                     ForEach(TrackingMode.allCases) { Text($0.title).tag($0) }
@@ -526,4 +528,64 @@ struct ShareSheet: UIViewControllerRepresentable {
         UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
+}
+
+
+/// Shows where today's steps come from, so a mismatch with the Health app can be fixed.
+private struct StepSyncSection: View {
+    @EnvironmentObject private var store: GameStore
+    @State private var health: Int?
+    @State private var healthError: String?
+    @State private var phone: Int?
+    @State private var checking = false
+
+    var body: some View {
+        Section {
+            row("Apple Health (incl. Watch)", health.map { $0.formatted() } ?? (healthError == nil ? "…" : "Not connected"))
+            row("iPhone motion chip", phone.map { $0.formatted() } ?? "…")
+            row("PokéWalk today", store.stepsToday.formatted())
+            if let healthError {
+                Text(healthError).font(.rounded(12)).foregroundStyle(Theme.inkSoft).glassRow()
+            }
+            Button(checking ? "Checking…" : "Reconnect Apple Health") {
+                Task {
+                    checking = true
+                    try? await StepCounter.shared.requestAuthorizationWithDistance()
+                    await refresh()
+                    await store.tick()
+                    checking = false
+                }
+            }
+            .disabled(checking)
+            .glassRow()
+            Button("Open the Health app") {
+                if let u = URL(string: "x-apple-health://") { UIApplication.shared.open(u) }
+            }
+            .glassRow()
+        } header: { Text("Step sync") } footer: {
+            Text("PokéWalk uses whichever is higher. If Apple Health shows 0 here but more in the Health app, PokéWalk isn't allowed to read it: in the Health app tap your profile picture › Apps › PokéWalk and turn on Steps and Walking + Running Distance. (Settings › Privacy & Security › Health › PokéWalk works too.) Steps earned before the fix are added on the next sync — from today and yesterday.")
+        }
+        .task { await refresh() }
+    }
+
+    private func refresh() async {
+        let start = Calendar.current.startOfDay(for: .now)
+        do {
+            health = try await StepCounter.shared.steps(from: start)
+            healthError = health == 0 ? "Health returned no steps — usually means read access is off." : nil
+        } catch {
+            health = nil
+            healthError = "Apple Health error: \(error.localizedDescription)"
+        }
+        phone = await StepEngine.shared.pedometerSteps(from: start, to: .now)
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            Text(value).font(.rounded(16, .heavy)).foregroundStyle(Theme.teal)
+        }
+        .glassRow()
+    }
 }
