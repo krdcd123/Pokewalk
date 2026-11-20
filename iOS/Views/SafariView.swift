@@ -17,6 +17,11 @@ struct SafariView: View {
     @State private var bannerText: String?
     @State private var caught: OwnedPokemon?
     @State private var throwing: String?        // shown instead of the result while the ball is shaking
+    @State private var introDone = false        // Pokémon slides in from the left, like Emerald
+    @State private var slideX: CGFloat = -600
+    @State private var flash = 0.0               // white flash when the ball opens
+    @State private var stars = false             // little stars when it's caught
+    @State private var ballDim = false
 
     init(wild: PendingEncounter) { _safari = State(initialValue: SafariEncounter(wild: wild)) }
 
@@ -36,29 +41,45 @@ struct SafariView: View {
                     Ellipse().fill(Theme.ink.opacity(0.16)).frame(width: 200, height: 46).offset(y: 100)
                     AnimatedSprite(speciesID: wild.speciesID, shiny: wild.isShiny)
                         .frame(width: 170, height: 170)
+                        .colorMultiply(spriteHidden ? Color(hex: 0xFF6B6B) : .white)
                         .opacity(spriteHidden ? 0 : 1)
-                        .scaleEffect(spriteHidden ? 0.2 : 1)
+                        .scaleEffect(spriteHidden ? 0.1 : 1, anchor: .bottom)
+                    Circle().fill(.white).frame(width: 150, height: 150).blur(radius: 24)
+                        .opacity(flash).allowsHitTesting(false)
                 }
+                .offset(x: slideX)
                 .position(x: geo.size.width / 2, y: spriteY)
 
                 statusCard.position(x: geo.size.width / 2, y: geo.size.height * 0.66)
 
-                // Tap the ball to throw it.
-                Button { throwBall(distance: spriteY - ballHomeY) } label: {
+                // Tap the ball to throw it. (A plain tap, not a Button, so it never fades while busy.)
+                ZStack {
                     ItemSprite(key: ball.itemKey)
                         .frame(width: 88 * ballScale, height: 88 * ballScale)
-                        .rotationEffect(.degrees(wobble))
-                        .frame(width: 110, height: 110)      // generous tap target
-                        .contentShape(Circle())
+                        .rotationEffect(.degrees(wobble), anchor: .bottom)
+                        .brightness(ballDim ? -0.25 : 0)
+                    // Caught: tiny stars pop out of the ball
+                    ForEach(0..<6, id: \.self) { i in
+                        let a = Double(i) / 6 * 2 * .pi - .pi / 2
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 10 + CGFloat(i % 2) * 4, weight: .black))
+                            .foregroundStyle(Color(hex: 0xFFE27A))
+                            .offset(x: stars ? cos(a) * 46 : 0, y: stars ? sin(a) * 46 - 10 : 0)
+                            .opacity(stars ? 0 : (ballDim ? 1 : 0))
+                            .scaleEffect(stars ? 1.2 : 0.3)
+                    }
                 }
-                .buttonStyle(.plain)
-                .disabled(busy || ballsLeft == 0 || safari.phase != .active)
+                .frame(width: 110, height: 110)      // generous tap target
+                .contentShape(Circle())
+                .onTapGesture { throwBall(distance: spriteY - ballHomeY) }
+                .allowsHitTesting(introDone && !busy && ballsLeft > 0 && safari.phase == .active)
                 .opacity(ballsLeft > 0 || busy ? 1 : 0.35)
                 .position(x: geo.size.width / 2, y: ballHomeY + ballOffset)
+                .accessibilityAddTraits(.isButton)
                 .accessibilityLabel("Throw \(ball.name), \(ballsLeft) left")
                 .zIndex(2)   // keep the ball above the bottom controls so taps always reach it
 
-                if !busy {
+                if !busy && introDone {
                     Text(ballsLeft > 0 ? "Tap to throw" : "No \(ball.name)s left")
                         .font(.rounded(12, .heavy)).foregroundStyle(.white)
                         .padding(.horizontal, 12).padding(.vertical, 5)
@@ -82,11 +103,19 @@ struct SafariView: View {
         .onDisappear { SoundKit.shared.setScene(.map) }
         .onAppear {
             SoundKit.shared.setScene(.battle)
-            if wild.isShiny {
-                Task { try? await Task.sleep(for: .milliseconds(450)); SoundKit.shared.play(.shiny) }
-            }
             safari.caughtBefore = store.state.dexCaught.contains(wild.speciesID)
-            pickAvailableBall(); CryPlayer.shared.play(wild.speciesID)
+            pickAvailableBall()
+            // Slides in from the left, then cries once it's in the middle
+            withAnimation(.easeOut(duration: 1.1)) { slideX = 0 }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(1_150))
+                CryPlayer.shared.play(wild.speciesID)
+                introDone = true
+                if wild.isShiny {
+                    try? await Task.sleep(for: .milliseconds(350))
+                    SoundKit.shared.play(.shiny)
+                }
+            }
         }
     }
 
@@ -126,7 +155,7 @@ struct SafariView: View {
                         .padding(.horizontal, 16).frame(height: 40)
                         .glassCapsule(interactive: true)
                 }
-                .disabled(busy)
+                .disabled(busy || !introDone)
                 Spacer()
                 if let place = wild.location?.placeName {
                     Label(place, systemImage: "mappin.and.ellipse").font(.rounded(13, .heavy)).lineLimit(1)
@@ -177,7 +206,7 @@ struct SafariView: View {
                 .foregroundStyle(.white)
                 .glassCircle(tint: Theme.orange)
             }
-            .disabled(busy)
+            .disabled(busy || !introDone)
 
             Spacer()
 
@@ -204,21 +233,35 @@ struct SafariView: View {
     // MARK: Throwing
 
     private func throwBall(distance: CGFloat) {
-        guard !busy, safari.phase == .active, store.useBall(ball) else { return }
+        guard !busy, introDone, safari.phase == .active, store.useBall(ball) else { return }
         busy = true
         throwing = "You threw a \(ball.name)!"
         Task { @MainActor in
-            // Ball arcs up to the Pokémon
+            // 1. Throw: the ball arcs up to the Pokémon
             SoundKit.shared.play(.ballThrow)
             withAnimation(.easeOut(duration: 0.45)) { ballOffset = distance; ballScale = 0.55 }
             try? await Task.sleep(for: .milliseconds(480))
 
             let result = safari.throwBall(ball, quality: nil)
 
-            // Pokémon goes into the ball, ball drops and wobbles 0–3 times
-            withAnimation(.easeIn(duration: 0.25)) { spriteHidden = true }
-            withAnimation(.easeIn(duration: 0.3)) { ballOffset += 70 }
-            try? await Task.sleep(for: .milliseconds(500))
+            // 2. It hits: the ball opens and the Pokémon is pulled in with a flash
+            SoundKit.shared.play(.ballOpen)
+            withAnimation(.easeOut(duration: 0.12)) { flash = 0.9 }
+            withAnimation(.easeIn(duration: 0.35)) { spriteHidden = true }
+            try? await Task.sleep(for: .milliseconds(380))
+            withAnimation(.easeOut(duration: 0.3)) { flash = 0 }
+
+            // 3. It drops and bounces on the ground three times
+            let ground = distance + 70
+            for (i, h) in [CGFloat(0), 26, 12].enumerated() {
+                if i > 0 { withAnimation(.easeOut(duration: 0.16)) { ballOffset = ground - h } ; try? await Task.sleep(for: .milliseconds(170)) }
+                withAnimation(.easeIn(duration: i == 0 ? 0.28 : 0.16)) { ballOffset = ground }
+                try? await Task.sleep(for: .milliseconds(i == 0 ? 290 : 170))
+                SoundKit.shared.play(.ballBounce)
+            }
+            try? await Task.sleep(for: .milliseconds(450))
+
+            // 4. Shakes, each with the shake sound
             for _ in 0..<result.shakes {
                 SoundKit.shared.play(.ballShake)
                 withAnimation(.easeInOut(duration: 0.15)) { wobble = -22 }
@@ -226,19 +269,31 @@ struct SafariView: View {
                 withAnimation(.easeInOut(duration: 0.15)) { wobble = 22 }
                 try? await Task.sleep(for: .milliseconds(160))
                 withAnimation(.easeInOut(duration: 0.15)) { wobble = 0 }
-                try? await Task.sleep(for: .milliseconds(450))
+                try? await Task.sleep(for: .milliseconds(550))
             }
 
             if result.caught {
-                // Third shake done — a beat of silence, then the click.
-                try? await Task.sleep(for: .milliseconds(250))
-                SoundKit.shared.play(.ballCatch)
+                // 5. Click! Stars pop out, the ball dims, then the catch fanfare
+                SoundKit.shared.play(.ballClick)
+                ballDim = true
+                withAnimation(.easeOut(duration: 0.7)) { stars = true }
+                try? await Task.sleep(for: .milliseconds(650))
+                if SoundKit.shared.caughtMusicFile != nil && SoundKit.shared.battleMusicOn {
+                    SoundKit.shared.setScene(.caught)
+                } else {
+                    SoundKit.shared.play(.ballCatch)
+                }
                 throwing = nil
-                await show("Gotcha!\n\(wild.species.name) was caught!", duration: 1.4)
+                await show("Gotcha!\n\(wild.species.name) was caught!", duration: 1.6)
                 caught = store.finish(safari)
                 return
             }
+            // Broke free: the ball pops open again
+            SoundKit.shared.play(.ballOpen)
+            withAnimation(.easeOut(duration: 0.1)) { flash = 0.9 }
             withAnimation(.spring(duration: 0.3)) { spriteHidden = false }
+            try? await Task.sleep(for: .milliseconds(150))
+            withAnimation(.easeOut(duration: 0.35)) { flash = 0 }
             throwing = nil
             await show(safari.log.last ?? "It broke free!", duration: 0.8)
             if result.fled { endFled(); return }

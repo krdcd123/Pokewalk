@@ -11,7 +11,7 @@ struct SoundSettingsView: View {
         List {
             Section {
                 Toggle("Sound effects", isOn: $sound.effectsOn).glassRow()
-                Toggle("Battle music", isOn: $sound.battleMusicOn).glassRow()
+                Toggle("Battle, catch & evolution music", isOn: $sound.battleMusicOn).glassRow()
                 Toggle("Route music on the map", isOn: $sound.routeMusicOn).glassRow()
             } footer: {
                 Text("Sounds follow your silent switch. Route music pauses itself if you're already playing your own music or a podcast.")
@@ -35,6 +35,8 @@ struct SoundSettingsView: View {
 
             Section {
                 row("Wild battle", custom: sound.battleFile != nil, slot: "battle", preview: nil)
+                row("Caught a Pokémon", custom: sound.caughtMusicFile != nil, slot: "caughtMusic", preview: nil)
+                row("Evolution", custom: sound.evolutionMusicFile != nil, slot: "evolutionMusic", preview: nil)
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Route music").font(.rounded(15, .heavy))

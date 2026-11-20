@@ -38,7 +38,7 @@ struct DexEntryView: View {
                                            .init(color: tint.opacity(0.08), location: 0.5),
                                            .init(color: .clear, location: 0.8)],
                                    startPoint: .top, endPoint: .bottom).ignoresSafeArea())
-        .navigationTitle(species.name)
+        .navigationTitle(caught ? species.name : "???")
         .navigationBarTitleDisplayMode(.inline)
         .glassScreen()
         .task {
@@ -52,14 +52,15 @@ struct DexEntryView: View {
     private var header: some View {
         VStack(spacing: 6) {
             AnimatedSprite(speciesID: species.id).frame(width: 130, height: 130)
+                .brightness(caught ? 0 : -1).opacity(caught ? 1 : 0.8)      // silhouette until caught
                 .contentShape(Rectangle())
                 .onTapGesture { CryPlayer.shared.play(species.id) }
             Text(species.dexNumber).font(.rounded(14, .heavy)).foregroundStyle(Theme.inkSoft)
-            Text(species.name).font(.rounded(30, .black))
-            if let g = info?.genus, !g.isEmpty {
+            Text(caught ? species.name : "???").font(.rounded(30, .black))
+            if caught, let g = info?.genus, !g.isEmpty {
                 Text(g).font(.rounded(15, .heavy)).foregroundStyle(.white.opacity(0.8))
             }
-            HStack { ForEach(species.types, id: \.self) { TypeChip(type: $0) } }
+            if caught { HStack { ForEach(species.types, id: \.self) { TypeChip(type: $0) } } }
             if caught, let i = info {
                 HStack(spacing: 10) {
                     pill("HT", height(i.heightDm))
@@ -153,13 +154,15 @@ struct DexEntryView: View {
                                     }
                                 }
                                 let seen = store.state.dexSeen.contains(step.id)
+                                let got = store.state.dexCaught.contains(step.id)
                                 VStack(spacing: 2) {
                                     if seen {
                                         AnimatedSprite(speciesID: step.id, kind: .icons).frame(width: 44, height: 38)
+                                            .brightness(got ? 0 : -1)
                                     } else {
                                         Image(systemName: "questionmark").frame(width: 44, height: 38).foregroundStyle(Theme.inkSoft)
                                     }
-                                    Text(seen ? Dex.species(step.id).name : "???").font(.rounded(11, .heavy))
+                                    Text(got ? Dex.species(step.id).name : "???").font(.rounded(11, .heavy))
                                 }
                                 .padding(6)
                                 .background(.white.opacity(step.id == species.id ? 0.16 : 0.06), in: RoundedRectangle(cornerRadius: 12))

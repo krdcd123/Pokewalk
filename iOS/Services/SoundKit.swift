@@ -9,7 +9,8 @@ final class SoundKit: ObservableObject {
     static let shared = SoundKit()
 
     enum Effect: String, CaseIterable, Identifiable {
-        case select, menuOpen, openPC, trainerCard, ballThrow, ballShake, ballCatch, runAway, ballOpen, shiny, useItem
+        case select, menuOpen, openPC, closePC, dexOpen, trainerCard,
+             ballThrow, ballOpen, ballBounce, ballShake, ballClick, ballCatch, runAway, shiny, useItem
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -18,8 +19,12 @@ final class SoundKit: ObservableObject {
             case .trainerCard: return "Trainer card"
             case .ballThrow: return "Ball thrown"
             case .ballShake: return "Ball shakes"
-            case .ballCatch: return "Caught!"
+            case .ballCatch: return "Caught! (if no catch music)"
             case .openPC: return "PC opens"
+            case .closePC: return "PC closes"
+            case .dexOpen: return "Pokédex opens"
+            case .ballBounce: return "Ball bounces (×3)"
+            case .ballClick: return "Ball clicks shut (caught)"
             case .runAway: return "Run away"
             case .ballOpen: return "Ball opens (summary)"
             case .shiny: return "Shiny sparkle"
@@ -48,7 +53,10 @@ final class SoundKit: ObservableObject {
     @Published var effectsVolume: Double = UserDefaults.standard.object(forKey: "sfxVolume") as? Double ?? 0.7 {
         didSet { UserDefaults.standard.set(effectsVolume, forKey: "sfxVolume") }
     }
-    @Published private(set) var revision = 0          // bumps when files change, so Settings refreshes
+    @Published private(set) var revision = 0
+    /// Title of the route track playing on the map right now (nil = nothing playing).
+    @Published private(set) var nowPlaying: String?
+    @Published private(set) var otherAudioPlaying = false          // bumps when files change, so Settings refreshes
 
     // MARK: Files
 
@@ -70,6 +78,8 @@ final class SoundKit: ObservableObject {
     }
     func hasCustom(_ e: Effect) -> Bool { customFile(named: e.rawValue) != nil }
     var battleFile: URL? { customFile(named: "battle") }
+    var caughtMusicFile: URL? { customFile(named: "caughtMusic") }
+    var evolutionMusicFile: URL? { customFile(named: "evolutionMusic") }
     var routeFiles: [URL] {
         let d = Self.dir.appendingPathComponent("Route", isDirectory: true)
         return ((try? FileManager.default.contentsOfDirectory(at: d, includingPropertiesForKeys: nil)) ?? [])
@@ -135,7 +145,7 @@ final class SoundKit: ObservableObject {
 
     // MARK: Music
 
-    enum Scene { case none, map, battle }
+    enum Scene { case none, map, battle, caught, evolution }
     private var scene: Scene = .none
     private var music: AVAudioPlayer?
     private var musicDelegate = MusicDelegate()
@@ -151,39 +161,50 @@ final class SoundKit: ObservableObject {
         let wanted: Scene = {
             switch scene {
             case .battle: return battleMusicOn && battleFile != nil ? .battle : .none
+            case .caught: return battleMusicOn && caughtMusicFile != nil ? .caught : .none
+            case .evolution: return battleMusicOn && evolutionMusicFile != nil ? .evolution : .none
             case .map: return routeMusicOn && !routeFiles.isEmpty ? .map : .none
             case .none: return .none
             }
         }()
-        if wanted == .none { fadeOutMusic(); return }
+        if wanted == .none { fadeOutMusic(); nowPlaying = nil; return }
         if !restart, music?.isPlaying == true { return }
         // Don't talk over the user's own music/podcast on the map.
-        if wanted == .map, AVAudioSession.sharedInstance().secondaryAudioShouldBeSilencedHint { fadeOutMusic(); return }
+        otherAudioPlaying = AVAudioSession.sharedInstance().secondaryAudioShouldBeSilencedHint
+        if wanted == .map, otherAudioPlaying { fadeOutMusic(); nowPlaying = nil; return }
         activateSession()
         let file: URL?
-        if wanted == .battle {
-            file = battleFile
-        } else {
+        switch wanted {
+        case .battle: file = battleFile
+        case .caught: file = caughtMusicFile
+        case .evolution: file = evolutionMusicFile
+        default:
             if routeQueue.isEmpty { routeQueue = routeFiles.shuffled() }
             file = routeQueue.isEmpty ? nil : routeQueue.removeFirst()
         }
         guard let file, let p = try? AVAudioPlayer(contentsOf: file) else { return }
         music?.stop()
         music = p
-        p.numberOfLoops = wanted == .battle ? -1 : 0       // route tracks play through, then the next one
-        musicDelegate.onFinish = { [weak self] in Task { @MainActor in self?.refreshMusic(restart: true) } }
+        // Battle/evolution loop; the catch fanfare plays once; route tracks play through, then the next one
+        p.numberOfLoops = (wanted == .battle || wanted == .evolution) ? -1 : 0
+        musicDelegate.onFinish = { [weak self] in Task { @MainActor in
+            guard let self else { return }
+            if self.scene == .caught { return }          // fanfare done: stay quiet until the screen closes
+            self.refreshMusic(restart: true)
+        } }
         p.delegate = musicDelegate
         p.volume = 0
         p.play()
         playingScene = wanted
-        p.setVolume(Float(wanted == .battle ? battleVolume : routeVolume), fadeDuration: 0.8)
+        nowPlaying = wanted == .map ? file.deletingPathExtension().lastPathComponent : nil
+        p.setVolume(Float(wanted == .map ? routeVolume : battleVolume), fadeDuration: wanted == .caught ? 0.05 : 0.8)
     }
 
     private var playingScene: Scene = .none
 
     private func applyMusicVolume() {
         guard let m = music else { return }
-        m.volume = Float(playingScene == .battle ? battleVolume : routeVolume)
+        m.volume = Float(playingScene == .map ? routeVolume : battleVolume)
     }
 
     private func fadeOutMusic() {
@@ -194,7 +215,7 @@ final class SoundKit: ObservableObject {
     }
 
     func appBecameActive() { refreshMusic() }
-    func appWentToBackground() { music?.stop(); music = nil }
+    func appWentToBackground() { music?.stop(); music = nil; nowPlaying = nil }
 
     // MARK: Global "select" sound for taps
 
@@ -248,6 +269,10 @@ private enum Synth {
         case .ballThrow:   notes = (0..<10).map { (1800 - Double($0) * 120, 0.018) }; noise = true
         case .ballShake:   notes = [(220, 0.04), (0, 0.03), (196, 0.05)]
         case .ballCatch:   notes = [(0, 0.05), (2637, 0.04), (0, 0.06), (523, 0.09), (659, 0.09), (784, 0.09), (1047, 0.22)]; duty = 0.25
+        case .closePC:     notes = [(1047, 0.05), (0, 0.02), (784, 0.05), (0, 0.02), (523, 0.08)]; duty = 0.125
+        case .dexOpen:     notes = [(988, 0.05), (1319, 0.05), (1976, 0.09)]; duty = 0.25
+        case .ballBounce:  notes = [(330, 0.03), (0, 0.01), (262, 0.04)]
+        case .ballClick:   notes = [(0, 0.02), (2637, 0.03), (0, 0.02), (1976, 0.06)]; duty = 0.125
         case .openPC:      notes = [(523, 0.06), (0, 0.02), (784, 0.06), (0, 0.02), (1047, 0.1)]; duty = 0.125
         case .runAway:     notes = (0..<8).map { (900 - Double($0) * 80, 0.03) }
         case .ballOpen:    notes = (0..<8).map { (600 + Double($0) * 180, 0.025) }; noise = true

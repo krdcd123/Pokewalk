@@ -102,14 +102,27 @@ struct BuddyHeader: View {
 // MARK: - Pokédex
 
 struct PokedexView: View {
+    @State private var playedOpen = false
     @EnvironmentObject private var store: GameStore
     @State private var filter = 0
     @State private var gen = 0
     @State private var selected: Species?
 
+    @State private var search = ""
+
     private var list: [Species] {
-        Dex.all.filter { sp in
-            (gen == 0 || sp.generation == gen) &&
+        let q = search.trimmingCharacters(in: .whitespaces).lowercased()
+        return Dex.all.filter { sp in
+            if !q.isEmpty {
+                // Only Pokémon you've met: caught ones by name or number, seen-only ones by number
+                let caught = store.state.dexCaught.contains(sp.id), seen = store.state.dexSeen.contains(sp.id)
+                guard seen || caught else { return false }
+                let num = String(sp.id), padded = String(format: "%03d", sp.id)
+                let byNumber = num.hasPrefix(q.trimmingCharacters(in: CharacterSet(charactersIn: "#no. "))) || padded.hasPrefix(q)
+                let byName = caught && sp.name.lowercased().contains(q)
+                if !(byNumber || byName) { return false }
+            }
+            return (gen == 0 || sp.generation == gen) &&
             (filter == 0 || (filter == 1 ? store.state.dexCaught.contains(sp.id)
                                           : store.state.dexSeen.contains(sp.id) && !store.state.dexCaught.contains(sp.id)))
         }
@@ -134,14 +147,18 @@ struct PokedexView: View {
                         let seen = store.state.dexSeen.contains(sp.id)
                         Button { if seen { selected = sp } } label: {
                             VStack(spacing: 2) {
-                                if seen {
-                                    AnimatedSprite(speciesID: sp.id, kind: .icons).frame(height: 34).opacity(caught ? 1 : 0.45)
+                                if caught {
+                                    AnimatedSprite(speciesID: sp.id, kind: .icons).frame(height: 34)
+                                } else if seen {
+                                    // Seen but not caught: just its silhouette
+                                    AnimatedSprite(speciesID: sp.id, kind: .icons).frame(height: 34)
+                                        .brightness(-1).opacity(0.75)
                                 } else {
                                     Image(systemName: "questionmark").font(.system(size: 18, weight: .bold))
                                         .foregroundStyle(Theme.inkSoft).frame(height: 34)
                                 }
                                 Text(String(format: "%03d", sp.id)).font(.rounded(10, .heavy)).foregroundStyle(Theme.inkSoft)
-                                Text(seen ? sp.name : "???").font(.rounded(11, .heavy)).lineLimit(1).minimumScaleFactor(0.6)
+                                Text(caught ? sp.name : "???").font(.rounded(11, .heavy)).lineLimit(1).minimumScaleFactor(0.6)
                             }
                             .frame(maxWidth: .infinity).padding(.vertical, 8)
                             .glassCard(14)
@@ -153,6 +170,8 @@ struct PokedexView: View {
             .padding()
         }
         .navigationTitle("Pokédex")
+        .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search Pokémon you've met")
+        .onAppear { if !playedOpen { playedOpen = true; SoundKit.shared.play(.dexOpen) } }
         .glassScreen()
         .navigationDestination(item: $selected) { DexEntryView(species: $0) }
     }
@@ -161,40 +180,103 @@ struct PokedexView: View {
 // MARK: - Bag
 
 struct BagView: View {
+    enum Pocket: String, CaseIterable, Identifiable {
+        case balls = "Balls", berries = "Berries", items = "Items", candies = "Candies"
+        var id: String { rawValue }
+        var icon: String {
+            switch self {
+            case .balls: return "circle.circle.fill"
+            case .berries: return "leaf.fill"
+            case .items: return "bag.fill"
+            case .candies: return "sparkles"
+            }
+        }
+        static func of(_ key: String) -> Pocket {
+            if ItemCatalog.isBerry(key) { return .berries }
+            if key == "rare-candy" || ExpCandy.exp(key) != nil { return .candies }
+            return .items
+        }
+    }
+
     @State private var openItem: String?
+    @State private var pocket: Pocket = .balls
     @EnvironmentObject private var store: GameStore
+
+    private func keys(in p: Pocket) -> [String] {
+        let all = store.state.bag.filter { $0.value > 0 }.keys.filter { Pocket.of($0) == p }
+        if p == .candies {
+            let order = ["rare-candy"] + ExpCandy.all.map(\.key)
+            return all.sorted { (order.firstIndex(of: $0) ?? 99) < (order.firstIndex(of: $1) ?? 99) }
+        }
+        return all.sorted { Dex.itemName($0) < Dex.itemName($1) }
+    }
 
     var body: some View {
         List {
-            Section("Balls") {
-                ForEach(BallKind.allCases.filter { $0.isStepBall || store.state.balls[$0, default: 0] > 0 }) { k in
-                    HStack(spacing: 12) {
-                        ItemSprite(key: k.itemKey).frame(width: 30, height: 30)
-                        VStack(alignment: .leading) {
-                            Text(k.name).font(.rounded(16, .heavy))
-                            Text(k.effect).font(.rounded(12)).foregroundStyle(Theme.inkSoft)
-                        }
-                        Spacer()
-                        Text("×\(store.state.balls[k, default: 0])").font(.rounded(16, .heavy))
-                    }
-                    .glassRow()
-                }
-            }
             Section {
-                let keys = store.state.bag.keys.sorted { Dex.itemName($0) < Dex.itemName($1) }
-                if keys.isEmpty { Text("Nothing yet — keep walking!").foregroundStyle(Theme.inkSoft).glassRow() }
-                ForEach(keys, id: \.self) { key in
-                    BagItemRow(key: key, expanded: openItem == key) {
-                        withAnimation(.snappy) { openItem = openItem == key ? nil : key }
+                Picker("Pocket", selection: $pocket) {
+                    ForEach(Pocket.allCases) { p in
+                        Label(p.rawValue, systemImage: p.icon).tag(p)
                     }
-                    .glassRow()
                 }
-            } header: { Text("Items") } footer: {
-                Text("Balls: 1 every \(store.state.settings.ballSteps) steps (every 10th is a Great Ball, every 50th an Ultra Ball). Items: 1 every \(store.state.settings.itemSteps.formatted()) steps — evolution stones, Rare Candies, Link Cables and rare balls. Your buddy also picks up an Exp. Candy about every 300 steps and holds it until you take it from its summary. Tap an item to use it on a Pokémon in your party.")
+                .pickerStyle(.segmented)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+            }
+
+            if pocket == .balls {
+                Section {
+                    ForEach(BallKind.allCases.filter { $0.isStepBall || store.state.balls[$0, default: 0] > 0 }) { k in
+                        HStack(spacing: 12) {
+                            ItemSprite(key: k.itemKey).frame(width: 30, height: 30)
+                            VStack(alignment: .leading) {
+                                Text(k.name).font(.rounded(16, .heavy))
+                                Text(k.effect).font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                            }
+                            Spacer()
+                            Text("×\(store.state.balls[k, default: 0])").font(.rounded(16, .heavy))
+                        }
+                        .glassRow()
+                    }
+                } footer: {
+                    Text("A Poké Ball every \(store.state.settings.ballSteps.formatted()) steps (every 10th is a Great Ball, every 50th an Ultra Ball). Rarer balls turn up as items, or buy them at the Poké Mart.")
+                }
+            } else {
+                Section {
+                    let list = keys(in: pocket)
+                    if list.isEmpty {
+                        Text(emptyText).foregroundStyle(Theme.inkSoft).glassRow()
+                    }
+                    ForEach(list, id: \.self) { key in
+                        BagItemRow(key: key, expanded: openItem == key) {
+                            withAnimation(.snappy) { openItem = openItem == key ? nil : key }
+                        }
+                        .glassRow()
+                    }
+                } footer: {
+                    Text(footerText)
+                }
             }
         }
+        .animation(.snappy, value: pocket)
         .navigationTitle("Bag")
         .glassScreen()
+    }
+
+    private var emptyText: String {
+        switch pocket {
+        case .berries: return "No berries yet — they're the most common thing you find on walks."
+        case .candies: return "No candies yet. Your buddy picks up Exp. Candies as you walk; take them from its Summary."
+        default: return "Nothing yet — keep walking!"
+        }
+    }
+
+    private var footerText: String {
+        switch pocket {
+        case .berries: return "Berries make a Pokémon friendlier. Tap one, then pick who to give it to."
+        case .candies: return "Rare Candies raise a level; Exp. Candies give Exp. Your buddy finds an Exp. Candy about every 300 steps."
+        default: return "An item every \(store.state.settings.itemSteps.formatted()) steps: evolution stones, Link Cables, held items, bitter herbs and valuables to sell. Tap one to use or sell it."
+        }
     }
 }
 

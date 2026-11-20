@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SummaryView: View {
+    @Environment(\.summaryActive) private var summaryActive
     @EnvironmentObject private var store: GameStore
     @Environment(\.dismiss) private var dismiss
     let pokemonID: UUID
@@ -102,7 +103,8 @@ struct SummaryView: View {
             }
             .navigationTitle(mon.name)
             .glassScreen(transparent: true)
-            .onAppear { if isBuddy { CryPlayer.shared.play(mon.speciesID) } }
+            .onAppear { if isBuddy && summaryActive { CryPlayer.shared.play(mon.speciesID) } }
+            .onChange(of: summaryActive) { _, now in if now && isBuddy { CryPlayer.shared.play(mon.speciesID) } }
             .background {
                 ZStack {
                     if !overMap { AppBackground() }
@@ -249,5 +251,37 @@ private struct HeldItemsCard: View {
         .foregroundStyle(Theme.ink)
         .padding(16)
         .glassCard(20)
+    }
+}
+
+/// Swipe left/right between Pokémon summaries (from the PC).
+struct PagedSummaryView: View {
+    let ids: [UUID]
+    @State private var current: UUID
+
+    init(ids: [UUID], start: UUID) {
+        self.ids = ids
+        _current = State(initialValue: start)
+    }
+
+    var body: some View {
+        TabView(selection: $current) {
+            ForEach(ids, id: \.self) { id in
+                SummaryView(pokemonID: id).tag(id)
+                    .environment(\.summaryActive, id == current)
+            }
+        }
+        .tabViewStyle(.page(indexDisplayMode: .never))
+        .ignoresSafeArea(edges: .bottom)
+    }
+}
+
+
+private struct SummaryActiveKey: EnvironmentKey { static let defaultValue = true }
+extension EnvironmentValues {
+    /// False for the neighbouring pages a swipeable summary pre-loads, so only the page you're on animates and cries.
+    var summaryActive: Bool {
+        get { self[SummaryActiveKey.self] }
+        set { self[SummaryActiveKey.self] = newValue }
     }
 }

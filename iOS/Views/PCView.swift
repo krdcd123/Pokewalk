@@ -2,6 +2,8 @@ import SwiftUI
 
 struct PCView: View {
     @State private var playedOpen = false
+    @State private var showStorage = false
+    @State private var releasing: OwnedPokemon?
     @EnvironmentObject private var store: GameStore
     @State private var boxIndex = 0
     @State private var moving = false
@@ -28,19 +30,21 @@ struct PCView: View {
                     boxHeader
                     boxGrid
                     Text(moving ? (held == nil ? "Tap a Pokémon to pick it up." : "Tap a slot to place or swap it.")
-                                : "Tap a Pokémon for its summary. Hold one in your party to make it your buddy.")
+                                : "Tap a Pokémon for its summary (swipe to see the others). Hold one for more options.")
                         .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                 }
             }
             .padding()
         }
         .navigationTitle("PC")
+        .navigationDestination(isPresented: $showStorage) { StorageView() }
         .onAppear { if !playedOpen { playedOpen = true; SoundKit.shared.play(.openPC) } }
+        .onDisappear { if open == nil && !showStorage { SoundKit.shared.play(.closePC) } }
         .glassScreen()
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search names, species, places")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink { StorageView() } label: {
+                Button { showStorage = true } label: {
                     Image(systemName: "shippingbox.fill")
                 }
                 .accessibilityLabel("Storage")
@@ -50,7 +54,19 @@ struct PCView: View {
                     .font(.rounded(16, .heavy))
             }
         }
-        .navigationDestination(item: $open) { SummaryView(pokemonID: $0) }
+        .navigationDestination(item: $open) { id in
+            PagedSummaryView(ids: browseOrder(startingNear: id), start: id)
+        }
+        .confirmationDialog(releasing.map { "Release \($0.name)? You'll never see it again." } ?? "",
+                            isPresented: Binding(get: { releasing != nil }, set: { if !$0 { releasing = nil } }),
+                            titleVisibility: .visible) {
+            if let mon = releasing {
+                Button("Release \(mon.name)", role: .destructive) {
+                    store.release(mon.id)
+                    store.toast = "\(mon.name) was released. Bye-bye, \(mon.name)!"
+                }
+            }
+        }
         .alert("Rename box", isPresented: $renamingBox) {
             TextField("Box name", text: $boxName)
             Button("Save") { store.renameBox(boxIndex, to: boxName) }
@@ -158,18 +174,65 @@ struct PCView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            if let mon, case .party = slot, !moving {
-                if mon.id == store.state.buddyID {
-                    Label("\(mon.name) is your buddy", systemImage: "star.fill")
-                } else {
-                    Button("Make lead buddy", systemImage: "figure.walk") {
-                        Task { await store.setBuddy(mon.id) }
-                    }
-                }
-                Button("Summary", systemImage: "info.circle") { open = mon.id }
-            }
+            if let mon, !moving { holdMenu(mon: mon, slot: slot) }
         }
         .accessibilityLabel(mon.map { "\($0.name), level \($0.level)" } ?? "Empty slot")
+    }
+
+    /// Hold a Pokémon: Liquid Glass menu with party / move / summary / storage / release.
+    @ViewBuilder private func holdMenu(mon: OwnedPokemon, slot: PCSlot) -> some View {
+        let party = store.state.partyIDs
+        let isBuddy = mon.id == store.state.buddyID
+        Button("Summary", systemImage: "info.circle") { open = mon.id }
+        switch slot {
+        case .party(let i):
+            if isBuddy {
+                Label("\(mon.name) is your buddy", systemImage: "star.fill")
+            } else {
+                Button("Make lead buddy", systemImage: "figure.walk") { Task { await store.setBuddy(mon.id) } }
+                if party.count > 1, let free = firstFreeBoxSlot {
+                    Button("Put in box", systemImage: "tray.and.arrow.down") { store.move(from: .party(i), to: free) }
+                }
+            }
+        case .box:
+            if party.count < 6 {
+                Button("Add to party", systemImage: "person.badge.plus") { store.move(from: slot, to: .party(party.count)) }
+            } else {
+                Menu {
+                    ForEach(Array(party.enumerated()), id: \.element) { idx, pid in
+                        if pid != store.state.buddyID, let p = store.state.mon(pid) {
+                            Button("\(p.name) · Lv \(p.level)") { store.move(from: slot, to: .party(idx)) }
+                        }
+                    }
+                } label: {
+                    Label("Add to party (swap…)", systemImage: "arrow.left.arrow.right")
+                }
+            }
+            Button("Send to Storage", systemImage: "shippingbox") {
+                if store.sendToStorage(mon.id) { store.toast = "\(mon.name) was sent to Storage." }
+            }
+        }
+        Button("Move", systemImage: "hand.point.up.left") { moving = true; held = slot }
+        if !isBuddy {
+            Divider()
+            Button("Release", systemImage: "leaf", role: .destructive) { releasing = mon }
+        }
+    }
+
+    private var firstFreeBoxSlot: PCSlot? {
+        for (b, box) in store.state.boxes.enumerated() {
+            if let i = box.slots.firstIndex(where: { $0 == nil }) { return .box(b, i) }
+        }
+        return nil
+    }
+
+    /// Swipe order in the Summary: your party, then the box you're looking at.
+    private func browseOrder(startingNear id: UUID) -> [UUID] {
+        let party = store.state.partyIDs
+        let box = boxIndex < store.state.boxes.count ? store.state.boxes[boxIndex].slots.compactMap { $0 } : []
+        var ids = party + box.filter { !party.contains($0) }
+        if !ids.contains(id) { ids = [id] }
+        return ids
     }
 
     private func tap(slot: PCSlot, id: UUID?) {

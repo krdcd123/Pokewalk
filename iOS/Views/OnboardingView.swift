@@ -188,7 +188,11 @@ struct EvolutionView: View {
             }
             .padding()
         }
-        .onAppear { if originalName == nil { originalName = mon?.name } }
+        .onAppear {
+            if originalName == nil { originalName = mon?.name }
+            SoundKit.shared.setScene(.evolution)
+        }
+        .onDisappear { SoundKit.shared.setScene(.map) }
     }
 
     private func run() {

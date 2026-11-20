@@ -73,23 +73,6 @@ struct MapHomeView: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel("Show my location")
                     }
-                    if !sound.routeFiles.isEmpty {
-                        HStack {
-                            Spacer()
-                            Button { withAnimation(.snappy) { sound.routeMusicOn.toggle() } } label: {
-                                Image(systemName: sound.routeMusicOn ? "music.note" : "speaker.slash.fill")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .contentTransition(.symbolEffect(.replace))
-                                    .frame(width: 48, height: 48)
-                                    .contentShape(Circle())
-                                    .glassCircle(tint: sound.routeMusicOn ? Theme.teal : nil)
-                                    .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(sound.routeMusicOn ? "Turn route music off" : "Turn route music on")
-                        }
-                    }
                     Spacer()
                     bottomBar
                 }
@@ -192,6 +175,12 @@ struct MapHomeView: View {
 
     // MARK: Overlays
 
+    private var musicOffText: String {
+        if sound.routeFiles.isEmpty { return "No music added" }
+        if !sound.routeMusicOn { return "Sound off" }
+        return sound.otherAudioPlaying ? "Your music is on" : "Sound off"
+    }
+
     private var topCards: some View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
@@ -213,21 +202,32 @@ struct MapHomeView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Today's journal")
 
-                Button { withAnimation(.spring(duration: 0.4)) { sheet = .bag } } label: {
+                // Now playing: tap to mute / play the route music
+                Button {
+                    withAnimation(.snappy) { sound.routeMusicOn.toggle() }
+                } label: {
                 card {
-                    HStack(spacing: 10) {
-                        ItemSprite(key: BallKind.poke.itemKey).frame(width: 32, height: 32)
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text("×\(store.state.totalBalls)").font(.rounded(22, .black))
-                            Text("balls").font(.rounded(11)).foregroundStyle(Theme.inkSoft)
+                    HStack(spacing: 8) {
+                        Image(systemName: sound.nowPlaying != nil ? "music.note" : "speaker.slash.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(sound.nowPlaying != nil ? Theme.teal : Theme.inkSoft)
+                            .symbolEffect(.variableColor.iterative, options: .repeating, isActive: sound.nowPlaying != nil)
+                            .contentTransition(.symbolEffect(.replace))
+                            .frame(width: 26)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(sound.nowPlaying != nil ? "NOW PLAYING" : "MUSIC").font(.rounded(10, .heavy)).foregroundStyle(Theme.inkSoft)
+                            Text(sound.nowPlaying ?? musicOffText)
+                                .font(.rounded(13, .heavy)).lineLimit(2).minimumScaleFactor(0.75)
+                                .contentTransition(.opacity)
                         }
+                        Spacer(minLength: 0)
                     }
                 }
-                .frame(width: 120)
+                .frame(width: 150)
                 .contentShape(RoundedRectangle(cornerRadius: 20))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Bag")
+                .accessibilityLabel(sound.nowPlaying.map { "Now playing \($0). Tap to mute." } ?? "Music off. Tap to play.")
             }
             card {
                 VStack(spacing: 6) {

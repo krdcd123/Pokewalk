@@ -73,10 +73,13 @@ struct BallSendOut: View {
                 .offset(y: 20)
         }
         .frame(width: 180, height: 140)
-        .onAppear(perform: run)
+        .onAppear { if active { run() } }
+        .onChange(of: active) { _, now in if now && !hasRun { run() } }
     }
 
     @State private var showBack = false
+    @State private var hasRun = false
+    @Environment(\.summaryActive) private var active
     @State private var bounce = false
 
     @ViewBuilder private var pokemon: some View {
@@ -115,6 +118,8 @@ struct BallSendOut: View {
 
     private func run() {
         if skip { stage = 3; return }
+        guard !hasRun else { return }
+        hasRun = true
         Task { @MainActor in
             stage = 1                                                              // the ball, briefly
             try? await Task.sleep(for: .milliseconds(300))
