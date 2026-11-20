@@ -568,8 +568,7 @@ struct WeatherPill: View {
     }
 
     var body: some View {
-        Button { withAnimation(.snappy) { showInfo.toggle() } } label: {
-            HStack(spacing: 8) {
+        HStack(spacing: 8) {
                 icon
                     .font(.system(size: 22, weight: .semibold))
                     .symbolRenderingMode(.multicolor)
@@ -586,9 +585,15 @@ struct WeatherPill: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 12).padding(.vertical, 8)
             .glassCard(18)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Weather: \(condition.name)")
+            .contentShape(RoundedRectangle(cornerRadius: 18))
+            .onTapGesture {
+                withAnimation(.snappy) { showInfo.toggle() }
+                if showInfo {
+                    Task { try? await Task.sleep(for: .seconds(6)); withAnimation(.snappy) { showInfo = false } }
+                }
+            }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("Weather: \(condition.name)")
     }
 
     @ViewBuilder private var icon: some View {

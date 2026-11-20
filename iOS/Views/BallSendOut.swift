@@ -8,7 +8,7 @@ struct BallSendOut: View {
     let ball: BallKind
     var skip = false
     var playSounds = true
-    /// Summary screen: tap to hear its cry again, hold to see its back sprite.
+    /// Summary screen: tap to hear its cry again, double-tap to turn it around (back sprite) and back.
     var interactive = false
     var onRelease: () -> Void = {}
 
@@ -77,7 +77,6 @@ struct BallSendOut: View {
     }
 
     @State private var showBack = false
-    @State private var pressing = false
     @State private var bounce = false
 
     @ViewBuilder private var pokemon: some View {
@@ -87,21 +86,17 @@ struct BallSendOut: View {
         if interactive {
             sprite
                 .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                    withAnimation(.snappy) { showBack.toggle() }
+                }
                 .onTapGesture {
                     CryPlayer.shared.play(speciesID)
                     withAnimation(.spring(response: 0.18, dampingFraction: 0.5)) { bounce = true }
                     Task { try? await Task.sleep(for: .milliseconds(160))
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.6)) { bounce = false } }
                 }
-                .onLongPressGesture(minimumDuration: 0.3, perform: {}, onPressingChanged: { down in
-                    pressing = down
-                    if down {
-                        Task { try? await Task.sleep(for: .milliseconds(300))
-                            if pressing { UIImpactFeedbackGenerator(style: .soft).impactOccurred(); showBack = true } }
-                    } else {
-                        showBack = false
-                    }
-                })
+
         } else {
             sprite
         }

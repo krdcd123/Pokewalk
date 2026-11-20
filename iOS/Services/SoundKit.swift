@@ -39,6 +39,15 @@ final class SoundKit: ObservableObject {
     @Published var battleMusicOn: Bool = UserDefaults.standard.object(forKey: "battleMusicOn") as? Bool ?? true {
         didSet { UserDefaults.standard.set(battleMusicOn, forKey: "battleMusicOn"); refreshMusic() }
     }
+    @Published var routeVolume: Double = UserDefaults.standard.object(forKey: "routeVolume") as? Double ?? 0.4 {
+        didSet { UserDefaults.standard.set(routeVolume, forKey: "routeVolume"); applyMusicVolume() }
+    }
+    @Published var battleVolume: Double = UserDefaults.standard.object(forKey: "battleVolume") as? Double ?? 0.55 {
+        didSet { UserDefaults.standard.set(battleVolume, forKey: "battleVolume"); applyMusicVolume() }
+    }
+    @Published var effectsVolume: Double = UserDefaults.standard.object(forKey: "sfxVolume") as? Double ?? 0.7 {
+        didSet { UserDefaults.standard.set(effectsVolume, forKey: "sfxVolume") }
+    }
     @Published private(set) var revision = 0          // bumps when files change, so Settings refreshes
 
     // MARK: Files
@@ -119,7 +128,7 @@ final class SoundKit: ObservableObject {
             players[e.rawValue]?.prepareToPlay()
         }
         guard let p = players[e.rawValue] else { return }
-        p.volume = 0.7
+        p.volume = Float(effectsVolume)
         p.currentTime = 0
         p.play()
     }
@@ -166,7 +175,15 @@ final class SoundKit: ObservableObject {
         p.delegate = musicDelegate
         p.volume = 0
         p.play()
-        p.setVolume(wanted == .battle ? 0.55 : 0.4, fadeDuration: 0.8)
+        playingScene = wanted
+        p.setVolume(Float(wanted == .battle ? battleVolume : routeVolume), fadeDuration: 0.8)
+    }
+
+    private var playingScene: Scene = .none
+
+    private func applyMusicVolume() {
+        guard let m = music else { return }
+        m.volume = Float(playingScene == .battle ? battleVolume : routeVolume)
     }
 
     private func fadeOutMusic() {

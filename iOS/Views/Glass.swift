@@ -1,4 +1,5 @@
 import SwiftUI
+import MapKit
 
 // MARK: - Liquid Glass look, used by every screen
 // iOS 26+ uses Apple's real Liquid Glass (.glassEffect); older iOS falls back to frosted materials.
@@ -152,5 +153,26 @@ private struct GlassScreen: ViewModifier {
     @Environment(\.overMap) private var overMap
     func body(content: Content) -> some View {
         content.glassScreenBody(transparent: transparent || overMap)
+    }
+}
+
+
+/// Your surroundings, zoomed in and blurred — the backdrop for full-screen moments (evolution…).
+struct BlurredMapBackdrop: View {
+    var body: some View {
+        ZStack {
+            if let loc = LocationTracker.shared.currentLocation()?.coordinate {
+                Map(initialPosition: .camera(MapCamera(centerCoordinate: loc, distance: 300, heading: 0, pitch: 50)),
+                    interactionModes: [])
+                    .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
+                    .allowsHitTesting(false)
+                    .scaleEffect(1.15)
+                    .blur(radius: 16)
+            } else {
+                AppBackground()
+            }
+            LinearGradient(colors: [.black.opacity(0.4), .black.opacity(0.15), .black.opacity(0.5)],
+                           startPoint: .top, endPoint: .bottom)
+        }
     }
 }

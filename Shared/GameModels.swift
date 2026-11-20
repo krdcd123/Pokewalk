@@ -94,8 +94,8 @@ enum BallKind: String, Codable, CaseIterable, Identifiable {
 /// Exp. Candies your buddy picks up while walking.
 enum ExpCandy {
     static let all: [(key: String, exp: Int, weight: Double)] = [
-        ("exp-candy-xs", 100, 40), ("exp-candy-s", 800, 30), ("exp-candy-m", 3_000, 18),
-        ("exp-candy-l", 10_000, 9), ("exp-candy-xl", 30_000, 3),
+        ("exp-candy-xs", 50, 40), ("exp-candy-s", 250, 30), ("exp-candy-m", 800, 18),
+        ("exp-candy-l", 2_500, 9), ("exp-candy-xl", 6_000, 3),
     ]
     static func exp(_ key: String) -> Int? { all.first { $0.key == key }?.exp }
     /// A Pokémon holds one item at a time; it won't pick up another until you take it.

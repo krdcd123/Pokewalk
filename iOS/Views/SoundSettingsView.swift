@@ -18,6 +18,14 @@ struct SoundSettingsView: View {
             }
 
             Section {
+                volume("Route music", value: $sound.routeVolume, icon: "map.fill")
+                volume("Battle music", value: $sound.battleVolume, icon: "bolt.fill")
+                volume("Sound effects", value: $sound.effectsVolume, icon: "speaker.wave.2.fill") { sound.play(.select) }
+            } header: { Text("Volume") } footer: {
+                Text("Relative to your phone's volume. Music volume changes straight away if it's playing.")
+            }
+
+            Section {
                 ForEach(SoundKit.Effect.allCases) { e in
                     row(e.title, custom: sound.hasCustom(e), slot: e.rawValue, preview: { sound.play(e) })
                 }
@@ -52,6 +60,20 @@ struct SoundSettingsView: View {
             guard case .success(let urls) = result else { return }
             for u in urls { sound.importFile(u, slot: slot) }
         }
+    }
+
+    private func volume(_ title: String, value: Binding<Double>, icon: String, onEnd: (() -> Void)? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Label(title, systemImage: icon).font(.rounded(15, .heavy))
+                Spacer()
+                Text("\(Int(value.wrappedValue * 100))%").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
+                    .monospacedDigit()
+            }
+            Slider(value: value, in: 0...1) { editing in if !editing { onEnd?() } }
+                .tint(Theme.teal)
+        }
+        .glassRow()
     }
 
     private func row(_ title: String, custom: Bool, slot s: String, preview: (() -> Void)?) -> some View {

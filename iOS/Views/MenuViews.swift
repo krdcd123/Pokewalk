@@ -154,27 +154,7 @@ struct PokedexView: View {
         }
         .navigationTitle("Pokédex")
         .glassScreen()
-        .sheet(item: $selected) { sp in
-            ScrollView {
-                VStack(spacing: 10) {
-                    AnimatedSprite(speciesID: sp.id).frame(width: 140, height: 140)
-                    Text("\(sp.dexNumber) \(sp.name)").font(.rounded(24, .black))
-                    HStack { ForEach(sp.types, id: \.self) { TypeChip(type: $0) } }
-                    Text("Found near: " + sp.habitats.map(\.displayName).joined(separator: ", "))
-                        .font(.rounded(13)).foregroundStyle(Theme.inkSoft).multilineTextAlignment(.center)
-                    if !sp.evolutions.isEmpty {
-                        Text("Evolves: " + sp.evolutions.map(\.summary).joined(separator: "; "))
-                            .font(.rounded(13)).foregroundStyle(Theme.inkSoft).multilineTextAlignment(.center)
-                    }
-                    if let first = store.state.pokemon.filter({ $0.speciesID == sp.id }).min(by: { $0.metDate < $1.metDate }) {
-                        MetCard(mon: first)
-                    }
-                }
-                .padding()
-            }
-            .glassScreen()
-            .presentationDetents([.medium, .large])
-        }
+        .navigationDestination(item: $selected) { DexEntryView(species: $0) }
     }
 }
 

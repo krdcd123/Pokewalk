@@ -147,7 +147,7 @@ struct EvolutionView: View {
         let oldName = originalName ?? mon?.name ?? "?"
         let newSpecies = Dex.species(candidate.into)
         ZStack {
-            Color.black.ignoresSafeArea()
+            BlurredMapBackdrop().ignoresSafeArea()
             VStack(spacing: 32) {
                 Spacer()
                 ZStack {
