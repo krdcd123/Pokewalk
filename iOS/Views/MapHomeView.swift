@@ -295,7 +295,7 @@ struct MapHomeView: View {
                         .frame(width: 44, height: 46)
                         .frame(width: 64, height: 64, alignment: .center)
                         .contentShape(Circle())
-                        .glassCircle(tint: Theme.teal)
+                        .glassCircle()
                         .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
                 }
                 .buttonStyle(.plain)
@@ -409,16 +409,18 @@ struct BuddyMarker: View {
 struct EncounterListView: View {
     @EnvironmentObject private var store: GameStore
     let open: (PendingEncounter) -> Void
+    @State private var now = Date()
 
     var body: some View {
         NavigationStack {
             List {
-                if store.state.pending.isEmpty {
+                let live = store.state.pending.filter { $0.expiresAt > now }
+                if live.isEmpty {
                     ContentUnavailableView("No wild Pokémon yet", systemImage: "leaf",
                                            description: Text("One appears about every \(store.state.settings.encounterSteps) steps. Keep walking!"))
                         .listRowBackground(Color.clear)
                 }
-                ForEach(store.state.pending.reversed()) { enc in
+                ForEach(live.reversed()) { enc in
                     Button { open(enc) } label: {
                         HStack(spacing: 12) {
                             AnimatedSprite(speciesID: enc.speciesID, kind: .icons).frame(width: 48, height: 40)
@@ -429,8 +431,14 @@ struct EncounterListView: View {
                                     .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                             }
                             Spacer()
-                            Text(enc.expiresAt, style: .relative)
-                                .font(.rounded(11)).foregroundStyle(Theme.inkSoft).multilineTextAlignment(.trailing)
+                            VStack(alignment: .trailing, spacing: 1) {
+                                Text(timerInterval: now...max(now, enc.expiresAt), countsDown: true, showsHours: true)
+                                    .font(.rounded(13, .heavy)).monospacedDigit()
+                                    .foregroundStyle(enc.expiresAt.timeIntervalSince(now) < 900 ? Theme.orange : Theme.ink)
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(width: 70, alignment: .trailing)
+                                Text("left").font(.rounded(10)).foregroundStyle(Theme.inkSoft)
+                            }
                         }
                     }
                     .glassRow()
@@ -438,6 +446,10 @@ struct EncounterListView: View {
             }
             .navigationTitle("Wild Pokémon")
             .navigationBarTitleDisplayMode(.inline)
+            .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { t in
+                now = t
+                store.pruneExpiredEncounters()
+            }
             .glassScreen(transparent: true)
         }
     }
@@ -453,14 +465,21 @@ struct MapPanel<Content: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             Capsule().fill(.white.opacity(0.5)).frame(width: 40, height: 5)
-                .padding(.top, 10).padding(.bottom, 4)
+                .padding(.top, 12).padding(.bottom, 10)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
-                .gesture(DragGesture()
-                    .onChanged { drag = max(0, $0.translation.height) }
+                .gesture(DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                    .onChanged { v in
+                        // follow the finger 1:1 downwards, resist a little upwards
+                        let dy = v.translation.height
+                        drag = dy >= 0 ? dy : dy / 6
+                    }
                     .onEnded { v in
-                        if v.translation.height > 120 || v.predictedEndTranslation.height > 300 { close() }
-                        withAnimation(.spring(duration: 0.3)) { drag = 0 }
+                        if v.translation.height > 110 || v.predictedEndTranslation.height > 260 {
+                            close()                          // slides away from where you let go
+                        } else {
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { drag = 0 }
+                        }
                     })
             content
                 .overMap()

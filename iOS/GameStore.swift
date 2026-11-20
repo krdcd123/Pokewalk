@@ -442,6 +442,12 @@ final class GameStore: ObservableObject {
         return ok
     }
 
+    /// Wild Pokémon that have run off (their time ran out) leave the list straight away, even without new steps.
+    func pruneExpiredEncounters() {
+        guard state.pending.contains(where: { $0.expiresAt <= .now }) else { return }
+        mutate { $0.pending.removeAll { $0.expiresAt <= .now } }
+    }
+
     /// Moves a Pokémon's held Exp. Candies into the Bag.
     @discardableResult
     func takeHeldItems(_ id: UUID) -> [String] {
