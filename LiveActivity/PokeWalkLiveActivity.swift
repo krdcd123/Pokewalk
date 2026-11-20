@@ -83,6 +83,8 @@ private struct LockScreenView: View {
         } else {
             HStack(spacing: 14) {
                 BuddyImage(data: state.spritePNG).frame(width: 64, height: 64)
+                    .offset(y: state.hop ? -5 : 0)            // hops along as you walk
+                    .scaleEffect(x: 1, y: state.hop ? 1.04 : 1, anchor: .bottom)
                     .id(state.level)
                     .transition(.push(from: .bottom))
                 VStack(alignment: .leading, spacing: 6) {
