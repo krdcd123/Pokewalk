@@ -222,6 +222,7 @@ struct MapHomeView: View {
                         }
                         Spacer(minLength: 0)
                     }
+                    .frame(maxHeight: .infinity)
                 }
                 .frame(width: 150)
                 .contentShape(RoundedRectangle(cornerRadius: 20))
@@ -229,6 +230,7 @@ struct MapHomeView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(sound.nowPlaying.map { "Now playing \($0). Tap to mute." } ?? "Music off. Tap to play.")
             }
+            .fixedSize(horizontal: false, vertical: true)      // music card matches the steps card's height
             card {
                 VStack(spacing: 6) {
                     let c = store.state.counters
