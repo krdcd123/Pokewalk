@@ -230,7 +230,8 @@ final class GameStore: ObservableObject {
 
     // MARK: New game
 
-    func newGame(trainerName: String, appearance: String, starter: Int, nickname: String?, shiny: Bool = false) async {
+    func newGame(trainerName: String, appearance: String, starter: Int, nickname: String?, shiny: Bool = false,
+                 gender: Gender? = nil) async {
         let loc = tracker.currentLocation()
         var met: MetLocation?
         if let loc {
@@ -238,7 +239,7 @@ final class GameStore: ObservableObject {
                               placeName: await PlaceService.shared.placeName(for: loc))
         }
         var s = GameRules.newGame(trainerName: trainerName, appearance: appearance, starter: starter,
-                                  nickname: nickname, location: met, shiny: shiny)
+                                  nickname: nickname, location: met, shiny: shiny, gender: gender)
         // Start counting from now: today's earlier steps don't count.
         let today = Calendar.current.startOfDay(for: .now)
         s.stepLedger[TrackStore.key(for: today)] = await engine.steps(onDay: today)

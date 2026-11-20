@@ -48,12 +48,16 @@ enum GameRules {
 
     /// Starters on the "Choose your partner" page are each rolled at 1 in 8192 (the Gen 3 odds).
     static let starterShinyOdds = 8_192
+    static func rollStarterGenders() -> [Int: Gender] {
+        Dictionary(uniqueKeysWithValues: Dex.starterChoices.map { ($0, rollGender(Dex.species($0))) })
+    }
+
     static func rollStarterShinies() -> Set<Int> {
         Set(Dex.starterChoices.filter { _ in Int.random(in: 0..<starterShinyOdds) == 0 })
     }
 
     static func newGame(trainerName: String, appearance: String = "brendan", starter: Int, nickname: String?,
-                        location: MetLocation?, shiny: Bool = false) -> GameState {
+                        location: MetLocation?, shiny: Bool = false, gender: Gender? = nil) -> GameState {
         var s = GameState()
         s.trainer = Trainer.new(named: trainerName.isEmpty ? "Trainer" : trainerName)
         s.trainer.appearance = appearance
@@ -61,6 +65,7 @@ enum GameRules {
                               location: location, note: "Received as a starter")
         mon.nickname = nickname
         mon.isShiny = shiny                       // exactly what you saw on the picker
+        if let gender { mon.gender = gender }
         store(mon, in: &s)
         s.buddyID = mon.id
         s.balls = [.poke: 10, .great: 2]

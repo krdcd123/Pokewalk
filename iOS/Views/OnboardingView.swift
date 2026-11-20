@@ -9,7 +9,21 @@ struct OnboardingView: View {
     @State private var starting = false
     /// Rolled fresh every time this page opens (each New Game), 1 in 4096 per starter.
     @State private var shinies = GameRules.rollStarterShinies()
-    @State private var resets = 0
+    /// Saved, so a long shiny hunt keeps its count even if you close the app.
+    @AppStorage("starterResets") private var resets = 0
+    @State private var genders = GameRules.rollStarterGenders()
+    @State private var animateOut = false          // only play the ball send-out after a Reset tap
+
+    /// Shiny hunting: every starter gets a brand-new shiny (1 in 8192) and gender roll.
+    private func reset() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation(.spring) {
+            shinies = GameRules.rollStarterShinies()
+            genders = GameRules.rollStarterGenders()
+            animateOut = true
+            resets += 1
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -50,20 +64,9 @@ struct OnboardingView: View {
                     HStack {
                         Text("CHOOSE YOUR PARTNER").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
                         Spacer()
-                        // Shiny hunting: re-roll every starter (1 in 8192 each), like soft-resetting.
-                        Button {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            withAnimation(.spring) {
-                                shinies = GameRules.rollStarterShinies()
-                                resets += 1
-                            }
-                        } label: {
-                            Label(resets == 0 ? "Reset" : "Reset · \(resets)", systemImage: "arrow.clockwise")
-                                .font(.rounded(13, .heavy)).foregroundStyle(.white)
-                                .padding(.horizontal, 12).frame(height: 32)
-                                .background(.white.opacity(0.12), in: Capsule())
+                        if resets > 0 {
+                            Text("\(resets.formatted()) resets").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
                         }
-                        .buttonStyle(.plain)
                     }
                     if !shinies.isEmpty {
                         Text("✨ A shiny partner appeared! ✨").font(.rounded(14, .black))
@@ -75,11 +78,18 @@ struct OnboardingView: View {
                             let shiny = shinies.contains(id)
                             Button { withAnimation(.spring) { starter = id } } label: {
                                 VStack(spacing: 4) {
-                                    BallSendOut(speciesID: id, shiny: shiny, ball: .poke, skip: resets == 0,
+                                    BallSendOut(speciesID: id, shiny: shiny, ball: .poke, skip: !animateOut,
                                                 playSounds: id == Dex.starterChoices.first || shiny)
                                         .scaleEffect(0.55)
                                         .frame(width: 100, height: 78)
                                         .id("\(id)-\(resets)")
+                                        .overlay(alignment: .topLeading) {
+                                            if let g = genders[id], g != .genderless {
+                                                Text(g.symbol).font(.system(size: 17, weight: .black))
+                                                    .foregroundStyle(g == .male ? Color(hex: 0x5DA9F5) : Color(hex: 0xF57FB0))
+                                                    .padding(.leading, 6)
+                                            }
+                                        }
                                         .overlay(alignment: .topTrailing) {
                                             if shiny {
                                                 Image(systemName: "sparkles").font(.system(size: 16, weight: .black))
@@ -96,6 +106,24 @@ struct OnboardingView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        // Reset sits right after Eevee, so you can hunt one-handed
+                        Button(action: reset) {
+                            VStack(spacing: 6) {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 30, weight: .bold))
+                                    .symbolEffect(.rotate, value: resets)
+                                Text("Reset").font(.rounded(16, .black))
+                                Text(resets == 0 ? "Shiny hunt" : "\(resets.formatted())")
+                                    .font(.rounded(13, .heavy)).foregroundStyle(.white.opacity(0.75))
+                                    .contentTransition(.numericText(value: Double(resets)))
+                            }
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, minHeight: 150)
+                            .glassCard(18, tint: Theme.teal)
+                            .contentShape(RoundedRectangle(cornerRadius: 18))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Reset starters, \(resets) resets so far")
                     }
 
                     if let starter {
@@ -110,7 +138,7 @@ struct OnboardingView: View {
                             Task {
                                 await store.newGame(trainerName: name, appearance: look ?? TrainerStyle.all[4].id,
                                                     starter: starter, nickname: nickname.isEmpty ? nil : nickname,
-                                                    shiny: shinies.contains(starter))
+                                                    shiny: shinies.contains(starter), gender: genders[starter])
                             }
                         }
                         .disabled(look == nil)
