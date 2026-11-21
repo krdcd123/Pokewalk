@@ -157,6 +157,8 @@ struct OwnedPokemon: Codable, Identifiable, Hashable {
     var evolutionDeclinedAtLevel: Int?
     var evolvedOn: Date?
     var heldItems: [String] = []    // Exp. Candies picked up on walks, until you take them
+    var pickupSteps = 0             // its own pickup timer (counts while in the party, empty-handed)
+    var nextPickupAt = 300
 
     var species: Species { Dex.species(speciesID) }
     var name: String { (nickname?.isEmpty == false) ? nickname! : species.name }
@@ -372,6 +374,8 @@ extension OwnedPokemon {
         evolutionDeclinedAtLevel = c.value(.evolutionDeclinedAtLevel, nil)
         evolvedOn = c.value(.evolvedOn, nil)
         heldItems = c.value(.heldItems, [])
+        pickupSteps = c.value(.pickupSteps, 0)
+        nextPickupAt = c.value(.nextPickupAt, 300)
     }
 }
 

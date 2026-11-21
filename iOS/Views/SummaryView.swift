@@ -71,6 +71,17 @@ struct SummaryView: View {
                             if let first = taken.first { store.toast = "Took the \(Dex.itemName(first)) from \(mon.name). It's in your Bag." }
                         }
                         .padding(.horizontal)
+                    } else if store.state.partyIDs.contains(mon.id) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "hand.raised.fill").foregroundStyle(Theme.teal)
+                            Text("Next pickup in about \(max(0, mon.nextPickupAt - mon.pickupSteps).formatted()) steps")
+                                .font(.rounded(14, .heavy))
+                            Spacer()
+                        }
+                        .foregroundStyle(Theme.ink)
+                        .padding(14)
+                        .glassCard(18)
+                        .padding(.horizontal)
                     }
 
                     MetCard(mon: mon).padding(.horizontal)

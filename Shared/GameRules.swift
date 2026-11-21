@@ -187,22 +187,18 @@ enum GameRules {
         s.money += s.counters.moneyProgress / 100
         s.counters.moneyProgress %= 100
 
-        // Pickup: about every 300 steps your buddy finds an Exp. Candy and holds onto it
-        s.counters.pickupProgress += steps
-        while s.counters.pickupProgress >= s.counters.nextPickupAt {
-            s.counters.pickupProgress -= s.counters.nextPickupAt
-            s.counters.nextPickupAt = Int.random(in: 250...350)
-            // Everyone in the party (not the PC) has a go — like the Pickup ability. Each holds one thing at a time.
-            for pid in s.partyIDs {
-                guard let i = s.index(of: pid), s.pokemon[i].heldItems.count < ExpCandy.carryLimit else { continue }
-                let chance = pid == s.buddyID ? 1.0 : 0.5          // your buddy always finds something
-                guard Double.random(in: 0..<1) < chance else { continue }
-                // Half the time an Exp. Candy, half the time a berry
-                let found = Bool.random() ? weightedPick(ExpCandy.all.map { ($0.key, $0.weight) })
-                                          : ItemCatalog.berries.randomElement()!
-                s.pokemon[i].heldItems.append(found)
-                out.pickedUp.append((pid, found))
-            }
+        // Pickup: each party Pokémon has its own timer — about every 300 of *its* steps (while it's in the
+        // party with empty hands) it finds an Exp. Candy or a berry and holds it until you take it.
+        for pid in s.partyIDs {
+            guard let i = s.index(of: pid), s.pokemon[i].heldItems.count < ExpCandy.carryLimit else { continue }
+            s.pokemon[i].pickupSteps += steps
+            guard s.pokemon[i].pickupSteps >= s.pokemon[i].nextPickupAt else { continue }
+            s.pokemon[i].pickupSteps = 0
+            s.pokemon[i].nextPickupAt = Int.random(in: 250...350)
+            let found = Bool.random() ? weightedPick(ExpCandy.all.map { ($0.key, $0.weight) })
+                                      : ItemCatalog.berries.randomElement()!
+            s.pokemon[i].heldItems.append(found)
+            out.pickedUp.append((pid, found))
         }
 
         // Encounters
