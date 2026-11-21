@@ -319,7 +319,10 @@ final class GameStore: ObservableObject {
             lines.append("\(buddy.name) grew to Lv. \(o.newLevel)!")
         }
         if let buddy = state.buddy {
-            for candy in o.pickedUp { lines.append("\(buddy.name) picked up an \(Dex.itemName(candy))!") }
+            for thing in o.pickedUp {
+                let name = Dex.itemName(thing)
+                lines.append("\(buddy.name) picked up \(name.first.map { "AEIOU".contains($0) } == true ? "an" : "a") \(name)!")
+            }
         }
         if !o.itemsFound.isEmpty {
             lines.append("Found " + o.itemsFound.map(Dex.itemName).joined(separator: ", ") + "!")
@@ -448,6 +451,17 @@ final class GameStore: ObservableObject {
     func pruneExpiredEncounters() {
         guard state.pending.contains(where: { $0.expiresAt <= .now }) else { return }
         mutate { $0.pending.removeAll { $0.expiresAt <= .now } }
+    }
+
+    /// Uses up one of an item from the Bag (e.g. a berry thrown in a wild encounter).
+    @discardableResult
+    func consume(_ item: String) -> Bool {
+        guard (state.bag[item] ?? 0) > 0 else { return false }
+        mutate { s in
+            s.bag[item, default: 0] -= 1
+            if s.bag[item] == 0 { s.bag[item] = nil }
+        }
+        return true
     }
 
     /// Moves a Pokémon's held Exp. Candies into the Bag.

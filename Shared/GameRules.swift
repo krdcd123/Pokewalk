@@ -173,6 +173,15 @@ enum GameRules {
             out.itemsFound.append(item)
         }
 
+        // Berries: their own, more frequent find (Settings › Berry every N steps)
+        s.counters.berryProgress += steps
+        while s.counters.berryProgress >= max(50, s.settings.berrySteps) {
+            s.counters.berryProgress -= max(50, s.settings.berrySteps)
+            let berry = ItemCatalog.berries.randomElement()!
+            s.bag[berry, default: 0] += 1
+            out.itemsFound.append(berry)
+        }
+
         // Pocket money: ₽0.01 per step
         s.counters.moneyProgress += steps
         s.money += s.counters.moneyProgress / 100
@@ -185,9 +194,11 @@ enum GameRules {
             s.counters.nextPickupAt = Int.random(in: 250...350)
             guard let id = s.buddyID, let i = s.index(of: id),
                   s.pokemon[i].heldItems.count < ExpCandy.carryLimit else { continue }
-            let candy = weightedPick(ExpCandy.all.map { ($0.key, $0.weight) })
-            s.pokemon[i].heldItems.append(candy)
-            out.pickedUp.append(candy)
+            // Half the time an Exp. Candy, half the time a berry
+            let found = Bool.random() ? weightedPick(ExpCandy.all.map { ($0.key, $0.weight) })
+                                      : ItemCatalog.berries.randomElement()!
+            s.pokemon[i].heldItems.append(found)
+            out.pickedUp.append(found)
         }
 
         // Encounters
@@ -573,23 +584,31 @@ struct SafariEncounter {
         log.append("A wild \(wild.species.name) appeared!")
     }
 
+    /// Chance it runs after each missed ball (or berry): rarer and higher-level Pokémon are jumpier.
     var baseFleeChance: Double {
         let sp = wild.species
-        if sp.isLegendary || sp.isMythical { return 0.35 }
-        switch sp.captureRate {
-        case 190...: return 0.08
-        case 90..<190: return 0.14
-        case 45..<90: return 0.22
-        default: return 0.3
+        let rarity: Double
+        if sp.isLegendary || sp.isMythical { rarity = 0.30 }
+        else {
+            switch sp.captureRate {
+            case 190...: rarity = 0.06
+            case 120..<190: rarity = 0.09
+            case 75..<120: rarity = 0.13
+            case 45..<75: rarity = 0.18
+            default: rarity = 0.24
+            }
         }
+        let levelBonus = Double(max(0, wild.level - 5)) * 0.002      // +1% every 5 levels
+        return min(0.45, rarity + levelBonus)
     }
 
-    var fleeChance: Double { baseFleeChance * (baitTurns > 0 ? 0.3 : 1) }
+    /// While it's eating a berry it's much calmer.
+    var fleeChance: Double { baseFleeChance * (baitTurns > 0 ? 0.35 : 1) }
 
     /// Modified catch rate "a" from the Gen 3/4 formula at full HP.
     func modifiedRate(ball: BallKind, quality: Double?) -> Double {
         let throwBonus = 1 + 0.85 * (quality ?? 0)
-        let bait = baitTurns > 0 ? 0.9 : 1
+        let bait = 1.0       // berries don't make it harder to catch
         if ball == .master { return 255 }
         let ballBonus = ball.bonus(species: wild.species, level: wild.level, turn: throwCount,
                                    caughtBefore: caughtBefore,
@@ -632,11 +651,13 @@ struct SafariEncounter {
         return ThrowResult(shakes: min(passes, 3), caught: false, fled: fled, label: lbl)
     }
 
-    mutating func giveBait() {
-        guard phase == .active else { return }
+    /// Throw one of your berries: it stays calmer (much less likely to flee) for the next few turns.
+    @discardableResult
+    mutating func giveBerry(_ name: String) -> Bool {
+        guard phase == .active else { return false }
         baitTurns = min(baitTurns + Int.random(in: 2...4), 6)
-        log.append("\(wild.species.name) is eating!")
-        _ = turnEnds()
+        log.append("\(wild.species.name) is eating the \(name)!")
+        return turnEnds()
     }
 
     mutating func run() {

@@ -2,7 +2,7 @@ import SwiftUI
 import MapKit
 
 /// Safari Zone-style encounter: tap the ball to throw (the catch is decided by the odds),
-/// give bait to calm it down, or run.
+/// throw a berry so it stays longer, or run.
 struct SafariView: View {
     @EnvironmentObject private var store: GameStore
     @Environment(\.dismiss) private var dismiss
@@ -182,8 +182,14 @@ struct SafariView: View {
         HStack {
             Text(throwing ?? safari.log.last ?? "")
             Spacer(minLength: 8)
-            Text(safari.baitTurns > 0 ? "Eating · calmer" : "\(Int((safari.catchChance(ball: ball) * 100).rounded()))% catch")
-                .foregroundStyle(safari.baitTurns > 0 ? Theme.tealDark : Theme.inkSoft)
+            VStack(alignment: .trailing, spacing: 0) {
+                Text("\(pct(safari.catchChance(ball: ball)))% catch")
+                    .foregroundStyle(Theme.inkSoft)
+                Text(safari.baitTurns > 0 ? "\(pct(safari.fleeChance))% flee · eating" : "\(pct(safari.fleeChance))% flee")
+                    .foregroundStyle(safari.baitTurns > 0 ? Theme.tealDark : Theme.orange)
+            }
+            .font(.rounded(12, .heavy))
+            .contentTransition(.numericText())
         }
         .font(.rounded(13, .heavy))
         .foregroundStyle(Theme.ink)
@@ -194,19 +200,28 @@ struct SafariView: View {
 
     private var bottomControls: some View {
         HStack {
-            Button {
-                withAnimation { safari.giveBait() }
-                if safari.phase == .fled { endFled() }
+            // Berry: tap throws the one you have most of; hold to pick which
+            Menu {
+                ForEach(ownedBerries, id: \.self) { key in
+                    Button("\(Dex.itemName(key)) ×\(store.state.bag[key] ?? 0)") { throwBerry(key) }
+                }
             } label: {
                 VStack(spacing: 2) {
-                    Image(systemName: "carrot.fill").font(.system(size: 22, weight: .bold))
-                    Text("Bait").font(.rounded(12, .black))
+                    if let key = ownedBerries.first {
+                        ItemSprite(key: key).frame(width: 28, height: 28)
+                    } else {
+                        Image(systemName: "leaf.fill").font(.system(size: 22, weight: .bold))
+                    }
+                    Text(berryCount == 0 ? "No berries" : "Berry ×\(berryCount)").font(.rounded(11, .black))
                 }
                 .frame(width: 72, height: 72)
                 .foregroundStyle(.white)
                 .glassCircle(tint: Theme.orange)
+            } primaryAction: {
+                if let key = ownedBerries.first { throwBerry(key) }
             }
-            .disabled(busy || !introDone)
+            .disabled(busy || !introDone || berryCount == 0)
+            .opacity(berryCount == 0 ? 0.6 : 1)
 
             Spacer()
 
@@ -301,6 +316,22 @@ struct SafariView: View {
             pickAvailableBall()
             busy = false
         }
+    }
+
+    private func pct(_ p: Double) -> Int { Int((p * 100).rounded()) }
+
+    /// Berries you have, most first.
+    private var ownedBerries: [String] {
+        ItemCatalog.berries.filter { (store.state.bag[$0] ?? 0) > 0 }
+            .sorted { (store.state.bag[$0] ?? 0) > (store.state.bag[$1] ?? 0) }
+    }
+    private var berryCount: Int { ItemCatalog.berries.reduce(0) { $0 + (store.state.bag[$1] ?? 0) } }
+
+    private func throwBerry(_ key: String) {
+        guard store.consume(key) else { return }
+        SoundKit.shared.play(.useItem)
+        withAnimation { safari.giveBerry(Dex.itemName(key)) }
+        if safari.phase == .fled { endFled() }
     }
 
     private func pickAvailableBall() {

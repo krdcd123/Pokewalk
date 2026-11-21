@@ -253,6 +253,7 @@ struct GameSettings: Codable, Hashable {
     var encounterSteps = 500        // average steps between wild encounters
     var ballSteps = 1_000           // steps per Poké Ball
     var itemSteps = 1_500           // steps per found item
+    var berrySteps = 400            // steps per berry found (on top of items)
     var shinyOdds = 512           // each Pokémon has a 1-in-N random chance (not a guaranteed every-Nth)
     var maxPendingEncounters = 5
     var encounterLifetimeHours = 4
@@ -269,6 +270,7 @@ struct StepCounters: Codable, Hashable {
     var pickupProgress = 0
     var nextPickupAt = 300
     var moneyProgress = 0            // ₽0.01 per step → ₽1 every 100 steps
+    var berryProgress = 0
 
     var stepsToEncounter: Int { max(0, nextEncounterAt - encounterProgress) }
 }
@@ -382,6 +384,7 @@ extension GameSettings {
         encounterSteps = c.value(.encounterSteps, d.encounterSteps)
         ballSteps = c.value(.ballSteps, d.ballSteps)
         itemSteps = c.value(.itemSteps, d.itemSteps)
+        berrySteps = c.value(.berrySteps, d.berrySteps)
         shinyOdds = c.value(.shinyOdds, d.shinyOdds)
         maxPendingEncounters = c.value(.maxPendingEncounters, d.maxPendingEncounters)
         encounterLifetimeHours = c.value(.encounterLifetimeHours, d.encounterLifetimeHours)
@@ -429,6 +432,7 @@ extension StepCounters {
         pickupProgress = c.value(.pickupProgress, d.pickupProgress)
         nextPickupAt = c.value(.nextPickupAt, d.nextPickupAt)
         moneyProgress = c.value(.moneyProgress, d.moneyProgress)
+        berryProgress = c.value(.berryProgress, d.berryProgress)
     }
 }
 
