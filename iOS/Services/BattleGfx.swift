@@ -200,6 +200,16 @@ private struct Pixels {
             x = w - 1
             while x >= 0, alpha(x, y) == 0 || isWhite(x, y) { clear(x, y); x -= 1 }
         }
+        // Background pockets that only open downwards into cleared space (e.g. under Kris's ponytail):
+        // spread the clearing up and sideways — never down, which is where the white clothes are.
+        var spread: [(Int, Int)] = []
+        for y in 0..<h { for x in 0..<w where alpha(x, y) == 0 { spread.append((x, y)) } }
+        while let (x, y) = spread.popLast() {
+            for (nx, ny) in [(x + 1, y), (x - 1, y), (x, y - 1)]
+            where nx >= 0 && nx < w && ny >= 0 && alpha(nx, ny) > 0 && isWhite(nx, ny) {
+                clear(nx, ny); spread.append((nx, ny))
+            }
+        }
     }
 
     func frames(height fh: Int) -> [UIImage] {

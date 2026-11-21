@@ -126,8 +126,15 @@ final class SoundKit: ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(true)
     }
 
+    private var lastSelectAt = Date.distantPast
+
     func play(_ e: Effect) {
         guard effectsOn else { return }
+        if e == .select {
+            // a button inside a list row would otherwise play it twice (the button + the row)
+            guard Date().timeIntervalSince(lastSelectAt) > 0.15 else { return }
+            lastSelectAt = Date()
+        }
         activateSession()
         if players[e.rawValue] == nil {
             if let u = customFile(named: e.rawValue) {
@@ -243,18 +250,18 @@ final class SoundKit: ObservableObject {
             if name.contains("MKMapView") || name.contains("Keyboard") || cur is UITextField || cur is UITextView { return }
             v = cur.superview
         }
-        // Only for things that actually do something: UIKit controls, or SwiftUI buttons / links / sliders
-        // (found through the accessibility tree, which knows which views are tappable)
-        var isControl = false
+        // SwiftUI buttons play the sound themselves (see SoundButton.swift); here only UIKit things you
+        // can press: switches, segmented controls, steppers, and tappable list rows (navigation links)
         v = hit
-        while let cur = v, !isControl { isControl = cur is UIControl && (cur as? UIControl)?.isEnabled == true; v = cur.superview }
-        if !isControl {
-            let p = r.location(in: window)
-            guard let el = window.accessibilityHitTest(p, event: nil) as? NSObject else { return }
-            let t: UIAccessibilityTraits = el.accessibilityTraits
-            let tappable: UIAccessibilityTraits = [.button, .link, .adjustable, .keyboardKey, .tabBar]
-            guard !t.contains(UIAccessibilityTraits.notEnabled), !t.intersection(tappable).isEmpty else { return }
+        var pressable = false
+        while let cur = v, !pressable {
+            if let c = cur as? UIControl, c.isEnabled, !(c is UITextField) { pressable = true }
+            if let cell = cur as? UICollectionViewCell, cell.isUserInteractionEnabled,
+               let cv = cell.superview as? UICollectionView, let ip = cv.indexPath(for: cell),
+               cv.delegate?.collectionView?(cv, shouldHighlightItemAt: ip) ?? true { pressable = true }
+            v = cur.superview
         }
+        guard pressable else { return }
         play(.select)
     }
 }
