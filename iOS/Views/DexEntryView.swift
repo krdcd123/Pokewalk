@@ -8,6 +8,10 @@ struct DexEntryView: View {
     @State private var info: DexInfo?
     @State private var loading = true
     @State private var page = 0
+    @State private var showShiny = false
+
+    /// You have a shiny one of this species.
+    private var hasShiny: Bool { store.state.pokemon.contains { $0.speciesID == species.id && $0.isShiny } }
 
     private var caught: Bool { store.state.dexCaught.contains(species.id) }
     private var yours: [OwnedPokemon] {
@@ -51,10 +55,30 @@ struct DexEntryView: View {
 
     private var header: some View {
         VStack(spacing: 6) {
-            AnimatedSprite(speciesID: species.id).frame(width: 130, height: 130)
+            AnimatedSprite(speciesID: species.id, shiny: showShiny).frame(width: 130, height: 130)
+                .id(showShiny)
+                .transition(.scale(scale: 0.8).combined(with: .opacity))
                 .brightness(caught ? 0 : -1).opacity(caught ? 1 : 0.8)      // silhouette until caught
                 .contentShape(Rectangle())
                 .onTapGesture { CryPlayer.shared.play(species.id) }
+                .overlay(alignment: .topTrailing) {
+                    if hasShiny {
+                        Button {
+                            withAnimation(.spring(duration: 0.35)) { showShiny.toggle() }
+                            if showShiny { SoundKit.shared.play(.shiny) }
+                        } label: {
+                            Image(systemName: showShiny ? "sparkles" : "sparkle")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(showShiny ? Color(hex: 0xFFD54A) : .white)
+                                .frame(width: 38, height: 38)
+                                .glassCircle(tint: showShiny ? Color(hex: 0xFFD54A).opacity(0.5) : nil)
+                                .contentTransition(.symbolEffect(.replace))
+                        }
+                        .buttonStyle(.plain)
+                        .offset(x: 40, y: 4)
+                        .accessibilityLabel(showShiny ? "Show normal colours" : "Show shiny colours")
+                    }
+                }
             Text(species.dexNumber).font(.rounded(14, .heavy)).foregroundStyle(Theme.inkSoft)
             Text(caught ? species.name : "???").font(.rounded(30, .black))
             if caught, let g = info?.genus, !g.isEmpty {
