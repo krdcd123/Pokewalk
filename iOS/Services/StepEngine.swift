@@ -114,14 +114,21 @@ final class WalkingDetector: ObservableObject {
         }
     }
 
+    private var lastFastAt = Date.distantPast
+
+    /// Driving needs real evidence: vehicle-speed GPS in the last minute or two. Taking steps (or iOS saying
+    /// you're walking) always wins, so the bike never sticks after you get out of the car.
     private func refresh() {
-        let recentSteps = Date().timeIntervalSince(lastStepAt) < 4
-        let fix = LocationTracker.shared.lastLocation.flatMap { Date().timeIntervalSince($0.timestamp) < 6 ? $0 : nil }
-        let tooFast = (fix?.speed ?? 0) > 4.5                     // faster than ~10 mph isn't walking or running
-        let driving = (motionSaysVehicle && !motionSaysMoving) || tooFast
+        let now = Date()
+        let recentSteps = now.timeIntervalSince(lastStepAt) < 8
+        let fix = LocationTracker.shared.lastLocation.flatMap { now.timeIntervalSince($0.timestamp) < 10 ? $0 : nil }
+        if let fix, fix.speed > 4.5 { lastFastAt = fix.timestamp }             // faster than ~10 mph
+        let sinceFast = now.timeIntervalSince(lastFastAt)
+        let driving = !recentSteps && !motionSaysMoving &&
+            (sinceFast < 45 || (motionSaysVehicle && sinceFast < 150))          // stuck in traffic still counts
         if driving != isDriving { isDriving = driving }
         let speed = (fix?.speed ?? 0) > 0.6
-        let now = !driving && (motionSaysMoving || recentSteps || speed)
-        if now != isWalking { isWalking = now }
+        let walking = !driving && (motionSaysMoving || recentSteps || speed)
+        if walking != isWalking { isWalking = walking }
     }
 }

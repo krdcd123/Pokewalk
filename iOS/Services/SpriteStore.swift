@@ -429,7 +429,7 @@ struct TrainerSprite: View {
         }
         .spriteHitArea()
         .task(id: "\(style.id)-\(pose.rawValue)") {
-            image = nil
+            // keep showing the old pose until the new one is ready (no flicker walking ↔ bike)
             if pose == .card {
                 guard let url = await SpriteStore.shared.trainerCardURL(style) else { return }
                 image = await Task.detached { GIFCache.shared.image(at: url) }.value
