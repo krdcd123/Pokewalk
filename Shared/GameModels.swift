@@ -462,6 +462,10 @@ enum ItemCatalog {
 
     static func isBerry(_ k: String) -> Bool { berries.contains(k) }
 
+    /// Berries sell too (not a walking-find valuable, so they're kept out of `sellPrice`'s find table).
+    static let berrySellPrice = 20
+    static func price(_ k: String) -> Int? { sellPrice[k] ?? (isBerry(k) ? berrySellPrice : nil) }
+
     /// Gen 3: bigger boost the less a Pokémon likes you.
     static func berryBoost(_ friendship: Int) -> Int { friendship < 100 ? 10 : friendship < 200 ? 5 : 2 }
 }

@@ -63,6 +63,14 @@ struct MainMenuView: View {
             // The PC's closing sound plays the moment you leave it, not after the slide finishes
             .onChange(of: path) { old, new in
                 if old.contains(.pc) && !new.contains(.pc) { SoundKit.shared.play(.closePC) }
+                // Opening a menu tile (the PC and Pokédex play their own opening sounds)
+                if new.count > old.count, let d = new.last {
+                    switch d {
+                    case .trainer: SoundKit.shared.play(.trainerCard)
+                    case .pc, .dex: break
+                    default: SoundKit.shared.play(.select)
+                    }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .menuPanelClosing)) { _ in
                 if path.contains(.pc) { SoundKit.shared.play(.closePC) }
@@ -775,48 +783,77 @@ private struct BagItemRow: View {
                 let w = Fishing.tierWeights(berries: n), total = w.reduce(0, +)
                 Text("\(Int(Fishing.biteChance(berries: n) * 100))% chance of a bite · \(Int((w[2] / total * 100).rounded()))% chance of a rare catch")
                     .font(.rounded(12, .heavy)).foregroundStyle(Theme.tealDark)
-            } else if expanded, let price = ItemCatalog.sellPrice[key] {
-                let have = store.state.bag[key] ?? 0
-                HStack(spacing: 10) {
-                    sellButton("Sell 1 · ₽\(price)", count: 1)
-                    if have > 1 { sellButton("Sell all · ₽\((price * have).formatted())", count: have) }
-                }
             } else if expanded {
-                Text("Use on…").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
-                ForEach(store.state.party) { mon in
-                    let able = GameRules.canUse(key, on: mon)
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        let before = mon.level
-                        let outcome = store.use(key, on: mon.id)
-                        if outcome != .noEffect { SoundKit.shared.play(.useItem) }
-                        switch outcome {
-                        case .leveled:
-                            let now = store.state.mon(mon.id)?.level ?? before
-                            store.toast = now > before ? "\(mon.name) grew to Lv \(now)!" : "\(mon.name) gained Exp!"
-                        case .evolves: break        // the evolution screen takes over
-                        case .friendship(let up):
-                            store.toast = up ? "\(mon.name) became more friendly!" : "\(mon.name) looks bitter…"
-                        case .noEffect: store.toast = "It won't have any effect."
+                if ItemCatalog.sellPrice[key] == nil {
+                    Text("Use on…").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
+                    ForEach(store.state.party) { mon in
+                        let able = GameRules.canUse(key, on: mon)
+                        Button { use(on: mon) } label: {
+                            HStack(spacing: 10) {
+                                AnimatedSprite(speciesID: mon.speciesID, shiny: mon.isShiny, kind: .icons).frame(width: 34, height: 28)
+                                Text(mon.name).font(.rounded(15, .heavy))
+                                Text("Lv \(mon.level)").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
+                                Spacer()
+                                Text(able ? "ABLE" : "NOT ABLE").font(.rounded(12, .black))
+                                    .foregroundStyle(able ? Theme.teal : Theme.inkSoft)
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(.white.opacity(able ? 0.08 : 0.03), in: RoundedRectangle(cornerRadius: 12))
+                            .contentShape(Rectangle())
                         }
-                    } label: {
-                        HStack(spacing: 10) {
-                            AnimatedSprite(speciesID: mon.speciesID, shiny: mon.isShiny, kind: .icons).frame(width: 34, height: 28)
-                            Text(mon.name).font(.rounded(15, .heavy))
-                            Text("Lv \(mon.level)").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
-                            Spacer()
-                            Text(able ? "ABLE" : "NOT ABLE").font(.rounded(12, .black))
-                                .foregroundStyle(able ? Theme.teal : Theme.inkSoft)
-                        }
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .background(.white.opacity(able ? 0.08 : 0.03), in: RoundedRectangle(cornerRadius: 12))
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        .disabled(!able)
+                        .opacity(able ? 1 : 0.55)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!able)
-                    .opacity(able ? 1 : 0.55)
+                }
+                if let price = ItemCatalog.price(key) {
+                    let have = store.state.bag[key] ?? 0
+                    HStack(spacing: 10) {
+                        sellButton("Sell 1 · ₽\(price)", count: 1)
+                        if have > 1 { sellButton("Sell all · ₽\((price * have).formatted())", count: have) }
+                    }
                 }
             }
+        }
+        // Hold an item: use it on a party Pokémon, or sell it
+        .contextMenu {
+            if !Fishing.isBait(key) && ItemCatalog.sellPrice[key] == nil {
+                Menu("Use on…", systemImage: "hand.point.up.left.fill") {
+                    ForEach(store.state.party) { mon in
+                        Button("\(mon.name) · Lv \(mon.level)") { use(on: mon) }
+                            .disabled(!GameRules.canUse(key, on: mon))
+                    }
+                }
+            }
+            if let price = ItemCatalog.price(key) {
+                let have = store.state.bag[key] ?? 0
+                Button("Sell 1 · ₽\(price)", systemImage: "yensign.circle") { sell(1) }
+                if have > 1 {
+                    Button("Sell all \(have) · ₽\((price * have).formatted())", systemImage: "yensign.circle.fill") { sell(have) }
+                }
+            }
+        }
+    }
+
+    private func sell(_ count: Int) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        let earned = store.sell(key, count: count)
+        if earned > 0 { store.toast = "Sold for ₽\(earned.formatted()). You have ₽\(store.state.money.formatted())." }
+    }
+
+    private func use(on mon: OwnedPokemon) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        let before = mon.level
+        let outcome = store.use(key, on: mon.id)
+        if outcome != .noEffect { SoundKit.shared.play(.useItem) }
+        switch outcome {
+        case .leveled:
+            let now = store.state.mon(mon.id)?.level ?? before
+            store.toast = now > before ? "\(mon.name) grew to Lv \(now)!" : "\(mon.name) gained Exp!"
+        case .evolves: break        // the evolution screen takes over
+        case .friendship(let up):
+            store.toast = up ? "\(mon.name) became more friendly!" : "\(mon.name) looks bitter…"
+        case .noEffect: store.toast = "It won't have any effect."
         }
     }
 }

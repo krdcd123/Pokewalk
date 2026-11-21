@@ -305,7 +305,7 @@ enum GameRules {
     /// Sells valuables. Returns the Pokédollars earned.
     @discardableResult
     static func sell(_ item: String, count: Int, in s: inout GameState) -> Int {
-        guard let price = ItemCatalog.sellPrice[item] else { return 0 }
+        guard let price = ItemCatalog.price(item) else { return 0 }
         let n = min(count, s.bag[item, default: 0])
         guard n > 0 else { return 0 }
         s.bag[item, default: 0] -= n
