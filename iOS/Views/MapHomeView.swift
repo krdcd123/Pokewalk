@@ -19,7 +19,7 @@ struct MapHomeView: View {
     /// Tap the location button / menus close / app reopens: glide back to you at the same zoom.
     private func followMe(distance: Double? = nil, duration: Double = 0.6) {
         refollowTask?.cancel()
-        if let distance { zoomDistance = distance }
+        if let distance { zoomDistance = distance } else if let d = lastCamera?.distance { zoomDistance = d }
         following = true
         guard let loc = tracker.currentLocation() else {
             camera = .userLocation(followsHeading: false, fallback: .automatic)
@@ -30,10 +30,10 @@ struct MapHomeView: View {
         withAnimation(.smooth(duration: duration)) { camera = .camera(cam) }
     }
 
-    /// Long-press the location button: zoom out for an overview (long-press again to come back in).
-    private func zoomOutOverview() {
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        followMe(distance: zoomDistance < 3_000 ? max(4_000, zoomDistance * 4) : 900, duration: 0.8)
+    /// Tap your buddy on the map: zoom right in on where you are.
+    private func zoomInOnMe() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        followMe(distance: 350, duration: 0.7)
     }
     @State private var sheet: HomeSheet?
     @State private var showCard = false
@@ -98,9 +98,7 @@ struct MapHomeView: View {
                                 .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
                         }
                         .buttonStyle(.plain)
-                        .simultaneousGesture(LongPressGesture(minimumDuration: 0.45).onEnded { _ in zoomOutOverview() })
-                        .accessibilityLabel("Show my location")
-                        .accessibilityHint("Hold to zoom out")
+                        .accessibilityLabel("Centre on my location")
                     }
                     Spacer()
                     bottomBar
@@ -196,7 +194,11 @@ struct MapHomeView: View {
             }
             if let loc = tracker.lastLocation {
                 Annotation("You", coordinate: loc.coordinate, anchor: .bottom) {
-                    BuddyMarker(speciesID: store.state.buddy?.speciesID, shiny: store.state.buddy?.isShiny ?? false)
+                    Button(action: zoomInOnMe) {
+                        BuddyMarker(speciesID: store.state.buddy?.speciesID, shiny: store.state.buddy?.isShiny ?? false)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Zoom in on me")
                 }.annotationTitles(.hidden)
             }
         }
@@ -226,9 +228,7 @@ struct MapHomeView: View {
                                 heading: lastCamera?.heading ?? 0, pitch: lastCamera?.pitch ?? 0)
             withAnimation(.linear(duration: 0.8)) { camera = .camera(cam) }
         }
-        .onChange(of: sheet) { _, now in if now == nil && following { followMe() } }
-        .onChange(of: scenePhase) { _, p in if p == .active { followMe() } }
-        .onAppear { if tracker.currentLocation() != nil { followMe(duration: 0) } }
+        .onAppear { if tracker.currentLocation() != nil && lastCamera == nil { followMe(duration: 0) } }
         .ignoresSafeArea()
     }
 
