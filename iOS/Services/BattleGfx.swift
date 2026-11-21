@@ -138,11 +138,13 @@ private struct Pixels {
 
     /// Game Boy back sprites sit on a white background, but the trainer's clothes are white too and run
     /// off the bottom edge (with gaps in the outline), so a plain flood fill eats them. Instead: clear the
-    /// white reachable from the top, then in each row the white before the first / after the last drawn pixel.
+    /// white reachable from the top or the right edge, then in each row the white before the first / after the last drawn pixel.
     mutating func clearGameBoyBackground() {
         func isWhite(_ x: Int, _ y: Int) -> Bool { let i = (y * w + x) * 4; return p[i] >= 250 && p[i + 1] >= 250 && p[i + 2] >= 250 }
         func clear(_ x: Int, _ y: Int) { let i = (y * w + x) * 4; p[i] = 0; p[i + 1] = 0; p[i + 2] = 0; p[i + 3] = 0 }
-        var stack: [(Int, Int)] = (0..<w).map { ($0, 0) }
+        // seeds: the whole top row and the whole right edge (the trainer faces right, so the gap between
+        // their arm and hand opens to the right; the left edge isn't used — the jacket runs into it there)
+        var stack: [(Int, Int)] = (0..<w).map { ($0, 0) } + (0..<h).map { (w - 1, $0) }
         while let (x, y) = stack.popLast() {
             guard x >= 0, x < w, y >= 0, y < h, alpha(x, y) > 0, isWhite(x, y) else { continue }
             clear(x, y)
