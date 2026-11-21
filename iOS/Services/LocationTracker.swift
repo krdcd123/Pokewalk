@@ -76,7 +76,8 @@ final class TrackStore: ObservableObject {
         if let last = today.last?.last {
             let gap = p.t - last.t
             let jump = loc.distance(from: last.location)
-            if jump < (drive ? 25 : 8) { return }                   // not moved enough
+            // not moved enough — and a move smaller than the fix's own error margin is just noise
+            if jump < (drive ? 25 : max(8, loc.horizontalAccuracy * 0.8)) { return }
             // A new line when you switch between walking and driving, after a long gap, or a GPS jump
             let newSegment = last.isDrive != drive || gap > 300 || jump > (drive ? 3_000 : 150)
             if newSegment {
@@ -242,6 +243,8 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
             TrackStore.shared.append(loc, drive: true)
             return
         }
+        // Standing still: the GPS fix drifts around, so don't draw it as a walk
+        guard WalkingDetector.shared.feetMoving else { return }
         TrackStore.shared.append(loc)
         onMovement?(loc)
     }

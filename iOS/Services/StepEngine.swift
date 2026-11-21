@@ -116,6 +116,15 @@ final class WalkingDetector: ObservableObject {
 
     private var lastFastAt = Date.distantPast
 
+    /// Are your feet actually moving (steps in the last ~20 s, or iOS's motion chip says walking/running)?
+    /// GPS alone isn't trusted: standing still, especially indoors, the fix wanders tens of metres.
+    /// If motion data isn't available or allowed, we can't tell, so it says yes.
+    var feetMoving: Bool {
+        guard CMMotionActivityManager.authorizationStatus() == .authorized,
+              CMPedometer.isStepCountingAvailable() || CMMotionActivityManager.isActivityAvailable() else { return true }
+        return motionSaysMoving || Date().timeIntervalSince(lastStepAt) < 20
+    }
+
     /// Driving needs real evidence: vehicle-speed GPS in the last minute or two. Taking steps (or iOS saying
     /// you're walking) always wins, so the bike never sticks after you get out of the car.
     private func refresh() {
