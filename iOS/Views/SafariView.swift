@@ -23,6 +23,7 @@ struct SafariView: View {
     @State private var flash = 0.0               // white flash when the ball opens
     @State private var stars = false             // little stars when it's caught
     @State private var ballDim = false
+    @State private var ballOpen = false           // top half flips open (hit / escape)
 
     init(wild: PendingEncounter) { _safari = State(initialValue: SafariEncounter(wild: wild)) }
 
@@ -63,7 +64,7 @@ struct SafariView: View {
 
                 // Tap the ball to throw it. (A plain tap, not a Button, so it never fades while busy.)
                 ZStack {
-                    ItemSprite(key: ball.itemKey)
+                    BattleBall(kind: ball, open: ballOpen)
                         .frame(width: 88 * ballScale, height: 88 * ballScale)
                         .rotationEffect(.degrees(wobble), anchor: .bottom)
                         .brightness(ballDim ? -0.25 : 0)
@@ -272,12 +273,15 @@ struct SafariView: View {
 
             let result = safari.throwBall(ball, quality: nil)
 
-            // 2. It hits: the ball opens and the Pokémon is pulled in with a flash
+            // 2. It hits: the ball pops open, the Pokémon is pulled in with a flash, then it snaps shut
             SoundKit.shared.play(.ballOpen)
+            withAnimation(.spring(response: 0.18, dampingFraction: 0.6)) { ballOpen = true }
             withAnimation(.easeOut(duration: 0.12)) { flash = 0.9 }
             withAnimation(.easeIn(duration: 0.35)) { spriteHidden = true }
-            try? await Task.sleep(for: .milliseconds(380))
+            try? await Task.sleep(for: .milliseconds(420))
             withAnimation(.easeOut(duration: 0.3)) { flash = 0 }
+            withAnimation(.spring(response: 0.16, dampingFraction: 0.7)) { ballOpen = false }
+            try? await Task.sleep(for: .milliseconds(160))
 
             // 3. It drops and bounces on the ground three times
             let ground = distance + 70
@@ -316,16 +320,18 @@ struct SafariView: View {
                 caught = store.finish(safari)
                 return
             }
-            // Broke free: the ball pops open again
+            // Broke free: the ball bursts open and the Pokémon comes back out
             SoundKit.shared.play(.ballOpen)
+            withAnimation(.spring(response: 0.18, dampingFraction: 0.55)) { ballOpen = true }
             withAnimation(.easeOut(duration: 0.1)) { flash = 0.9 }
             withAnimation(.spring(duration: 0.3)) { spriteHidden = false }
             try? await Task.sleep(for: .milliseconds(150))
             withAnimation(.easeOut(duration: 0.35)) { flash = 0 }
+            try? await Task.sleep(for: .milliseconds(300))
             throwing = nil
             await show(safari.log.last ?? "It broke free!", duration: 0.8)
             if result.fled { endFled(); return }
-            withAnimation(.spring(duration: 0.4)) { ballOffset = 0; ballScale = 1; wobble = 0 }
+            withAnimation(.spring(duration: 0.4)) { ballOffset = 0; ballScale = 1; wobble = 0; ballOpen = false }
             pickAvailableBall()
             busy = false
         }
@@ -386,5 +392,56 @@ struct SafariView: View {
         withAnimation(.spring) { bannerText = text }
         try? await Task.sleep(for: .seconds(duration))
         withAnimation { bannerText = nil }
+    }
+}
+
+
+/// The thrown ball, drawn with SwiftUI (so it can fly, bounce, wobble and flip open smoothly).
+/// The top half hinges open at the back, with light spilling out, like the games.
+private struct BattleBall: View {
+    let kind: BallKind
+    var open: Bool
+    @State private var image: UIImage?
+
+    var body: some View {
+        GeometryReader { g in
+            let s = min(g.size.width, g.size.height)
+            ZStack {
+                if let image {
+                    // light from inside
+                    Ellipse().fill(.white)
+                        .frame(width: s * 0.62, height: s * 0.22)
+                        .blur(radius: s * 0.06)
+                        .offset(y: -s * 0.02)
+                        .opacity(open ? 1 : 0)
+                    // bottom half
+                    half(image, top: false, size: s)
+                    // top half: flips up and back from the hinge
+                    half(image, top: true, size: s)
+                        .rotationEffect(.degrees(open ? -38 : 0), anchor: UnitPoint(x: 0.82, y: 0.5))
+                        .offset(y: open ? -s * 0.10 : 0)
+                } else {
+                    BallGlyph(kind: kind)
+                }
+            }
+            .frame(width: s, height: s)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .task(id: kind) {
+            guard let url = await SpriteStore.shared.itemURL(kind.itemKey) else { return }
+            let img = await Task.detached { GIFCache.shared.image(at: url) }.value
+            image = img?.images?.first ?? img
+        }
+    }
+
+    private func half(_ img: UIImage, top: Bool, size s: CGFloat) -> some View {
+        Image(uiImage: img)
+            .interpolation(.none)
+            .resizable()
+            .scaledToFit()
+            .frame(width: s, height: s)
+            .mask(alignment: top ? .top : .bottom) {
+                Rectangle().frame(height: s * (top ? 0.5 : 0.5))
+            }
     }
 }
