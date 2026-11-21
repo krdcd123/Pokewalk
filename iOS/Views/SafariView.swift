@@ -276,7 +276,7 @@ struct SafariView: View {
             // 2. It hits: the ball pops open, the Pokémon is pulled in with a flash, then it snaps shut
             SoundKit.shared.play(.ballOpen)
             withAnimation(.spring(response: 0.18, dampingFraction: 0.6)) { ballOpen = true }
-            withAnimation(.easeOut(duration: 0.12)) { flash = 0.9 }
+            withAnimation(.easeOut(duration: 0.12)) { flash = 0.6 }
             withAnimation(.easeIn(duration: 0.35)) { spriteHidden = true }
             try? await Task.sleep(for: .milliseconds(420))
             withAnimation(.easeOut(duration: 0.3)) { flash = 0 }
@@ -323,7 +323,7 @@ struct SafariView: View {
             // Broke free: the ball bursts open and the Pokémon comes back out
             SoundKit.shared.play(.ballOpen)
             withAnimation(.spring(response: 0.18, dampingFraction: 0.55)) { ballOpen = true }
-            withAnimation(.easeOut(duration: 0.1)) { flash = 0.9 }
+            withAnimation(.easeOut(duration: 0.1)) { flash = 0.6 }
             withAnimation(.spring(duration: 0.3)) { spriteHidden = false }
             try? await Task.sleep(for: .milliseconds(150))
             withAnimation(.easeOut(duration: 0.35)) { flash = 0 }
@@ -426,8 +426,9 @@ private struct BattleBall: View {
                     half(image, top: true, size: s)
                         // Opens like the games: the top half tips back along the ball's middle line (a clam opening
                         // towards you), staying joined at the seam
-                        .rotation3DEffect(.degrees(open ? 62 : 0), axis: (x: 1, y: 0, z: 0),
-                                          anchor: .center, perspective: 0.55)
+                        .rotation3DEffect(.degrees(open ? -48 : 0), axis: (x: 1, y: 0, z: 0),
+                                          anchor: .center, perspective: 0.35)
+                        .offset(y: open ? -s * 0.03 : 0)
                 } else {
                     BallGlyph(kind: kind)
                 }
