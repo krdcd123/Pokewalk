@@ -39,10 +39,20 @@ struct SafariView: View {
 
     private struct Flight { var from: CGPoint; var to: CGPoint; var start: Date; var duration: Double }
 
-    init(wild: PendingEncounter) { _safari = State(initialValue: SafariEncounter(wild: wild)) }
+    /// Test battle (Settings): a MissingNo. with unlimited Poké Balls; nothing is saved or used up.
+    let test: Bool
+
+    init(wild: PendingEncounter, test: Bool = false) {
+        _safari = State(initialValue: SafariEncounter(wild: wild))
+        self.test = test
+    }
+
+    private var foeName: String { test ? "MissingNo." : wild.species.name }
+    private var foeTypes: [PokeType] { test ? [.normal] : wild.species.types }
+    private var floatPixels: Int { test ? 0 : BattleElevation.pixels(wild.speciesID) }
 
     private var wild: PendingEncounter { safari.wild }
-    private var ballsLeft: Int { store.state.balls[ball, default: 0] }
+    private var ballsLeft: Int { test ? 99 : store.state.balls[ball, default: 0] }
     private var style: TrainerStyle { store.state.trainer.style }
     private var trainerName: String { store.state.trainer.name }
 
@@ -110,7 +120,7 @@ struct SafariView: View {
     private func start() {
         SoundKit.shared.setScene(.battle)
         safari.caughtBefore = store.state.dexCaught.contains(wild.speciesID)
-        pickAvailableBall()
+        if test { ball = .poke } else { pickAvailableBall() }
         trainerFrame = style.backIdleFrame
         Task { @MainActor in
             // Load everything first, so the Pokémon, the trainer and their platforms arrive together
@@ -124,17 +134,17 @@ struct SafariView: View {
             introDone = true
             withAnimation(.spring(duration: 0.4)) { boxesIn = true }
             try? await Task.sleep(for: .milliseconds(200))
-            CryPlayer.shared.play(wild.speciesID)
+            if !test { CryPlayer.shared.play(wild.speciesID) }
             if wild.isShiny {
                 try? await Task.sleep(for: .milliseconds(350))
                 SoundKit.shared.play(.shiny)
             }
-            await type(wild.isShiny ? "A shiny \(wild.species.name) appeared!" : "A wild \(wild.species.name) appeared!",
+            await type(wild.isShiny ? "A shiny \(foeName) appeared!" : "A wild \(foeName) appeared!",
                        hold: 1.1)
             withAnimation(.easeInOut(duration: 0.3)) { message = "" }
             try? await Task.sleep(for: .milliseconds(250))
             withAnimation(.easeInOut(duration: 0.35)) { showRates = true }
-            if store.state.totalBalls == 0 { message = "Out of balls! Walk to earn more." }
+            if store.state.totalBalls == 0 && !test { message = "Out of balls! Walk to earn more." }
             else { message = "What will \(trainerName) do?" }
         }
     }
@@ -179,7 +189,7 @@ struct SafariView: View {
     @ViewBuilder private func enemy(_ L: Layout, p: Double) -> some View {
         let b = enemyBounds
         let w = b.size.width * L.e, h = b.size.height * L.e
-        let lift = CGFloat(BattleElevation.pixels(wild.speciesID)) * 1.5 * L.e
+        let lift = CGFloat(floatPixels) * 1.5 * L.e
         let feet = L.enemyPlatform.y - 4
         // centre the canvas so the lowest visible pixel rests on the platform
         let cy = feet - (b.bottom - b.size.height / 2) * L.e - lift
@@ -187,7 +197,9 @@ struct SafariView: View {
         ZStack {
             platform(width: L.W * 0.52)
                 .position(L.enemyPlatform)
-            AnimatedSprite(speciesID: wild.speciesID, shiny: wild.isShiny)
+            Group {
+                if test { MissingNoSprite() } else { AnimatedSprite(speciesID: wild.speciesID, shiny: wild.isShiny) }
+            }
                 .frame(width: w, height: h)
                 .brightness(shaded ? -0.45 : 0)
                 .saturation(shaded ? 0.6 : 1)
@@ -221,7 +233,7 @@ struct SafariView: View {
 
     private func hitPoint(_ L: Layout) -> CGPoint {
         let b = enemyBounds
-        let lift = CGFloat(BattleElevation.pixels(wild.speciesID)) * 1.5 * L.e
+        let lift = CGFloat(floatPixels) * 1.5 * L.e
         let visible = (b.bottom - b.top) * L.e
         return CGPoint(x: L.enemyPlatform.x, y: L.enemyPlatform.y - 4 - lift - visible * 0.55)
     }
@@ -287,14 +299,14 @@ struct SafariView: View {
     private var nameBox: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Text(wild.species.name + (wild.isShiny ? " ✨" : ""))
+                Text(foeName + (wild.isShiny ? " ✨" : ""))
                     .font(.rounded(22, .black)).lineLimit(1).minimumScaleFactor(0.6)
                 Text(wild.gender.symbol).font(.rounded(16, .heavy))
                     .foregroundStyle(wild.gender == .female ? Color(hex: 0xFF8FA8) : Color(hex: 0x7FB8FF))
                 Spacer(minLength: 4)
                 Text("Lv\(wild.level)").font(.rounded(15, .heavy)).foregroundStyle(Theme.tealDark)
             }
-            HStack(spacing: 6) { ForEach(wild.species.types, id: \.self) { TypeChip(type: $0) } }
+            HStack(spacing: 6) { ForEach(foeTypes, id: \.self) { TypeChip(type: $0) } }
         }
         .foregroundStyle(Theme.ink)
         .padding(.horizontal, 14).padding(.vertical, 10)
@@ -346,14 +358,14 @@ struct SafariView: View {
             } primaryAction: {
                 if let key = ownedBerries.first { throwBerry(key) }
             }
-            .disabled(!canAct || berryCount == 0)
+            .disabled(!canAct || berryCount == 0 || test)
             .opacity(berryCount == 0 ? 0.55 : 1)
 
             Spacer()
 
             // Ball: tap throws it; hold to switch ball
             Menu {
-                ForEach(BallKind.allCases.filter { $0.isStepBall || store.state.balls[$0, default: 0] > 0 }) { k in
+                ForEach(BallKind.allCases.filter { !test && ($0.isStepBall || store.state.balls[$0, default: 0] > 0) }) { k in
                     Button {
                         ball = k
                         SoundKit.shared.play(.select)
@@ -411,7 +423,7 @@ struct SafariView: View {
         busy = true
         SoundKit.shared.play(.runAway)
         safari.run()
-        store.finish(safari)
+        if !test { store.finish(safari) }
         Task { @MainActor in
             await type("Got away safely!", hold: 0.4)
             dismiss()
@@ -433,7 +445,7 @@ struct SafariView: View {
     }
 
     private func throwBall(_ L: Layout) {
-        guard !busy, introDone, safari.phase == .active, store.useBall(ball) else { return }
+        guard !busy, introDone, safari.phase == .active, test || store.useBall(ball) else { return }
         busy = true
         message = "\(trainerName) threw a \(ball.name)!"
         Task { @MainActor in
@@ -497,8 +509,13 @@ struct SafariView: View {
                 } else {
                     SoundKit.shared.play(.ballCatch)
                 }
-                await type("Gotcha! \(wild.species.name) was caught!", hold: 1.2)
-                caught = store.finish(safari)
+                await type("Gotcha! \(foeName) was caught!", hold: 1.2)
+                if test {
+                    await type("(Test battle: nothing was saved.)", hold: 1.2)
+                    dismiss()
+                } else {
+                    caught = store.finish(safari)
+                }
                 return
             }
             // Broke free: the ball bursts open and the Pokémon comes back out
@@ -514,13 +531,14 @@ struct SafariView: View {
             await type(safari.log.last ?? "Oh no! It broke free!", hold: 0.6)
             if result.fled { endFled(); return }
             pickAvailableBall()
-            message = store.state.totalBalls == 0 ? "Out of balls! Walk to earn more." : "What will \(trainerName) do?"
+            message = store.state.totalBalls == 0 && !test ? "Out of balls! Walk to earn more." : "What will \(trainerName) do?"
             busy = false
         }
     }
 
     /// Waits (at most ~2.5 s) until the wild Pokémon's sprite is downloaded, then measures where its feet are.
     private func preloadSprite() async {
+        if test { enemyBounds = MissingNoSprite.bounds; return }
         let id = wild.speciesID, shiny = wild.isShiny
         let load = Task.detached { () -> SpriteBounds? in
             var u = await SpriteStore.shared.url(shiny ? .shiny : .front, speciesID: id)
@@ -559,6 +577,7 @@ struct SafariView: View {
     }
 
     private func pickAvailableBall() {
+        if test { return }
         if store.state.balls[ball, default: 0] == 0,
            let k = BallKind.allCases.first(where: { store.state.balls[$0, default: 0] > 0 }) { ball = k }
     }
@@ -567,8 +586,8 @@ struct SafariView: View {
         busy = true
         Task { @MainActor in
             withAnimation { spriteHidden = true }
-            await type("\(wild.species.name) fled!", hold: 0.9)
-            store.finish(safari)
+            await type("\(foeName) fled!", hold: 0.9)
+            if !test { store.finish(safari) }
             dismiss()
         }
     }
@@ -597,5 +616,49 @@ struct TypewriterText: View {
                     shown = i
                 }
             }
+    }
+}
+
+
+/// MissingNo.: the famous backwards-L block of scrambled pixels (drawn here, not taken from any game),
+/// flickering between a few garbled frames.
+struct MissingNoSprite: View {
+    static let bounds = SpriteBounds(size: CGSize(width: 64, height: 64), top: 4, bottom: 60)
+    private static let frames: [UIImage] = (0..<3).map { make(seed: UInt64($0) &+ 7) }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.35)) { tl in
+            let i = Int(tl.date.timeIntervalSinceReferenceDate / 0.35) % Self.frames.count
+            Image(uiImage: Self.frames[i]).interpolation(.none).resizable()
+        }
+    }
+
+    private static func make(seed: UInt64) -> UIImage {
+        var rng = seed
+        func next() -> UInt64 { rng = rng &* 6364136223846793005 &+ 1442695040888963407; return rng >> 33 }
+        let palette: [UIColor] = [.black, UIColor(white: 0.25, alpha: 1), UIColor(white: 0.6, alpha: 1), .white,
+                                  UIColor(red: 0.55, green: 0.45, blue: 0.75, alpha: 1)]
+        let f = UIGraphicsImageRendererFormat(); f.scale = 1
+        return UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64), format: f).image { ctx in
+            // tall column on the right, a lower block sticking out to the left
+            let cell = 4
+            for y in stride(from: 4, to: 60, by: cell) {
+                for x in stride(from: 8, to: 56, by: cell) {
+                    let inColumn = x >= 32
+                    let inFoot = x < 32 && y >= 32
+                    guard inColumn || inFoot else { continue }
+                    // mostly 4×4 cells, sometimes split into finer noise
+                    if next() % 4 == 0 {
+                        for dy in stride(from: 0, to: cell, by: 2) { for dx in stride(from: 0, to: cell, by: 2) {
+                            palette[Int(next() % UInt64(palette.count))].setFill()
+                            ctx.fill(CGRect(x: x + dx, y: y + dy, width: 2, height: 2))
+                        } }
+                    } else {
+                        palette[Int(next() % UInt64(palette.count))].setFill()
+                        ctx.fill(CGRect(x: x, y: y, width: cell, height: cell))
+                    }
+                }
+            }
+        }
     }
 }

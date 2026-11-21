@@ -417,6 +417,7 @@ struct SettingsView: View {
     @State private var importing = false
     @State private var message: String?
     @State private var confirmReset = false
+    @State private var testBattle: PendingEncounter?
     @State private var importingSave = false
     @State private var confirmImport: URL?
     @State private var exportURL: URL?
@@ -493,6 +494,20 @@ struct SettingsView: View {
             }
 
             Section {
+                Button {
+                    SoundKit.shared.play(.select)
+                    testBattle = PendingEncounter(speciesID: 1, level: 30, gender: .male, isShiny: false, nature: "Quirky",
+                                                  personality: 0, appearedAt: .now, expiresAt: .now.addingTimeInterval(600),
+                                                  location: nil, habitat: nil)
+                } label: {
+                    Label("Test battle", systemImage: "questionmark.square.dashed")
+                }
+                .glassRow()
+            } footer: {
+                Text("Battle a MissingNo. with unlimited Poké Balls to see how battles look. Nothing is saved and no balls are used.")
+            }
+
+            Section {
                 ForEach(SpriteStore.Kind.allCases, id: \.self) { kind in
                     Button("Import \(title(kind)) folder…") { importKind = kind; importing = true }.glassRow()
                 }
@@ -560,6 +575,7 @@ struct SettingsView: View {
         .navigationTitle("Settings")
         .glassScreen()
         .onAppear { name = store.state.trainer.name }
+        .fullScreenCover(item: $testBattle) { SafariView(wild: $0, test: true) }
         .fileImporter(isPresented: $importing, allowedContentTypes: importingSave ? [.json, .data] : [.folder]) { result in
             defer { importingSave = false }
             if importingSave {
