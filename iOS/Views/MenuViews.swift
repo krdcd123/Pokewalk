@@ -417,15 +417,18 @@ struct TrainerCardView: View {
                 Spacer()
                 Text("\(done)/\(DailyStamps.days)").font(.system(size: 17, weight: .heavy, design: .monospaced))
             }
-            // 4 columns: Day 5 and 6 sit under Day 1 and 2, the Day 7 present spans the last two
-            Grid(horizontalSpacing: 8, verticalSpacing: 10) {
-                GridRow { ForEach(0..<4, id: \.self) { stampSlot($0, done: done) } }
-                GridRow {
-                    stampSlot(4, done: done)
-                    stampSlot(5, done: done)
-                    stampSlot(6, done: done).gridCellColumns(2)
+            // Top row Day 1–4; the bottom row sits in the gaps between them (Day 5 under the gap between
+            // Day 1 and 2, and so on), like a honeycomb
+            GeometryReader { geo in
+                let col = geo.size.width / 4
+                VStack(spacing: 10) {
+                    HStack(spacing: 0) { ForEach(0..<4, id: \.self) { stampSlot($0, done: done).frame(width: col) } }
+                    HStack(spacing: 0) { ForEach(4..<7, id: \.self) { stampSlot($0, done: done).frame(width: col) } }
                 }
+                .frame(width: geo.size.width)
             }
+            .frame(height: 2 * 82 + 10)
+            Spacer(minLength: 8)
             VStack(spacing: 3) {
                 Text(done == DailyStamps.days ? "Card complete! A new one starts on Monday."
                      : today ? "Today's stamp is in — come back tomorrow." : "Open the game today for your stamp.")
@@ -436,7 +439,7 @@ struct TrainerCardView: View {
             }
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -488,8 +491,7 @@ struct TrainerCardView: View {
                         .transition(.scale(scale: 1.6).combined(with: .opacity))
                 }
             }
-            .frame(height: 58)
-            .frame(maxWidth: big ? .infinity : 58)
+            .frame(width: 58, height: 58)
             .overlay(alignment: .bottomTrailing) {
                 Text(slotBadge(rewards))
                     .font(.system(size: 9, weight: .black, design: .monospaced))
