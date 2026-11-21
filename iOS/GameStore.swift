@@ -456,6 +456,8 @@ final class GameStore: ObservableObject {
         mutate { GameRules.setBuddy(id, in: &$0) }
     }
 
+    func reorderParty(_ id: UUID, to index: Int) { mutate { GameRules.reorderParty(id, to: index, in: &$0) } }
+
     func move(from a: PCSlot, to b: PCSlot) { mutate { GameRules.move(from: a, to: b, in: &$0) } }
     func release(_ id: UUID) { mutate { GameRules.release(id, in: &$0) } }
 

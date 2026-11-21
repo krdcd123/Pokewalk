@@ -63,7 +63,7 @@ final class PlaceLog: ObservableObject {
             // Still here. Long enough to count?
             if open == nil, now.timeIntervalSince(a.since) >= Self.minStay {
                 var stay = Stay(lat: a.loc.coordinate.latitude, lon: a.loc.coordinate.longitude, arrived: a.since)
-                if let merged = mergeWithLast(stay) { stay = merged }
+                if let merged = mergeWithLast(stay) { stay = merged } else { closeOpenStays(before: stay) }
                 open = stay
                 save(stay)
                 name(stay)
@@ -101,11 +101,21 @@ final class PlaceLog: ObservableObject {
     }
 
     /// Popped out and came straight back (under 10 min)? Treat it as one stay.
+    /// Also: still logged as "here" from before the app was closed? Carry on with that stay instead of
+    /// starting another one at the same place.
     private func mergeWithLast(_ s: Stay) -> Stay? {
-        guard var last = stays(on: s.arrived).last, let left = last.left,
-              s.arrived.timeIntervalSince(left) < 10 * 60, last.location.distance(from: s.location) < Self.radius else { return nil }
+        guard var last = stays(on: s.arrived).last, last.location.distance(from: s.location) < Self.radius else { return nil }
+        if let left = last.left, s.arrived.timeIntervalSince(left) >= 10 * 60 { return nil }
         last.left = nil
         return last
+    }
+
+    /// A new stay started somewhere else: anything still marked "here" has ended.
+    private func closeOpenStays(before s: Stay) {
+        for var old in stays(on: s.arrived) where old.id != s.id && old.left == nil && old.arrived < s.arrived {
+            old.left = s.arrived
+            save(old)
+        }
     }
 
     func rename(_ stay: Stay, to name: String) {

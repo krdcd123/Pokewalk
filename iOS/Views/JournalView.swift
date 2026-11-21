@@ -12,6 +12,8 @@ struct JournalView: View {
     @State private var selected: UUID?
     @ObservedObject private var places = PlaceLog.shared
     @State private var renaming: Stay?
+    @State private var renamingGroup: [Stay] = []
+    @State private var expanded: Set<UUID> = []
     @State private var newName = ""
 
     private var days: [Date] {
@@ -191,34 +193,63 @@ struct JournalView: View {
                 Text("Places you stay at for 10 minutes or more show up here, with how long you were there.")
                     .font(.rounded(13)).foregroundStyle(Theme.inkSoft)
             } else {
-                if list.count > 1 {
+                if PlaceGroup.make(list).count > 1 {
                     Text(list.map { $0.name ?? "Somewhere" }.removingDuplicatesInARow().joined(separator: " → "))
                         .font(.rounded(15, .heavy))
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                let groups = PlaceGroup.make(list)
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(list.enumerated()), id: \.element.id) { idx, st in
+                    ForEach(Array(groups.enumerated()), id: \.element.id) { idx, g in
                         HStack(alignment: .top, spacing: 12) {
                             VStack(spacing: 0) {
-                                Circle().fill(st.left == nil ? Theme.orange : Theme.teal).frame(width: 12, height: 12)
+                                Circle().fill(g.isOpen ? Theme.orange : Theme.teal).frame(width: 12, height: 12)
                                     .padding(.top, 4)
-                                if idx < list.count - 1 {
+                                if idx < groups.count - 1 {
                                     Rectangle().fill(.white.opacity(0.25)).frame(width: 2).frame(maxHeight: .infinity)
                                 }
                             }
                             .frame(width: 12)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(st.name ?? "Finding the name…").font(.rounded(15, .heavy))
-                                Text(stayTimes(st)).font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                                Text(g.name ?? "Finding the name…").font(.rounded(15, .heavy))
+                                Text(groupTimes(g)).font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                                // Tap to see each time you were there
+                                if expanded.contains(g.id) && g.visits.count > 1 {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        ForEach(g.visits, id: \.stay.id) { v in
+                                            HStack(spacing: 6) {
+                                                Circle().fill(.white.opacity(0.4)).frame(width: 5, height: 5)
+                                                Text(visitTimes(v)).font(.rounded(12, .heavy))
+                                            }
+                                        }
+                                    }
+                                    .padding(.top, 6)
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                                }
                             }
                             Spacer()
+                            if g.visits.count > 1 {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 13, weight: .heavy))
+                                    .foregroundStyle(Theme.inkSoft)
+                                    .rotationEffect(.degrees(expanded.contains(g.id) ? 180 : 0))
+                                    .padding(.top, 4)
+                            }
                             Image(systemName: "mappin.circle.fill").foregroundStyle(Theme.teal)
+                                .onTapGesture { selectStay(g.visits[0].stay) }
                         }
-                        .padding(.bottom, idx < list.count - 1 ? 14 : 0)
+                        .padding(.bottom, idx < groups.count - 1 ? 14 : 0)
                         .contentShape(Rectangle())
-                        .onTapGesture { selectStay(st) }
+                        .onTapGesture {
+                            if g.visits.count > 1 {
+                                withAnimation(.snappy) {
+                                    if expanded.contains(g.id) { expanded.remove(g.id) } else { expanded.insert(g.id) }
+                                }
+                            }
+                            selectStay(g.visits[0].stay)
+                        }
                         .contextMenu {
-                            Button("Rename", systemImage: "pencil") { newName = st.name ?? ""; renaming = st }
+                            Button("Rename", systemImage: "pencil") { newName = g.name ?? ""; renaming = g.visits[0].stay; renamingGroup = g.visits.map(\.stay) }
                         }
                     }
                 }
@@ -228,9 +259,33 @@ struct JournalView: View {
         }
         .alert("Rename place", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $newName)
-            Button("Save") { if let st = renaming { places.rename(st, to: newName) } }
+            Button("Save") {
+                let all = renamingGroup.isEmpty ? (renaming.map { [$0] } ?? []) : renamingGroup
+                for st in all { places.rename(st, to: newName) }
+                renamingGroup = []
+            }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    private func groupTimes(_ g: PlaceGroup) -> String {
+        let t = Date.FormatStyle(date: .omitted, time: .shortened)
+        let len = Self.length(g.duration)
+        let visits = g.visits.count > 1 ? " · \(g.visits.count) visits" : ""
+        if let end = g.end { return "\(g.start.formatted(t)) – \(end.formatted(t)) · \(len)\(visits)" }
+        return "Since \(g.start.formatted(t)) · \(len) so far\(visits)"
+    }
+
+    private func visitTimes(_ v: PlaceGroup.Visit) -> String {
+        let t = Date.FormatStyle(date: .omitted, time: .shortened)
+        let len = Self.length((v.end ?? .now).timeIntervalSince(v.stay.arrived))
+        if let end = v.end { return "\(v.stay.arrived.formatted(t)) – \(end.formatted(t)) · \(len)" }
+        return "\(v.stay.arrived.formatted(t)) – now · \(len)"
+    }
+
+    private static func length(_ s: TimeInterval) -> String {
+        let mins = max(0, Int(s / 60))
+        return mins >= 60 ? "\(mins / 60) h \(mins % 60) min" : "\(mins) min"
     }
 
     private func stayTimes(_ st: Stay) -> String {
@@ -274,6 +329,36 @@ struct JournalView: View {
     }
 }
 
+
+/// Back-to-back stays at the same place, shown as one row (tap to see each visit).
+struct PlaceGroup: Identifiable {
+    struct Visit { var stay: Stay; var end: Date? }
+    var visits: [Visit]
+    var id: UUID { visits[0].stay.id }
+    var name: String? { visits.lazy.compactMap(\.stay.name).first }
+    var start: Date { visits[0].stay.arrived }
+    var end: Date? { visits.last?.end }
+    var isOpen: Bool { end == nil }
+    var duration: TimeInterval { (end ?? .now).timeIntervalSince(start) }
+
+    static func make(_ stays: [Stay]) -> [PlaceGroup] {
+        let list = stays.sorted { $0.arrived < $1.arrived }
+        var groups: [PlaceGroup] = []
+        for (i, st) in list.enumerated() {
+            // An old stay still marked "here" ended when the next one began
+            var end = st.left
+            if end == nil, i < list.count - 1 { end = list[i + 1].arrived }
+            let v = Visit(stay: st, end: end)
+            if let last = groups.last?.visits.last?.stay,
+               (last.name != nil && last.name == st.name) || last.location.distance(from: st.location) < PlaceLog.radius * 1.5 {
+                groups[groups.count - 1].visits.append(v)
+            } else {
+                groups.append(PlaceGroup(visits: [v]))
+            }
+        }
+        return groups
+    }
+}
 
 private struct JournalEncounter: Identifiable {
     let id: UUID

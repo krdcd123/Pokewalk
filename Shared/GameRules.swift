@@ -531,6 +531,14 @@ enum GameRules {
         s.pokemon.removeAll { $0.id == id }
     }
 
+    /// Moves a party Pokémon to another slot; the buddy always stays in slot 1.
+    static func reorderParty(_ id: UUID, to index: Int, in s: inout GameState) {
+        guard id != s.buddyID, let from = s.partyIDs.firstIndex(of: id) else { return }
+        s.partyIDs.remove(at: from)
+        let minIndex = s.partyIDs.first == s.buddyID ? 1 : 0
+        s.partyIDs.insert(id, at: min(max(index, minIndex), s.partyIDs.count))
+    }
+
     static func setBuddy(_ id: UUID, in s: inout GameState) {
         guard s.index(of: id) != nil else { return }
         if !s.partyIDs.contains(id) {

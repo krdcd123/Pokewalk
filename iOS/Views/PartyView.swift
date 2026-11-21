@@ -13,15 +13,40 @@ struct PartyView: View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 14) {
                 ForEach(Array(party.enumerated()), id: \.element.id) { i, mon in
-                    PartyBox(mon: mon, index: i, isBuddy: mon.id == store.state.buddyID,
+                    let isBuddy = mon.id == store.state.buddyID
+                    PartyBox(mon: mon, index: i, isBuddy: isBuddy,
                              open: { open = mon.id },
-                             take: {
-                                 SoundKit.shared.play(.select)
-                                 let taken = store.takeHeldItems(mon.id)
-                                 if let first = taken.first {
-                                     store.toast = "Took the \(Dex.itemName(first)) from \(mon.name). It's in your Bag."
-                                 }
-                             })
+                             take: { take(mon) })
+                        // Hold: Summary, take its item, move it (the buddy always leads)
+                        .contextMenu {
+                            Button("Summary", systemImage: "info.circle") { open = mon.id }
+                            if let key = mon.heldItems.first {
+                                Button("Take \(Dex.itemName(key))", systemImage: "arrow.down.to.line") { take(mon) }
+                            }
+                            if !isBuddy {
+                                if i > 1 {
+                                    Button("Move earlier", systemImage: "arrow.left") { move(mon, to: i - 1) }
+                                }
+                                if i < party.count - 1 {
+                                    Button("Move later", systemImage: "arrow.right") { move(mon, to: i + 1) }
+                                }
+                                Menu("Move to slot…", systemImage: "arrow.up.arrow.down") {
+                                    ForEach(1..<party.count, id: \.self) { slot in
+                                        Button("Slot \(slot + 1)") { move(mon, to: slot) }.disabled(slot == i)
+                                    }
+                                }
+                            }
+                        }
+                        // …or hold and drag it onto another slot
+                        .draggable(mon.id.uuidString) {
+                            AnimatedSprite(speciesID: mon.speciesID, shiny: mon.isShiny, kind: .icons)
+                                .frame(width: 72, height: 72)
+                        }
+                        .dropDestination(for: String.self) { items, _ in
+                            guard let s = items.first, let id = UUID(uuidString: s), id != mon.id else { return false }
+                            move(id, to: max(1, i))
+                            return true
+                        }
                 }
                 ForEach(party.count..<6, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: 24)
@@ -38,6 +63,25 @@ struct PartyView: View {
         .navigationDestination(item: $open) { id in
             PagedSummaryView(ids: store.state.partyIDs, start: id)
         }
+    }
+}
+
+extension PartyView {
+    private func take(_ mon: OwnedPokemon) {
+        SoundKit.shared.play(.select)
+        let taken = store.takeHeldItems(mon.id)
+        if let first = taken.first {
+            store.toast = "Took the \(Dex.itemName(first)) from \(mon.name). It's in your Bag."
+        }
+    }
+
+    private func move(_ mon: OwnedPokemon, to slot: Int) { move(mon.id, to: slot) }
+
+    private func move(_ id: UUID, to slot: Int) {
+        guard id != store.state.buddyID else { return }
+        SoundKit.shared.play(.select)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation(.spring(duration: 0.35)) { store.reorderParty(id, to: slot) }
     }
 }
 
