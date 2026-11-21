@@ -47,9 +47,10 @@ final class SpriteStore {
 
     init() {
         // One-time: box icons switched to the PokeSprite set (which has shiny versions) — drop the old ones
-        if !UserDefaults.standard.bool(forKey: "iconsV2") {
-            UserDefaults.standard.set(true, forKey: "iconsV2")
+        if !UserDefaults.standard.bool(forKey: "iconsV3") {
+            UserDefaults.standard.set(true, forKey: "iconsV3")
             try? FileManager.default.removeItem(at: cacheRoot.appendingPathComponent(Kind.icons.rawValue))
+            try? FileManager.default.removeItem(at: cacheRoot.appendingPathComponent(Kind.iconsShiny.rawValue))
         }
         for k in Kind.allCases {
             try? FileManager.default.createDirectory(at: userRoot.appendingPathComponent(k.rawValue), withIntermediateDirectories: true)
@@ -160,6 +161,20 @@ final class SpriteStore {
         return nil
     }
 
+    /// Crops a box icon to the Pokémon and adds a thin even margin (no scaling, so pixels stay crisp).
+    static func trimIcon(_ data: Data) -> Data? {
+        guard let img = UIImage(data: data)?.cgImage, let crop = img.croppedToContent() else { return nil }
+        let pad = 2
+        let w = crop.width + pad * 2, h = crop.height + pad * 2
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.interpolationQuality = .none
+        ctx.draw(crop, in: CGRect(x: pad, y: pad, width: crop.width, height: crop.height))
+        guard let out = ctx.makeImage() else { return nil }
+        return UIImage(cgImage: out).pngData()
+    }
+
     func url(_ kind: Kind, id: Int, key: String, name: String) async -> URL? {
         if let u = localURL(kind, id: id, key: key, name: name) { return u }
         guard let remote = kind.remoteURL(id: id, key: key) else { return nil }
@@ -169,8 +184,11 @@ final class SpriteStore {
         let ext = remote.pathExtension
         let dest = cacheRoot.appendingPathComponent("\(cacheKey).\(ext)")
         let task = Task<URL?, Never> {
-            guard let (data, resp) = try? await URLSession.shared.data(from: remote),
-                  (resp as? HTTPURLResponse)?.statusCode == 200, !data.isEmpty else { return nil }
+            guard let (raw, resp) = try? await URLSession.shared.data(from: remote),
+                  (resp as? HTTPURLResponse)?.statusCode == 200, !raw.isEmpty else { return nil }
+            var data = raw
+            // PokeSprite box icons sit in a big empty canvas: trim it so they fill their slots like before
+            if kind == .icons || kind == .iconsShiny, let trimmed = Self.trimIcon(raw) { data = trimmed }
             try? data.write(to: dest, options: .atomic)
             return dest
         }
