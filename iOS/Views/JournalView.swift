@@ -83,7 +83,8 @@ struct JournalView: View {
                     ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
                         if seg.count > 1 {
                             MapPolyline(coordinates: seg.map(\.coordinate)).stroke(.white, lineWidth: 5)
-                            MapPolyline(coordinates: seg.map(\.coordinate)).stroke(Theme.route, lineWidth: 2.5)
+                            MapPolyline(coordinates: seg.map(\.coordinate))
+                                .stroke(TrackStore.isDrive(seg) ? Theme.driveRoute : Theme.route, lineWidth: 2.5)
                         }
                     }
                     ForEach(encounters.filter { $0.location != nil }) { e in
@@ -105,13 +106,21 @@ struct JournalView: View {
                     }
                 }
 
-                let gpsMeters = segments.reduce(0) { $0 + TrackStore.meters($1) }
+                let gpsMeters = segments.filter { !TrackStore.isDrive($0) }.reduce(0) { $0 + TrackStore.meters($1) }
+                let drivenMeters = segments.filter(TrackStore.isDrive).reduce(0) { $0 + TrackStore.meters($1) }
                 HStack(spacing: 10) {
                     stat(showAllTime ? Distance.text(gpsMeters) : Distance.text(max(gpsMeters, healthMeters)), "distance")
                     stat(showAllTime ? store.state.lifetimeSteps.formatted() : steps.formatted(), "steps")
                     stat("\(encounters.filter(\.caught).count)/\(encounters.count)", "caught")
                 }
 
+                if drivenMeters > 0 {
+                    HStack(spacing: 8) {
+                        Capsule().fill(Theme.driveRoute).frame(width: 18, height: 4)
+                        Text("\(Distance.text(drivenMeters)) driven · not counted as walking")
+                            .font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
+                    }
+                }
                 Text("ENCOUNTERS").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
                 if encounters.isEmpty {
                     Text(showAllTime ? "No wild Pokémon yet — keep walking!" : "No wild Pokémon met this day.")

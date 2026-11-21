@@ -104,7 +104,7 @@ final class SpriteStore {
 
     func itemURL(_ key: String) async -> URL? { await url(.items, id: 0, key: key, name: key) }
 
-    enum TrainerPose: String { case walk, head, card }
+    enum TrainerPose: String { case walk, head, card, bike }
 
     /// Your own trainer file for a pose (Sprites/trainers/<id>-walk.gif, <id>-head.gif, <id>-card.png), if any.
     func userTrainerFile(_ style: TrainerStyle, _ pose: TrainerPose) -> URL? {
@@ -123,6 +123,21 @@ final class SpriteStore {
     }
 
     /// The small overworld walking sprite (yours, else built from the original game's sprite sheet).
+    /// Riding the bike (shown on the map while you're driving).
+    func trainerBike(_ style: TrainerStyle) async -> UIImage? {
+        if let u = userTrainerFile(style, .bike) { return GIFCache.shared.image(at: u) }
+        let file = cacheRoot.appendingPathComponent("trainers/\(style.id)-bike.png")
+        if !FileManager.default.fileExists(atPath: file.path) {
+            guard let (data, resp) = try? await URLSession.shared.data(from: style.bikeURL),
+                  (resp as? HTTPURLResponse)?.statusCode == 200 else { return await trainerWalk(style) }
+            try? data.write(to: file, options: .atomic)
+        }
+        guard let data = try? Data(contentsOf: file) else { return nil }
+        // Gen 3 bike frames are 32 px wide (walking ones are 16); GBC bike sheets use the walking layout
+        if case .gen3 = style.sheet { return OverworldSheet.walkAnimation(from: data, sheet: style.sheet, frameWidth: 32) }
+        return OverworldSheet.walkAnimation(from: data, sheet: style.sheet)
+    }
+
     func trainerWalk(_ style: TrainerStyle) async -> UIImage? {
         if let u = userTrainerFile(style, .walk) ?? userTrainerFile(style, .head) { return GIFCache.shared.image(at: u) }
         let file = cacheRoot.appendingPathComponent("trainers/\(style.id)-overworld.png")
@@ -399,6 +414,8 @@ struct TrainerSprite: View {
             if pose == .card {
                 guard let url = await SpriteStore.shared.trainerCardURL(style) else { return }
                 image = await Task.detached { GIFCache.shared.image(at: url) }.value
+            } else if pose == .bike {
+                image = await SpriteStore.shared.trainerBike(style)
             } else {
                 image = await SpriteStore.shared.trainerWalk(style)
             }
@@ -408,7 +425,7 @@ struct TrainerSprite: View {
 
 /// Cuts the "walking towards you" frames out of the original games' overworld sprite sheets.
 enum OverworldSheet {
-    static func walkAnimation(from data: Data, sheet: TrainerStyle.Sheet) -> UIImage? {
+    static func walkAnimation(from data: Data, sheet: TrainerStyle.Sheet, frameWidth: Int = 16) -> UIImage? {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil),
               let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
         let w = cg.width, h = cg.height
@@ -431,7 +448,7 @@ enum OverworldSheet {
                 px[i] = 0; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 0
             }
             // frames: 0 stand-down, 3 & 4 walk-down
-            frameRects = [0, 3, 0, 4].map { CGRect(x: $0 * 16, y: 0, width: 16, height: min(32, h)) }
+            frameRects = [0, 3, 0, 4].map { CGRect(x: $0 * frameWidth, y: 0, width: frameWidth, height: min(32, h)) }
         case .gbc(let accent):
             for i in stride(from: 0, to: px.count, by: 4) {
                 switch px[i] {                       // greyscale: 255 white, 170 light, 85 dark, 0 black

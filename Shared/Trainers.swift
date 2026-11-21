@@ -34,4 +34,14 @@ struct TrainerStyle: Identifiable, Hashable {
 
     var remoteSpriteURL: URL { URL(string: "https://play.pokemonshowdown.com/sprites/trainers/\(showdownKey).png")! }
     var overworldURL: URL { URL(string: "https://raw.githubusercontent.com/\(overworldPath)")! }
+
+    /// Bike sprite sheet from the same game (Mach Bike in Emerald, bike in FireRed/LeafGreen and Crystal).
+    var bikePath: String {
+        overworldPath
+            .replacingOccurrences(of: "_normal.png", with: "_bike.png")       // red_normal → red_bike
+            .replacingOccurrences(of: "walking.png", with: "mach_bike.png")   // brendan/may
+            .replacingOccurrences(of: "chris.png", with: "chris_bike.png")
+            .replacingOccurrences(of: "kris.png", with: "kris_bike.png")
+    }
+    var bikeURL: URL { URL(string: "https://raw.githubusercontent.com/\(bikePath)")! }
 }

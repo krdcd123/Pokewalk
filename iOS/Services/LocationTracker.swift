@@ -7,7 +7,9 @@ struct TrackPoint: Codable, Hashable {
     var lat: Double
     var lon: Double
     var t: TimeInterval
+    var drive: Bool? = nil          // recorded in a vehicle (shown in red, never counts as walking)
 
+    var isDrive: Bool { drive == true }
     var coordinate: CLLocationCoordinate2D { .init(latitude: lat, longitude: lon) }
     var location: CLLocation { CLLocation(latitude: lat, longitude: lon) }
     var date: Date { Date(timeIntervalSince1970: t) }
@@ -66,15 +68,22 @@ final class TrackStore: ObservableObject {
         return files.compactMap { f.date(from: String($0.dropLast(5))) }.sorted(by: >)
     }
 
-    func append(_ loc: CLLocation) {
+    func append(_ loc: CLLocation, drive: Bool = false) {
         let k = Self.key(for: loc.timestamp)
         if k != todayKey { flush(); todayKey = k; today = load(k) }
-        let p = TrackPoint(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude, t: loc.timestamp.timeIntervalSince1970)
+        let p = TrackPoint(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude, t: loc.timestamp.timeIntervalSince1970,
+                           drive: drive ? true : nil)
         if let last = today.last?.last {
             let gap = p.t - last.t
             let jump = loc.distance(from: last.location)
-            if jump < 8 { return }                                  // not moved enough
-            if gap > 300 || jump > 150 { today.append([p]) } else { today[today.count - 1].append(p) }
+            if jump < (drive ? 25 : 8) { return }                   // not moved enough
+            // A new line when you switch between walking and driving, after a long gap, or a GPS jump
+            let newSegment = last.isDrive != drive || gap > 300 || jump > (drive ? 3_000 : 150)
+            if newSegment {
+                // join the switch-over point so walk and drive lines touch
+                if last.isDrive != drive, gap < 120, jump < 500 { today.append([TrackPoint(lat: last.lat, lon: last.lon, t: last.t, drive: drive ? true : nil), p]) }
+                else { today.append([p]) }
+            } else { today[today.count - 1].append(p) }
         } else {
             today.append([p])
         }
@@ -112,12 +121,16 @@ final class TrackStore: ObservableObject {
         zip(seg, seg.dropFirst()).reduce(0) { $0 + $1.0.location.distance(from: $1.1.location) }
     }
 
-    func meters(on date: Date) -> Double { segments(for: date).reduce(0) { $0 + Self.meters($1) } }
+    static func isDrive(_ seg: [TrackPoint]) -> Bool { seg.last?.isDrive ?? false }
+
+    /// Walked distance only (drives are left out).
+    func meters(on date: Date) -> Double { segments(for: date).filter { !Self.isDrive($0) }.reduce(0) { $0 + Self.meters($1) } }
+    func drivenMeters(on date: Date) -> Double { segments(for: date).filter(Self.isDrive).reduce(0) { $0 + Self.meters($1) } }
 
     /// Segments of at least 150 m count as a "walk" in the journal.
     func walks(on date: Date) -> [WalkSummary] {
         segments(for: date).compactMap { seg in
-            guard let a = seg.first, let b = seg.last else { return nil }
+            guard !Self.isDrive(seg), let a = seg.first, let b = seg.last else { return nil }
             let m = Self.meters(seg)
             return m >= 150 ? WalkSummary(start: a.date, end: b.date, meters: m, points: seg) : nil
         }
@@ -217,8 +230,11 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         WeatherService.shared.update(for: loc)
         // Keep walking-speed fixes with decent accuracy; ignore driving and GPS noise.
         guard loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 35 else { return }
-        if loc.speed > 4.5 { return }
-        if WalkingDetector.shared.isDriving { return }           // in a vehicle: don't draw it as a walk
+        // In a vehicle: record it as a drive (red on the map) — tracked, but it never earns anything
+        if loc.speed > 4.5 || WalkingDetector.shared.isDriving {
+            TrackStore.shared.append(loc, drive: true)
+            return
+        }
         TrackStore.shared.append(loc)
         onMovement?(loc)
     }

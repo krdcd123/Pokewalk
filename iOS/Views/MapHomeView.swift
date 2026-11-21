@@ -144,7 +144,8 @@ struct MapHomeView: View {
             ForEach(Array(tracks.today.enumerated()), id: \.offset) { _, seg in
                 if seg.count > 1 {
                     MapPolyline(coordinates: seg.map(\.coordinate)).stroke(.white, lineWidth: 6)
-                    MapPolyline(coordinates: seg.map(\.coordinate)).stroke(Theme.route, lineWidth: 3)
+                    MapPolyline(coordinates: seg.map(\.coordinate))
+                        .stroke(TrackStore.isDrive(seg) ? Theme.driveRoute : Theme.route, lineWidth: 3)
                 }
             }
             ForEach(caughtOnMap) { mon in
@@ -293,7 +294,8 @@ struct MapHomeView: View {
             HStack(alignment: .bottom) {
                 Button { SoundKit.shared.play(.trainerCard); withAnimation(.spring(duration: 0.35)) { showCard = true } } label: {
                     // Your trainer's small overworld sprite, walking on the spot.
-                    TrainerSprite(style: store.state.trainer.style, pose: .walk, animating: walking.isWalking)
+                    TrainerSprite(style: store.state.trainer.style, pose: walking.isDriving ? .bike : .walk,
+                                  animating: walking.isWalking || walking.isDriving)
                         .frame(width: 44, height: 46)
                         .frame(width: 64, height: 64, alignment: .center)
                         .contentShape(Circle())

@@ -12,6 +12,7 @@ enum Theme {
     static let ground = Color(hex: 0x0C1F2B)
     static let orange = Color(hex: 0xF2A33A)
     static let route = Color(hex: 0x2F6FEB)
+    static let driveRoute = Color(hex: 0xE5484D)      // driving routes
     static let card = Color.white
 }
 
