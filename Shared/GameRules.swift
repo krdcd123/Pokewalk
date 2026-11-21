@@ -14,7 +14,7 @@ struct StepOutcome {
     var newLevel = 0
     var ballsEarned: [BallKind: Int] = [:]
     var itemsFound: [String] = []
-    var pickedUp: [String] = []          // Exp. Candies the buddy picked up
+    var pickedUp: [(id: UUID, item: String)] = []   // what each party Pokémon picked up
     var newEncounters: [PendingEncounter] = []
     var evolutionReady: (id: UUID, into: Int)?
     var partyLevelUps: [(id: UUID, level: Int)] = []
@@ -192,13 +192,17 @@ enum GameRules {
         while s.counters.pickupProgress >= s.counters.nextPickupAt {
             s.counters.pickupProgress -= s.counters.nextPickupAt
             s.counters.nextPickupAt = Int.random(in: 250...350)
-            guard let id = s.buddyID, let i = s.index(of: id),
-                  s.pokemon[i].heldItems.count < ExpCandy.carryLimit else { continue }
-            // Half the time an Exp. Candy, half the time a berry
-            let found = Bool.random() ? weightedPick(ExpCandy.all.map { ($0.key, $0.weight) })
-                                      : ItemCatalog.berries.randomElement()!
-            s.pokemon[i].heldItems.append(found)
-            out.pickedUp.append(found)
+            // Everyone in the party (not the PC) has a go — like the Pickup ability. Each holds one thing at a time.
+            for pid in s.partyIDs {
+                guard let i = s.index(of: pid), s.pokemon[i].heldItems.count < ExpCandy.carryLimit else { continue }
+                let chance = pid == s.buddyID ? 1.0 : 0.5          // your buddy always finds something
+                guard Double.random(in: 0..<1) < chance else { continue }
+                // Half the time an Exp. Candy, half the time a berry
+                let found = Bool.random() ? weightedPick(ExpCandy.all.map { ($0.key, $0.weight) })
+                                          : ItemCatalog.berries.randomElement()!
+                s.pokemon[i].heldItems.append(found)
+                out.pickedUp.append((pid, found))
+            }
         }
 
         // Encounters

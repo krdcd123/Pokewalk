@@ -10,6 +10,9 @@ struct JournalView: View {
     @State private var camera: MapCameraPosition = .automatic
     @State private var showAllTime = false
     @State private var selected: UUID?
+    @ObservedObject private var places = PlaceLog.shared
+    @State private var renaming: Stay?
+    @State private var newName = ""
 
     private var days: [Date] {
         // Oldest on the left, today on the right
@@ -87,6 +90,18 @@ struct JournalView: View {
                                 .stroke(TrackStore.isDrive(seg) ? Theme.driveRoute : Theme.route, lineWidth: 2.5)
                         }
                     }
+                    if !showAllTime {
+                        ForEach(stays) { st in
+                            Annotation(st.name ?? "Place", coordinate: st.coordinate) {
+                                Image(systemName: "mappin.circle.fill")
+                                    .font(.system(size: 22, weight: .bold))
+                                    .foregroundStyle(.white, Theme.teal)
+                                    .shadow(radius: 3)
+                                    .scaleEffect(selected == st.id ? 1.35 : 1)
+                            }
+                            .annotationTitles(.hidden)
+                        }
+                    }
                     ForEach(encounters.filter { $0.location != nil }) { e in
                         Annotation(e.species.name, coordinate: .init(latitude: e.location!.latitude, longitude: e.location!.longitude)) {
                             MapPin(speciesID: e.speciesID, ring: e.caught ? Theme.orange : Color.white.opacity(0.7), shiny: e.isShiny)
@@ -120,6 +135,9 @@ struct JournalView: View {
                         Text("\(Distance.text(drivenMeters)) driven · not counted as walking")
                             .font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
                     }
+                }
+                if !showAllTime {
+                    placesSection
                 }
                 Text("ENCOUNTERS").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
                 if encounters.isEmpty {
@@ -162,6 +180,74 @@ struct JournalView: View {
         .onChange(of: showAllTime) { _, _ in camera = .automatic }
     }
 
+    private var stays: [Stay] { _ = places.revision; return places.stays(on: day) }
+
+    /// "Places" timeline: where you spent time today, in order.
+    @ViewBuilder private var placesSection: some View {
+        let list = stays
+        VStack(alignment: .leading, spacing: 10) {
+            Text("PLACES").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
+            if list.isEmpty {
+                Text("Places you stay at for 10 minutes or more show up here, with how long you were there.")
+                    .font(.rounded(13)).foregroundStyle(Theme.inkSoft)
+            } else {
+                if list.count > 1 {
+                    Text(list.map { $0.name ?? "Somewhere" }.removingDuplicatesInARow().joined(separator: " → "))
+                        .font(.rounded(15, .heavy))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(list.enumerated()), id: \.element.id) { idx, st in
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(spacing: 0) {
+                                Circle().fill(st.left == nil ? Theme.orange : Theme.teal).frame(width: 12, height: 12)
+                                    .padding(.top, 4)
+                                if idx < list.count - 1 {
+                                    Rectangle().fill(.white.opacity(0.25)).frame(width: 2).frame(maxHeight: .infinity)
+                                }
+                            }
+                            .frame(width: 12)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(st.name ?? "Finding the name…").font(.rounded(15, .heavy))
+                                Text(stayTimes(st)).font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                            }
+                            Spacer()
+                            Image(systemName: "mappin.circle.fill").foregroundStyle(Theme.teal)
+                        }
+                        .padding(.bottom, idx < list.count - 1 ? 14 : 0)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectStay(st) }
+                        .contextMenu {
+                            Button("Rename", systemImage: "pencil") { newName = st.name ?? ""; renaming = st }
+                        }
+                    }
+                }
+                .padding(14)
+                .glassCard(18)
+            }
+        }
+        .alert("Rename place", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("Name", text: $newName)
+            Button("Save") { if let st = renaming { places.rename(st, to: newName) } }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private func stayTimes(_ st: Stay) -> String {
+        let t = Date.FormatStyle(date: .omitted, time: .shortened)
+        let mins = Int(st.duration() / 60)
+        let len = mins >= 60 ? "\(mins / 60) h \(mins % 60) min" : "\(mins) min"
+        if let left = st.left { return "\(st.arrived.formatted(t)) – \(left.formatted(t)) · \(len)" }
+        return "Since \(st.arrived.formatted(t)) · \(len) so far"
+    }
+
+    private func selectStay(_ st: Stay) {
+        selected = st.id
+        withAnimation(.smooth(duration: 0.6)) {
+            camera = .region(MKCoordinateRegion(center: st.coordinate, latitudinalMeters: 400, longitudinalMeters: 400))
+        }
+    }
+
     private func select(_ e: JournalEncounter) {
         selected = e.id
         guard let loc = e.location else { return }
@@ -199,4 +285,12 @@ private struct JournalEncounter: Identifiable {
     let status: String
     let caught: Bool
     var species: Species { Dex.species(speciesID) }
+}
+
+
+private extension Array where Element == String {
+    /// "Home → Home → Park" becomes "Home → Park".
+    func removingDuplicatesInARow() -> [String] {
+        reduce(into: []) { out, x in if out.last != x { out.append(x) } }
+    }
 }

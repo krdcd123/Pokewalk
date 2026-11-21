@@ -177,7 +177,13 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         Task { @MainActor in
             self.authorization = status
             if status == .authorizedWhenInUse { manager.requestAlwaysAuthorization() }
+            // iOS visit detection for the Journal's Places (needs "Always")
+            if status == .authorizedAlways { manager.startMonitoringVisits() }
         }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didVisit visit: CLVisit) {
+        Task { @MainActor in PlaceLog.shared.addVisit(visit) }
     }
 
     /// Call on launch and whenever the mode changes.
@@ -228,6 +234,7 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
     private func handle(_ loc: CLLocation) {
         lastLocation = loc
         WeatherService.shared.update(for: loc)
+        PlaceLog.shared.feed(loc)
         // Keep walking-speed fixes with decent accuracy; ignore driving and GPS noise.
         guard loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 35 else { return }
         // In a vehicle: record it as a drive (red on the map) — tracked, but it never earns anything

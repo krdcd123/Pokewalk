@@ -150,6 +150,25 @@ final class SpriteStore {
         return OverworldSheet.walkAnimation(from: data, sheet: style.sheet)
     }
 
+    /// A crisp, scaled-up copy of a box icon for a notification picture (written to a fresh temp file,
+    /// because iOS moves attachment files away).
+    func notificationIcon(speciesID: Int, shiny: Bool) async -> URL? {
+        guard let u = await url(shiny ? .iconsShiny : .icons, speciesID: speciesID),
+              let img = GIFCache.shared.image(at: u), let cg = (img.images?.first ?? img).cgImage else { return nil }
+        let scale = max(1, 120 / max(cg.width, cg.height))
+        let side = max(cg.width, cg.height) * scale + 16
+        guard let ctx = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.interpolationQuality = .none
+        let w = cg.width * scale, h = cg.height * scale
+        ctx.draw(cg, in: CGRect(x: (side - w) / 2, y: (side - h) / 2, width: w, height: h))
+        guard let out = ctx.makeImage(), let data = UIImage(cgImage: out).pngData() else { return nil }
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("icon-\(UUID().uuidString).png")
+        guard (try? data.write(to: file)) != nil else { return nil }
+        return file
+    }
+
     /// Small PNG of the buddy for the Live Activity (it has to fit in ActivityKit's ~4 KB payload).
     /// Tiny party/box icon for the Dynamic Island.
     func liveActivityIcon(speciesID: Int, shiny: Bool = false) async -> Data? {

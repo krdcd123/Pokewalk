@@ -7,7 +7,14 @@ struct MapHomeView: View {
     @EnvironmentObject private var tracks: TrackStore
     @StateObject private var walking = WalkingDetector.shared
 
-    @State private var camera: MapCameraPosition = .userLocation(fallback: .automatic)
+    @State private var camera: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
+    @State private var refollowTask: Task<Void, Never>?
+    @Environment(\.scenePhase) private var scenePhase
+
+    private func followMe() {
+        refollowTask?.cancel()
+        withAnimation(.smooth(duration: 0.6)) { camera = .userLocation(followsHeading: false, fallback: .automatic) }
+    }
     @State private var sheet: HomeSheet?
     @State private var showCard = false
     @AppStorage("showCaughtOnMap") private var showCaught = false
@@ -171,6 +178,18 @@ struct MapHomeView: View {
         }
         .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
         .mapControls { MapCompass() }
+        // Always keep you in view: if you pan away, it glides back to you after a few seconds
+        .onMapCameraChange(frequency: .onEnd) { _ in
+            refollowTask?.cancel()
+            guard !camera.followsUserLocation else { return }
+            refollowTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(6))
+                guard !Task.isCancelled else { return }
+                withAnimation(.smooth(duration: 0.8)) { camera = .userLocation(followsHeading: false, fallback: .automatic) }
+            }
+        }
+        .onChange(of: sheet) { _, now in if now == nil { followMe() } }
+        .onChange(of: scenePhase) { _, p in if p == .active { followMe() } }
         .ignoresSafeArea()
     }
 

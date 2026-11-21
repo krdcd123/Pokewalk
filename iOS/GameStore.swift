@@ -315,21 +315,36 @@ final class GameStore: ObservableObject {
     private func report(_ o: StepOutcome) {
         let background = UIApplication.State.current != .active
         var lines: [String] = []
+        // Per-Pokémon news (level ups and pickups), each with that Pokémon's box icon
+        var news: [(id: UUID, text: String)] = []
         if o.newLevel > o.oldLevel, let buddy = state.buddy {
-            lines.append("\(buddy.name) grew to Lv. \(o.newLevel)!")
+            news.append((buddy.id, "\(buddy.name) grew to Lv. \(o.newLevel)!"))
         }
-        if let buddy = state.buddy {
-            for thing in o.pickedUp {
-                let name = Dex.itemName(thing)
-                lines.append("\(buddy.name) picked up \(name.first.map { "AEIOU".contains($0) } == true ? "an" : "a") \(name)!")
+        for up in o.partyLevelUps where up.id != state.buddyID {
+            if let mon = state.mon(up.id) { news.append((mon.id, "\(mon.name) grew to Lv. \(up.level)!")) }
+        }
+        for pick in o.pickedUp {
+            guard let mon = state.mon(pick.id) else { continue }
+            let name = Dex.itemName(pick.item)
+            news.append((mon.id, "\(mon.name) picked up \(name.first.map { "AEIOU".contains($0) } == true ? "an" : "a") \(name)!"))
+        }
+        if background {
+            for n in news {
+                let mon = state.mon(n.id)
+                notify(title: n.text, body: mon.map { "Lv. \($0.level) · Open PokéWalk to see." } ?? "",
+                       id: "\(n.id.uuidString)-\(Int(Date().timeIntervalSince1970))-\(n.text.hashValue)",
+                       icon: mon.map { ($0.speciesID, $0.isShiny) })
             }
+        } else {
+            lines += news.map(\.text)
         }
         if !o.itemsFound.isEmpty {
             lines.append("Found " + o.itemsFound.map(Dex.itemName).joined(separator: ", ") + "!")
         }
         if let evo = o.evolutionReady, let mon = state.mon(evo.id) {
             if background {
-                notify(title: "What? \(mon.name) is evolving!", body: "Open PokéWalk to watch.", id: "evo")
+                notify(title: "What? \(mon.name) is evolving!", body: "Open PokéWalk to watch.", id: "evo",
+                       icon: (mon.speciesID, mon.isShiny))
             } else {
                 evolutionCandidate = EvolutionCandidate(pokemonID: evo.id, into: evo.into)
             }
@@ -339,7 +354,7 @@ final class GameStore: ObservableObject {
                 let place = enc.location?.placeName.map { " near \($0)" } ?? ""
                 notify(title: "A wild \(enc.species.name) appeared!\(enc.isShiny ? " ✨" : "")",
                        body: "Lv. \(enc.level)\(place). Tap to throw a ball.",
-                       id: enc.id.uuidString, category: "encounter")
+                       id: enc.id.uuidString, category: "encounter", icon: (enc.speciesID, enc.isShiny))
             }
         }
         if !o.newEncounters.isEmpty && !background {
@@ -353,13 +368,23 @@ final class GameStore: ObservableObject {
         }
     }
 
-    private func notify(title: String, body: String, id: String, category: String? = nil) {
+    /// Posts a notification. `icon` attaches that Pokémon's box sprite (iOS keeps the app icon in the corner;
+    /// the sprite shows as the picture on the right).
+    private func notify(title: String, body: String, id: String, category: String? = nil, icon: (Int, Bool)? = nil) {
         let c = UNMutableNotificationContent()
         c.title = title
         c.body = body
         c.sound = .default
+        c.threadIdentifier = category ?? "pokewalk"
         if let category { c.categoryIdentifier = category; c.userInfo = ["encounterID": id] }
-        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
+        Task {
+            if let (species, shiny) = icon, let file = await SpriteStore.shared.notificationIcon(speciesID: species, shiny: shiny),
+               let att = try? UNNotificationAttachment(identifier: "icon", url: file,
+                                                       options: [UNNotificationAttachmentOptionsTypeHintKey: "public.png"]) {
+                c.attachments = [att]
+            }
+            try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
+        }
     }
 
     // MARK: Encounters
