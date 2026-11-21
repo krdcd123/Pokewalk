@@ -418,7 +418,7 @@ private struct BattleBall: View {
                     half(image, top: false, size: s)
                     // top half: flips up and back from the hinge
                     half(image, top: true, size: s)
-                        .rotationEffect(.degrees(open ? -38 : 0), anchor: UnitPoint(x: 0.82, y: 0.5))
+                        .rotationEffect(.degrees(open ? 38 : 0), anchor: UnitPoint(x: 0.82, y: 0.5))      // clockwise around the right hinge = lid lifts up
                         .offset(y: open ? -s * 0.10 : 0)
                 } else {
                     BallGlyph(kind: kind)
