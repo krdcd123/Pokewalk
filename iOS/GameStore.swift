@@ -468,6 +468,30 @@ final class GameStore: ObservableObject {
         return earned
     }
 
+    func buyFishingRod() -> Bool {
+        guard (state.bag[Fishing.rodKey] ?? 0) == 0, state.money >= Fishing.rodPrice else { return false }
+        mutate { s in
+            s.money -= Fishing.rodPrice
+            s.bag[Fishing.rodKey] = 1
+        }
+        return true
+    }
+
+    func makeBait(berries n: Int) -> Bool {
+        var ok = false
+        mutate { ok = Fishing.makeBait(berries: n, in: &$0) }
+        return ok
+    }
+
+    func fish(with bait: String) -> Fishing.Result {
+        var result = Fishing.Result.notReady
+        let here = tracker.currentLocation().map {
+            MetLocation(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
+        }
+        mutate { result = Fishing.cast(bait: bait, in: &$0, location: here) }
+        return result
+    }
+
     func buy(_ ball: BallKind, count: Int) -> Bool {
         var ok = false
         mutate { ok = GameRules.buy(ball, count: count, in: &$0) }

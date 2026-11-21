@@ -299,6 +299,7 @@ struct GameState: Codable {
     var distanceLedger: [String: Double] = [:]  // "yyyy-MM-dd" -> metres already credited to the buddy
     var settings = GameSettings()
     var lastSyncDate = Date()
+    var lastFishedAt: Date?          // fishing cooldown (20 minutes)
 
     static let maxParty = 6
 
@@ -420,6 +421,7 @@ extension GameState {
         distanceLedger = c.value(.distanceLedger, [:])
         settings = c.value(.settings, d.settings)
         lastSyncDate = c.value(.lastSyncDate, Date())
+        lastFishedAt = c.value(.lastFishedAt, nil)
     }
 }
 

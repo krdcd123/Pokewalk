@@ -102,7 +102,10 @@ final class SpriteStore {
         return await url(kind, id: id, key: sp.key, name: sp.name)
     }
 
-    func itemURL(_ key: String) async -> URL? { await url(.items, id: 0, key: key, name: key) }
+    func itemURL(_ key: String) async -> URL? {
+        let k = Fishing.isBait(key) ? "honey" : key            // bait looks like a pot of Honey
+        return await url(.items, id: 0, key: k, name: k)
+    }
 
     enum TrainerPose: String { case walk, head, card, bike }
 

@@ -198,7 +198,7 @@ struct PokedexView: View {
 
 struct BagView: View {
     enum Pocket: String, CaseIterable, Identifiable {
-        case balls = "Balls", berries = "Berries", items = "Items", candies = "Candies"
+        case balls = "Balls", berries = "Berries", items = "Items", candies = "Candies", key = "Key"
         var id: String { rawValue }
         var icon: String {
             switch self {
@@ -206,10 +206,12 @@ struct BagView: View {
             case .berries: return "leaf.fill"
             case .items: return "bag.fill"
             case .candies: return "sparkles"
+            case .key: return "key.fill"
             }
         }
         static func of(_ key: String) -> Pocket {
-            if ItemCatalog.isBerry(key) { return .berries }
+            if key == Fishing.rodKey { return .key }
+            if ItemCatalog.isBerry(key) || Fishing.isBait(key) { return .berries }
             if key == "rare-candy" || ExpCandy.exp(key) != nil { return .candies }
             return .items
         }
@@ -217,6 +219,7 @@ struct BagView: View {
 
     @State private var openItem: String?
     @State private var pocket: Pocket = .balls
+    @State private var fished: PendingEncounter?
     @EnvironmentObject private var store: GameStore
 
     private func keys(in p: Pocket) -> [String] {
@@ -259,9 +262,17 @@ struct BagView: View {
                     Text("A Poké Ball every \(store.state.settings.ballSteps.formatted()) steps (every 10th is a Great Ball, every 50th an Ultra Ball). Rarer balls turn up as items, or buy them at the Poké Mart.")
                 }
             } else {
+                if pocket == .berries { BaitMaker() }
+                if pocket == .key, (store.state.bag[Fishing.rodKey] ?? 0) > 0 {
+                    Section {
+                        FishingRodRow { fished = $0 }.glassRow()
+                    } footer: {
+                        Text("Cast once every 20 minutes. Bait made from more berries gets more bites and rarer Pokémon (Dratini, Gyarados, Feebas…).")
+                    }
+                }
                 Section {
-                    let list = keys(in: pocket)
-                    if list.isEmpty {
+                    let list = keys(in: pocket).filter { $0 != Fishing.rodKey }
+                    if list.isEmpty && !(pocket == .key && (store.state.bag[Fishing.rodKey] ?? 0) > 0) {
                         Text(emptyText).foregroundStyle(Theme.inkSoft).glassRow()
                     }
                     ForEach(list, id: \.self) { key in
@@ -278,12 +289,14 @@ struct BagView: View {
         .animation(.snappy, value: pocket)
         .navigationTitle("Bag")
         .glassScreen()
+        .fullScreenCover(item: $fished) { SafariView(wild: $0) }
     }
 
     private var emptyText: String {
         switch pocket {
         case .berries: return "No berries yet — they're the most common thing you find on walks."
         case .candies: return "No candies yet. Your buddy picks up Exp. Candies as you walk; take them from its Summary."
+        case .key: return "No key items yet. A Fishing Rod is sold at the Poké Mart."
         default: return "Nothing yet — keep walking!"
         }
     }
@@ -292,6 +305,7 @@ struct BagView: View {
         switch pocket {
         case .berries: return "You find a berry every \(store.state.settings.berrySteps.formatted()) steps (change it in Settings). Throw them in wild encounters so the Pokémon stays longer, or give one to a Pokémon to make it friendlier."
         case .candies: return "Rare Candies raise a level; Exp. Candies give Exp. Your buddy finds an Exp. Candy about every 300 steps."
+        case .key: return "Key items are never used up."
         default: return "An item every \(store.state.settings.itemSteps.formatted()) steps: evolution stones, Link Cables, held items, bitter herbs and valuables to sell. Tap one to use or sell it."
         }
     }
@@ -744,7 +758,8 @@ private struct BagItemRow: View {
                     ItemSprite(key: key).frame(width: 30, height: 30)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(Dex.itemName(key)).font(.rounded(16, .heavy))
-                        Text(GameRules.itemDescription(key)).font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                        Text(Fishing.isBait(key) ? "Berries mixed into bait. Use it with the Fishing Rod (Key Items)."
+                             : GameRules.itemDescription(key)).font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                             .lineLimit(expanded ? nil : 1)
                     }
                     Spacer()
@@ -756,7 +771,11 @@ private struct BagItemRow: View {
             }
             .buttonStyle(.plain)
 
-            if expanded, let price = ItemCatalog.sellPrice[key] {
+            if expanded, let n = Fishing.baitBerries(key) {
+                let w = Fishing.tierWeights(berries: n), total = w.reduce(0, +)
+                Text("\(Int(Fishing.biteChance(berries: n) * 100))% chance of a bite · \(Int((w[2] / total * 100).rounded()))% chance of a rare catch")
+                    .font(.rounded(12, .heavy)).foregroundStyle(Theme.tealDark)
+            } else if expanded, let price = ItemCatalog.sellPrice[key] {
                 let have = store.state.bag[key] ?? 0
                 HStack(spacing: 10) {
                     sellButton("Sell 1 · ₽\(price)", count: 1)
@@ -802,6 +821,129 @@ private struct BagItemRow: View {
     }
 }
 
+
+// MARK: - Fishing
+
+/// Berries pocket: mix berries into bait for the Fishing Rod.
+private struct BaitMaker: View {
+    @EnvironmentObject private var store: GameStore
+    @State private var count = 3
+
+    private var berries: Int { ItemCatalog.berries.reduce(0) { $0 + (store.state.bag[$1] ?? 0) } }
+
+    var body: some View {
+        if berries > 0 {
+            let n = min(count, berries, Fishing.maxBerries)
+            let w = Fishing.tierWeights(berries: n), total = w.reduce(0, +)
+            Section {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        ItemSprite(key: Fishing.baitKey(berries: n)).frame(width: 30, height: 30)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(Fishing.baitName(berries: n)).font(.rounded(16, .heavy))
+                            Text("\(Int(Fishing.biteChance(berries: n) * 100))% bite · \(Int((w[2] / total * 100).rounded()))% rare catch")
+                                .font(.rounded(12, .heavy)).foregroundStyle(Theme.tealDark)
+                        }
+                    }
+                    HStack(spacing: 10) {
+                        Stepper("\(n) \(n == 1 ? "berry" : "berries")",
+                                value: Binding(get: { n }, set: { count = $0 }), in: 1...max(1, min(berries, Fishing.maxBerries)))
+                            .font(.rounded(15, .heavy))
+                        Button {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            if store.makeBait(berries: n) {
+                                SoundKit.shared.play(.useItem)
+                                store.toast = "Made \(Fishing.baitName(berries: n))!"
+                            }
+                        } label: {
+                            Text("Make bait").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                                .padding(.horizontal, 14).frame(height: 36)
+                                .background(Theme.teal.opacity(0.8), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .glassRow()
+            } header: {
+                Text("Make bait")
+            } footer: {
+                Text("Mix up to \(Fishing.maxBerries) berries into bait for the Fishing Rod (sold at the Poké Mart). More berries, better odds.")
+            }
+        }
+    }
+}
+
+/// Key Items pocket: the Fishing Rod — pick a bait and cast (once every 20 minutes).
+private struct FishingRodRow: View {
+    @EnvironmentObject private var store: GameStore
+    var onBite: (PendingEncounter) -> Void
+    @State private var casting = false
+
+    private var baits: [String] {
+        store.state.bag.filter { $0.value > 0 && Fishing.isBait($0.key) }.keys
+            .sorted { (Fishing.baitBerries($0) ?? 0) > (Fishing.baitBerries($1) ?? 0) }
+    }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { tl in
+            let wait = Fishing.cooldownLeft(store.state, now: tl.date)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    ItemSprite(key: Fishing.rodKey).frame(width: 32, height: 32)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(Fishing.rodName).font(.rounded(16, .heavy))
+                        Text(casting ? "…" : wait > 0 ? "Ready again in \(Self.mmss(wait))"
+                             : baits.isEmpty ? "No bait — make some in the Berries pocket" : "Ready to cast")
+                            .font(.rounded(12, .heavy))
+                            .foregroundStyle(wait > 0 || baits.isEmpty ? Theme.inkSoft : Theme.tealDark)
+                            .monospacedDigit()
+                    }
+                    Spacer()
+                }
+                if wait == 0 && !baits.isEmpty && !casting {
+                    ForEach(baits, id: \.self) { key in
+                        Button { cast(key) } label: {
+                            HStack(spacing: 10) {
+                                ItemSprite(key: key).frame(width: 26, height: 26)
+                                Text("Cast with \(Dex.itemName(key))").font(.rounded(14, .heavy))
+                                Spacer()
+                                Text("×\(store.state.bag[key] ?? 0)").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
+                            }
+                            .padding(.horizontal, 10).padding(.vertical, 8)
+                            .background(Theme.teal.opacity(0.25), in: RoundedRectangle(cornerRadius: 12))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func cast(_ bait: String) {
+        casting = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.6))       // waiting for a nibble…
+            let result = store.fish(with: bait)
+            casting = false
+            switch result {
+            case .bite(let wild):
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                store.toast = "Oh! A bite!"
+                try? await Task.sleep(for: .milliseconds(600))
+                onBite(wild)
+            case .nothing:
+                store.toast = "Not even a nibble… Try again in 20 minutes."
+            case .notReady:
+                break
+            }
+        }
+    }
+
+    static func mmss(_ t: TimeInterval) -> String {
+        let s = Int(t.rounded(.up)); return String(format: "%d:%02d", s / 60, s % 60)
+    }
+}
 
 // MARK: - Poké Mart
 
@@ -868,6 +1010,34 @@ struct ShopView: View {
                     .glassRow()
                 }
             } header: { Text("Balls") }
+
+            Section {
+                let owned = (store.state.bag[Fishing.rodKey] ?? 0) > 0
+                let afford = store.state.money >= Fishing.rodPrice
+                HStack(spacing: 12) {
+                    ItemSprite(key: Fishing.rodKey).frame(width: 32, height: 32)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(Fishing.rodName).font(.rounded(16, .heavy))
+                        Text("Fish up water Pokémon with bait made from berries.").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                    }
+                    Spacer()
+                    if owned {
+                        Text("Owned").font(.rounded(14, .heavy)).foregroundStyle(Theme.tealDark)
+                    } else {
+                        Button {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            if store.buyFishingRod() { store.toast = "You got the Fishing Rod! It's in your Bag's Key Items." }
+                        } label: {
+                            Text("₽\(Fishing.rodPrice.formatted())").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                                .padding(.horizontal, 14).frame(height: 36)
+                                .background(afford ? Theme.teal.opacity(0.8) : .white.opacity(0.1), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!afford)
+                    }
+                }
+                .glassRow()
+            } header: { Text("Key items") }
         }
         .scrollContentBackground(.hidden)
         .navigationTitle("Poké Mart")
