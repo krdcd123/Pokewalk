@@ -243,6 +243,18 @@ final class SoundKit: ObservableObject {
             if name.contains("MKMapView") || name.contains("Keyboard") || cur is UITextField || cur is UITextView { return }
             v = cur.superview
         }
+        // Only for things that actually do something: UIKit controls, or SwiftUI buttons / links / sliders
+        // (found through the accessibility tree, which knows which views are tappable)
+        var isControl = false
+        v = hit
+        while let cur = v, !isControl { isControl = cur is UIControl && (cur as? UIControl)?.isEnabled == true; v = cur.superview }
+        if !isControl {
+            let p = r.location(in: window)
+            guard let el = window.accessibilityHitTest(p, with: nil) as? NSObject else { return }
+            let t = el.accessibilityTraits
+            guard !t.contains(.notEnabled),
+                  !t.intersection([.button, .link, .adjustable, .keyboardKey, .tabBar]).isEmpty else { return }
+        }
         play(.select)
     }
 }

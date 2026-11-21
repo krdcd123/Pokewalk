@@ -31,12 +31,19 @@ extension View {
                 .background(Color.clear)
                 .foregroundStyle(.white)
                 .toolbarBackground(.hidden, for: .navigationBar)
+                .softTopEdge()
         } else {
             self.scrollContentBackground(.hidden)
                 .background(AppBackground())
                 .foregroundStyle(.white)
                 .toolbarBackground(.hidden, for: .navigationBar)
         }
+    }
+
+    /// iOS 26 draws a hard-edged band under the title bar when content scrolls; a soft fade blends the
+    /// panel's grab-handle area into the screen below it.
+    @ViewBuilder fileprivate func softTopEdge() -> some View {
+        if #available(iOS 26.0, *) { self.scrollEdgeEffectStyle(.soft, for: .top) } else { self }
     }
 
     /// Marks content shown in a panel over the blurred map, so every screen pushed inside it stays see-through.

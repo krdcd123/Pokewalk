@@ -26,9 +26,11 @@ enum BattleGfx {
         switch style.sheet {
         case .gbc(let accent):
             px.clearGameBoyBackground()
+            px.fillWhiteSpeckles()
             px.mapGreys(light: 0xF8B888, dark: accent)
         case .gb:
             px.clearGameBoyBackground()
+            px.fillWhiteSpeckles()
             px.mapGreys(light: 0xAAAAAA, dark: 0x555555)
         case .gen3:
             break
@@ -124,6 +126,30 @@ private struct Pixels {
                 stack.append((x + 1, y)); stack.append((x - 1, y)); stack.append((x, y + 1)); stack.append((x, y - 1))
             }
         }
+    }
+
+    /// Single white pixels in a dither pattern (e.g. the brim of Kris's hat) read as holes once the
+    /// background is gone, so they take the light shade instead.
+    mutating func fillWhiteSpeckles() {
+        func isWhite(_ x: Int, _ y: Int) -> Bool {
+            guard x >= 0, x < w, y >= 0, y < h else { return false }
+            let i = (y * w + x) * 4; return p[i + 3] > 0 && p[i] >= 250 && p[i + 1] >= 250 && p[i + 2] >= 250
+        }
+        var seen = Set<Int>()
+        for y in 0..<h { for x in 0..<w where isWhite(x, y) && !seen.contains(y * w + x) {
+            var comp: [(Int, Int)] = [], stack = [(x, y)]
+            seen.insert(y * w + x)
+            while let (cx, cy) = stack.popLast() {
+                comp.append((cx, cy))
+                for (nx, ny) in [(cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)]
+                where isWhite(nx, ny) && !seen.contains(ny * w + nx) {
+                    seen.insert(ny * w + nx); stack.append((nx, ny))
+                }
+            }
+            if comp.count <= 2 {
+                for (cx, cy) in comp { let i = (cy * w + cx) * 4; p[i] = 170; p[i + 1] = 170; p[i + 2] = 170 }
+            }
+        } }
     }
 
     /// Moves the picture down so its lowest drawn row touches the bottom edge.

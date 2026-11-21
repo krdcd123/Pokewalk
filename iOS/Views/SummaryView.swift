@@ -89,7 +89,8 @@ struct SummaryView: View {
 
                     VStack(spacing: 10) {
                         if let into = GameRules.pendingEvolution(for: mon, ignoringDecline: true) {
-                            actionButton("Evolve into \(Dex.species(into).name)", "sparkles", filled: true) {
+                            actionButton(store.state.dexCaught.contains(into) ? "Evolve into \(Dex.species(into).name)"
+                                                                              : "Evolve \(mon.name)", "sparkles", filled: true) {
                                 store.evolutionCandidate = .init(pokemonID: mon.id, into: into)
                             }
                         }
@@ -178,7 +179,9 @@ struct SummaryView: View {
     private func evolutionText(_ mon: OwnedPokemon) -> String {
         let evos = mon.species.evolutions
         guard !evos.isEmpty else { return "Fully evolved · \(mon.stepsWalked.formatted()) steps walked together" }
-        return "Evolves: " + evos.map(\.summary).joined(separator: "; ")
+        // Don't spoil what it becomes until you've caught that Pokémon yourself
+        return "Evolves: " + evos.map { $0.summary(revealName: store.state.dexCaught.contains($0.into)) }
+            .joined(separator: "; ")
     }
 
     private func friendshipText(_ f: Int) -> String {

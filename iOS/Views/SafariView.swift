@@ -318,6 +318,8 @@ struct SafariView: View {
         .foregroundStyle(Theme.ink)
         .padding(.horizontal, 14).padding(.vertical, 10)
         .glassCard(18)
+        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(.white.opacity(0.32), lineWidth: 1.5))
+        .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
     }
 
     /// The text box: types out messages; the catch / flee odds sit on the right once the intro is done.
@@ -343,6 +345,8 @@ struct SafariView: View {
         .frame(height: L.barHeight)
         .frame(maxWidth: .infinity)
         .glassCard(22)
+        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(.white.opacity(0.32), lineWidth: 1.5))
+        .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
         .padding(.horizontal, 12)
     }
 
@@ -386,7 +390,7 @@ struct SafariView: View {
                 }
             } label: {
                 controlLabel("\(ball.name) ×\(ballsLeft)", width: L.ballButtonWidth, height: L.buttonsHeight,
-                             tint: nil, big: true) {
+                             tint: Color(hex: 0xE0393E), big: true) {
                     ItemSprite(key: ball.itemKey).frame(width: 64, height: 64)
                 }
             } primaryAction: {

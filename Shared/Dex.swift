@@ -133,8 +133,11 @@ struct EvolutionRule: Codable, Hashable {
     var time: TimeOfDay?
     var gender: Gender?
 
-    var summary: String {
-        let name = Dex.species(into).name
+    var summary: String { summary(revealName: true) }
+
+    /// `revealName: false` hides which Pokémon it becomes ("???") — until you've caught it.
+    func summary(revealName: Bool) -> String {
+        let name = revealName ? Dex.species(into).name : "???"
         var s: String
         switch kind {
         case .level: s = "\(name) at Lv. \(level ?? 0)"
