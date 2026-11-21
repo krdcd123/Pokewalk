@@ -44,4 +44,26 @@ struct TrainerStyle: Identifiable, Hashable {
             .replacingOccurrences(of: "kris.png", with: "kris_bike.png")
     }
     var bikeURL: URL { URL(string: "https://raw.githubusercontent.com/\(bikePath)")! }
+
+    /// Battle back sprite (frames stacked vertically): Emerald's for the Gen 3 trainers, Crystal's for Gold/Kris.
+    var backPicURL: URL {
+        switch id {
+        case "gold": return URL(string: "https://raw.githubusercontent.com/pret/pokecrystal/master/gfx/player/chris_back.png")!
+        case "kris": return URL(string: "https://raw.githubusercontent.com/pret/pokecrystal/master/gfx/player/kris_back.png")!
+        default: return URL(string: "https://raw.githubusercontent.com/pret/pokeemerald/master/graphics/trainers/back_pics/\(id).png")!
+        }
+    }
+
+    /// Back sprite frame shown while standing in battle.
+    var backIdleFrame: Int { id == "brendan" || id == "may" ? 3 : 0 }
+
+    /// The ball-throwing animation from Emerald's back_pic_anims (frame, seconds) and when the ball leaves the hand.
+    /// Gold and Kris only have one back frame (Gen 2 had no throwing animation).
+    var backThrow: (frames: [(Int, Double)], release: Double) {
+        switch id {
+        case "brendan", "may": return ([(0, 0.40), (1, 0.15), (2, 0.40), (0, 0.15), (3, 0)], 0.55)
+        case "red", "leaf": return ([(1, 0.33), (2, 0.10), (3, 0.10), (4, 0.40), (0, 0)], 0.43)
+        default: return ([], 0.1)
+        }
+    }
 }

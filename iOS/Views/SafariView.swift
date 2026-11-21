@@ -1,8 +1,8 @@
 import SwiftUI
 import MapKit
 
-/// Safari Zone-style encounter: tap the ball to throw (the catch is decided by the odds),
-/// throw a berry so it stays longer, or run.
+/// A Gen 3-style wild encounter: the Pokémon slides in on its platform (top right) while your trainer slides
+/// in from the right (bottom left), the text box types "A wild … appeared!", then you throw balls, berries or run.
 struct SafariView: View {
     @EnvironmentObject private var store: GameStore
     @Environment(\.dismiss) private var dismiss
@@ -10,132 +10,144 @@ struct SafariView: View {
     @State private var safari: SafariEncounter
     @State private var ball: BallKind = .poke
     @State private var busy = false
-    @State private var ballOffset: CGFloat = 0
-    @State private var ballScale: CGFloat = 1
-    @State private var wobble: Double = 0
-    @State private var spriteHidden = false
-    @State private var bannerText: String?
     @State private var caught: OwnedPokemon?
-    @State private var throwing: String?        // shown instead of the result while the ball is shaking
-    @State private var introDone = false        // Pokémon slides in from the left, like Emerald
-    @State private var slideStart: Date?          // when the slide-in began
-    @State private var shaded = true             // darker until it reaches the middle (like Emerald)
-    @State private var flash = 0.0               // white flash when the ball opens
-    @State private var stars = false             // little stars when it's caught
+
+    // Intro
+    @State private var slideStart: Date?
+    @State private var introDone = false
+    @State private var shaded = true             // darker until it reaches its spot (like Emerald)
+    @State private var boxesIn = false           // name box slides in once everything has arrived
+    @State private var showRates = false
+    @State private var message = ""
+
+    // Sprites
+    @State private var enemyBounds = SpriteBounds.fallback
+    @State private var trainerFrames: [UIImage] = []
+    @State private var trainerFrame = 0
+    @State private var ballFrames: [UIImage] = []
+
+    // The thrown ball
+    @State private var ballVisible = false
+    @State private var ballOpen = false
+    @State private var ballPos: CGPoint = .zero
+    @State private var flight: Flight?
+    @State private var wobble: Double = 0
     @State private var ballDim = false
-    @State private var ballOpen = false           // top half flips open (hit / escape)
+    @State private var stars = false
+    @State private var spriteHidden = false
+    @State private var flash = 0.0
+
+    private struct Flight { var from: CGPoint; var to: CGPoint; var start: Date; var duration: Double }
 
     init(wild: PendingEncounter) { _safari = State(initialValue: SafariEncounter(wild: wild)) }
 
     private var wild: PendingEncounter { safari.wild }
     private var ballsLeft: Int { store.state.balls[ball, default: 0] }
+    private var style: TrainerStyle { store.state.trainer.style }
+    private var trainerName: String { store.state.trainer.name }
+
+    /// Every position on the battle screen, worked out from its size.
+    private struct Layout {
+        let size: CGSize
+        var W: CGFloat { size.width }
+        var H: CGFloat { size.height }
+        /// Pixel scales: the trainer's 64 px back sprite, and the (bigger, more detailed) Gen 5 Pokémon sprites.
+        var t: CGFloat { min(W * 0.0075, H * 0.0036) }
+        var e: CGFloat { t * 0.72 }
+        var barCenterY: CGFloat { H * 0.665 }
+        var barHeight: CGFloat { 84 }
+        var barTop: CGFloat { barCenterY - barHeight / 2 }
+        var enemyPlatform: CGPoint { CGPoint(x: W * 0.70, y: H * 0.355) }
+        var trainerSize: CGFloat { 64 * t }
+        var trainerX: CGFloat { W * 0.30 }
+        var playerPlatform: CGPoint { CGPoint(x: trainerX + 6, y: barTop - 16) }
+        var trainerTop: CGFloat { barTop + 6 - trainerSize }       // its waist tucks behind the text box
+        var ballSize: CGFloat { 16 * t * 0.85 }
+        var hand: CGPoint { CGPoint(x: trainerX + trainerSize * 0.28, y: trainerTop + trainerSize * 0.3) }
+        var buttonsY: CGFloat { H - 92 }
+    }
 
     var body: some View {
         GeometryReader { geo in
-            let spriteY = geo.size.height * 0.42
-            let ballHomeY = geo.size.height - 130
+            let L = Layout(size: geo.size)
             ZStack {
                 background
 
-                VStack { header; Spacer() }.padding(.top, 8)
-
-                // The sprite is a UIKit view, which SwiftUI won't slide with a normal animation —
-                // so the slide-in is driven frame by frame here.
-                TimelineView(.animation(paused: slideStart == nil || introDone)) { tl in
-                let p = introProgress(at: tl.date)
-                ZStack {
-                    Ellipse().fill(Theme.ink.opacity(0.16)).frame(width: 200, height: 46).offset(y: 100)
-                    AnimatedSprite(speciesID: wild.speciesID, shiny: wild.isShiny)
-                        .frame(width: 170, height: 170)
-                        .brightness(shaded ? -0.45 : 0)
-                        .saturation(shaded ? 0.6 : 1)
-                        .colorMultiply(spriteHidden ? Color(hex: 0xFF6B6B) : .white)
-                        .opacity(spriteHidden ? 0 : 1)
-                        .scaleEffect(spriteHidden ? 0.1 : 1, anchor: .bottom)
-                    Circle().fill(.white).frame(width: 150, height: 150).blur(radius: 24)
-                        .opacity(flash).allowsHitTesting(false)
-                }
-                .offset(x: -geo.size.width * 0.9 * (1 - p))
-                .opacity(p)
-                }
-                .position(x: geo.size.width / 2, y: spriteY)
-
-                statusCard.position(x: geo.size.width / 2, y: geo.size.height * 0.66)
-
-                // Tap the ball to throw it. (A plain tap, not a Button, so it never fades while busy.)
-                ZStack {
-                    BattleBall(kind: ball, open: ballOpen)
-                        .frame(width: 88 * ballScale, height: 88 * ballScale)
-                        .rotationEffect(.degrees(wobble), anchor: .bottom)
-                        .brightness(ballDim ? -0.25 : 0)
-                    // Caught: tiny stars pop out of the ball
-                    ForEach(0..<6, id: \.self) { i in
-                        let a = Double(i) / 6 * 2 * .pi - .pi / 2
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 10 + CGFloat(i % 2) * 4, weight: .black))
-                            .foregroundStyle(Color(hex: 0xFFE27A))
-                            .offset(x: stars ? cos(a) * 46 : 0, y: stars ? sin(a) * 46 - 10 : 0)
-                            .opacity(stars ? 0 : (ballDim ? 1 : 0))
-                            .scaleEffect(stars ? 1.2 : 0.3)
+                TimelineView(.animation(paused: !animating)) { tl in
+                    let p = introProgress(at: tl.date)
+                    ZStack {
+                        enemy(L, p: p)
+                        trainer(L, p: p)
+                        thrownBall(L, now: tl.date)
                     }
                 }
-                .frame(width: 110, height: 110)      // generous tap target
-                .contentShape(Circle())
-                .onTapGesture { throwBall(distance: spriteY - ballHomeY) }
-                .allowsHitTesting(introDone && !busy && ballsLeft > 0 && safari.phase == .active)
-                .opacity(ballsLeft > 0 || busy ? 1 : 0.35)
-                .position(x: geo.size.width / 2, y: ballHomeY + ballOffset)
-                .accessibilityAddTraits(.isButton)
-                .accessibilityLabel("Throw \(ball.name), \(ballsLeft) left")
-                .zIndex(2)   // keep the ball above the bottom controls so taps always reach it
 
-                if !busy && introDone {
-                    Text(ballsLeft > 0 ? "Tap to throw" : "No \(ball.name)s left")
-                        .font(.rounded(12, .heavy)).foregroundStyle(.white)
-                        .padding(.horizontal, 12).padding(.vertical, 5)
-                        .glassCapsule()
-                        .position(x: geo.size.width / 2, y: ballHomeY - 62)
+                topBar.frame(maxHeight: .infinity, alignment: .top).padding(.top, 8)
+
+                if boxesIn {
+                    nameBox
+                        .frame(maxWidth: L.W * 0.6, alignment: .leading)
+                        .position(x: L.W * 0.6 / 2 + 16, y: L.H * 0.15)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
                 }
 
-                bottomControls.position(x: geo.size.width / 2, y: geo.size.height - 70)
+                textBox(L).position(x: L.W / 2, y: L.barCenterY).zIndex(3)
 
-                if let text = bannerText {
-                    Text(text).font(.rounded(30, .black)).foregroundStyle(.white)
-                        .multilineTextAlignment(.center)
-                        .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
-                        .position(x: geo.size.width / 2, y: geo.size.height * 0.2)
-                        .transition(.scale.combined(with: .opacity))
-                }
+                bottomControls(L).position(x: L.W / 2, y: L.buttonsY)
             }
         }
         .ignoresSafeArea(edges: .bottom)
         .fullScreenCover(item: $caught, onDismiss: { dismiss() }) { CaughtView(pokemonID: $0.id, safari: safari) }
         .onDisappear { SoundKit.shared.setScene(.map) }
-        .onAppear {
-            SoundKit.shared.setScene(.battle)
-            safari.caughtBefore = store.state.dexCaught.contains(wild.speciesID)
-            pickAvailableBall()
-            Task { @MainActor in
-                // Load the sprite first, so the Pokémon and its platform arrive together
-                await preloadSprite()
-                // Slides in from the left (shaded), lights up in the middle, then cries
-                slideStart = .now
-                try? await Task.sleep(for: .milliseconds(1_120))
-                withAnimation(.easeOut(duration: 0.35)) { shaded = false }
-                try? await Task.sleep(for: .milliseconds(200))
-                CryPlayer.shared.play(wild.speciesID)
-                introDone = true
-                if wild.isShiny {
-                    try? await Task.sleep(for: .milliseconds(350))
-                    SoundKit.shared.play(.shiny)
-                }
+        .task(id: ball) { ballFrames = await BattleGfx.ball(ball) }
+        .onAppear(perform: start)
+    }
+
+    private var animating: Bool { (slideStart != nil && !introDone) || flight != nil }
+
+    // MARK: Intro
+
+    private func start() {
+        SoundKit.shared.setScene(.battle)
+        safari.caughtBefore = store.state.dexCaught.contains(wild.speciesID)
+        pickAvailableBall()
+        trainerFrame = style.backIdleFrame
+        Task { @MainActor in
+            // Load everything first, so the Pokémon, the trainer and their platforms arrive together
+            async let back = BattleGfx.trainerBack(style)
+            await preloadSprite()
+            trainerFrames = await back
+            // Both slide in (shaded Pokémon from the left, you from the right), then it lights up and cries
+            slideStart = .now
+            try? await Task.sleep(for: .milliseconds(1_120))
+            withAnimation(.easeOut(duration: 0.35)) { shaded = false }
+            introDone = true
+            withAnimation(.spring(duration: 0.4)) { boxesIn = true }
+            try? await Task.sleep(for: .milliseconds(200))
+            CryPlayer.shared.play(wild.speciesID)
+            if wild.isShiny {
+                try? await Task.sleep(for: .milliseconds(350))
+                SoundKit.shared.play(.shiny)
             }
+            await type(wild.isShiny ? "A shiny \(wild.species.name) appeared!" : "A wild \(wild.species.name) appeared!",
+                       hold: 1.1)
+            withAnimation(.easeInOut(duration: 0.3)) { message = "" }
+            try? await Task.sleep(for: .milliseconds(250))
+            withAnimation(.easeInOut(duration: 0.35)) { showRates = true }
+            if store.state.totalBalls == 0 { message = "Out of balls! Walk to earn more." }
+            else { message = "What will \(trainerName) do?" }
         }
+    }
+
+    /// Shows a line in the text box and waits for it to finish typing (plus `hold` seconds).
+    private func type(_ text: String, hold: Double) async {
+        message = text
+        try? await Task.sleep(for: .seconds(Double(text.count) * TypewriterText.perChar + hold))
     }
 
     // MARK: Pieces
 
-    /// A zoomed-in, blurred view of the map where you met it, with the glass controls on top.
+    /// A zoomed-in, blurred view of the map where you met it.
     @ViewBuilder private var background: some View {
         let loc = wild.location.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
             ?? LocationTracker.shared.currentLocation()?.coordinate
@@ -156,139 +168,309 @@ struct SafariView: View {
         .ignoresSafeArea()
     }
 
-    private var header: some View {
-        VStack(spacing: 6) {
-            HStack {
-                Button {
-                    SoundKit.shared.play(.runAway)
-                    safari.run()
-                    store.finish(safari)
-                    dismiss()
-                } label: {
-                    Label("Run", systemImage: "arrow.right").font(.rounded(15, .heavy))
-                        .padding(.horizontal, 16).frame(height: 40)
-                        .glassCapsule(interactive: true)
-                }
-                .disabled(busy || !introDone)
-                Spacer()
-                if let place = wild.location?.placeName {
-                    Label(place, systemImage: "mappin.and.ellipse").font(.rounded(13, .heavy)).lineLimit(1)
-                        .padding(.horizontal, 12).frame(height: 40)
-                        .glassCapsule()
-                }
-            }
-            .foregroundStyle(Theme.ink)
-            .padding(.horizontal, 16)
+    private func platform(width: CGFloat) -> some View {
+        Ellipse()
+            .fill(.white.opacity(0.13))
+            .overlay(Ellipse().stroke(.white.opacity(0.12), lineWidth: 1))
+            .frame(width: width, height: width * 0.2)
+    }
 
-            Text(wild.isShiny ? "A SHINY POKÉMON APPEARED!" : "A WILD POKÉMON APPEARED!")
-                .font(.rounded(12, .heavy)).foregroundStyle(wild.isShiny ? Color(hex: 0xF2C230) : Theme.inkSoft)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(wild.species.name + (wild.isShiny ? " ✨" : "")).font(.rounded(32, .black))
-                Text(wild.gender.symbol).font(.rounded(20, .heavy))
-                Text("Lv \(wild.level)").font(.rounded(18, .heavy)).foregroundStyle(Theme.tealDark)
+    /// The wild Pokémon on its platform (it floats above it if it flies or levitates).
+    @ViewBuilder private func enemy(_ L: Layout, p: Double) -> some View {
+        let b = enemyBounds
+        let w = b.size.width * L.e, h = b.size.height * L.e
+        let lift = CGFloat(BattleElevation.pixels(wild.speciesID)) * 1.5 * L.e
+        let feet = L.enemyPlatform.y - 4
+        // centre the canvas so the lowest visible pixel rests on the platform
+        let cy = feet - (b.bottom - b.size.height / 2) * L.e - lift
+        let dx = -L.W * (1 - p)
+        ZStack {
+            platform(width: L.W * 0.52)
+                .position(L.enemyPlatform)
+            AnimatedSprite(speciesID: wild.speciesID, shiny: wild.isShiny)
+                .frame(width: w, height: h)
+                .brightness(shaded ? -0.45 : 0)
+                .saturation(shaded ? 0.6 : 1)
+                .opacity(spriteHidden ? 0 : 1)
+                .scaleEffect(spriteHidden ? 0.1 : 1)
+                .position(x: L.enemyPlatform.x, y: cy)
+            Circle().fill(.white).frame(width: 150, height: 150).blur(radius: 24)
+                .opacity(flash).allowsHitTesting(false)
+                .position(hitPoint(L))
+        }
+        .offset(x: dx)
+        .opacity(min(1, p * 2))
+    }
+
+    /// Your trainer's back sprite on the near platform.
+    @ViewBuilder private func trainer(_ L: Layout, p: Double) -> some View {
+        ZStack {
+            platform(width: L.W * 0.66)
+                .position(L.playerPlatform)
+            if trainerFrames.indices.contains(trainerFrame) {
+                Image(uiImage: trainerFrames[trainerFrame])
+                    .interpolation(.none)
+                    .resizable()
+                    .frame(width: L.trainerSize, height: L.trainerSize)
+                    .position(x: L.trainerX, y: L.trainerTop + L.trainerSize / 2)
             }
-            .foregroundStyle(Theme.ink)
-            HStack { ForEach(wild.species.types, id: \.self) { TypeChip(type: $0) } }
+        }
+        .offset(x: L.W * (1 - p))
+        .opacity(min(1, p * 2))
+    }
+
+    private func hitPoint(_ L: Layout) -> CGPoint {
+        let b = enemyBounds
+        let lift = CGFloat(BattleElevation.pixels(wild.speciesID)) * 1.5 * L.e
+        let visible = (b.bottom - b.top) * L.e
+        return CGPoint(x: L.enemyPlatform.x, y: L.enemyPlatform.y - 4 - lift - visible * 0.55)
+    }
+
+    private func groundPoint(_ L: Layout) -> CGPoint {
+        CGPoint(x: L.enemyPlatform.x, y: L.enemyPlatform.y - L.ballSize * 0.35)
+    }
+
+    /// The Emerald ball sprite: flies in an arc (spinning), opens, drops, bounces and shakes.
+    @ViewBuilder private func thrownBall(_ L: Layout, now: Date) -> some View {
+        if ballVisible {
+            let bp = ballPoint(at: now)
+            ZStack {
+                Group {
+                    if ballFrames.count >= 2 {
+                        Image(uiImage: ballFrames[ballOpen ? 1 : 0]).interpolation(.none).resizable()
+                    } else {
+                        BallGlyph(kind: ball)
+                    }
+                }
+                .frame(width: L.ballSize, height: L.ballSize)
+                .rotationEffect(.degrees(bp.1))
+                .rotationEffect(.degrees(wobble), anchor: .bottom)
+                .brightness(ballDim ? -0.25 : 0)
+                // Caught: tiny stars pop out of the ball
+                ForEach(0..<6, id: \.self) { i in
+                    let a = Double(i) / 6 * 2 * .pi - .pi / 2
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 9 + CGFloat(i % 2) * 4, weight: .black))
+                        .foregroundStyle(Color(hex: 0xFFE27A))
+                        .offset(x: stars ? cos(a) * 40 : 0, y: stars ? sin(a) * 40 - 8 : 0)
+                        .opacity(stars ? 0 : (ballDim ? 1 : 0))
+                        .scaleEffect(stars ? 1.2 : 0.3)
+                }
+            }
+            .position(bp.0)
         }
     }
 
-    private var statusCard: some View {
+    private func ballPoint(at now: Date) -> (CGPoint, Double) {
+        guard let f = flight else { return (ballPos, 0) }
+        let t = min(1, max(0, now.timeIntervalSince(f.start) / f.duration))
+        let x = f.from.x + (f.to.x - f.from.x) * t
+        let arc = 4 * t * (1 - t) * 120
+        let y = f.from.y + (f.to.y - f.from.y) * t - arc
+        return (CGPoint(x: x, y: y), t * 720)
+    }
+
+    private var topBar: some View {
         HStack {
-            Text(throwing ?? safari.log.last ?? "")
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 0) {
-                Text("\(pct(safari.catchChance(ball: ball)))% catch")
-                    .foregroundStyle(Theme.inkSoft)
-                Text(safari.baitTurns > 0 ? "\(pct(safari.fleeChance))% flee · eating" : "\(pct(safari.fleeChance))% flee")
-                    .foregroundStyle(safari.baitTurns > 0 ? Theme.tealDark : Theme.orange)
+            Spacer()
+            if let place = wild.location?.placeName {
+                Label(place, systemImage: "mappin.and.ellipse").font(.rounded(13, .heavy)).lineLimit(1)
+                    .padding(.horizontal, 12).frame(height: 36)
+                    .glassCapsule()
+                    .foregroundStyle(Theme.ink)
             }
-            .font(.rounded(12, .heavy))
-            .contentTransition(.numericText())
         }
-        .font(.rounded(13, .heavy))
+        .padding(.horizontal, 16)
+    }
+
+    /// Name, gender, level and types, top left like the games' health box.
+    private var nameBox: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(wild.species.name + (wild.isShiny ? " ✨" : ""))
+                    .font(.rounded(22, .black)).lineLimit(1).minimumScaleFactor(0.6)
+                Text(wild.gender.symbol).font(.rounded(16, .heavy))
+                    .foregroundStyle(wild.gender == .female ? Color(hex: 0xFF8FA8) : Color(hex: 0x7FB8FF))
+                Spacer(minLength: 4)
+                Text("Lv\(wild.level)").font(.rounded(15, .heavy)).foregroundStyle(Theme.tealDark)
+            }
+            HStack(spacing: 6) { ForEach(wild.species.types, id: \.self) { TypeChip(type: $0) } }
+        }
         .foregroundStyle(Theme.ink)
-        .padding(.horizontal, 14).frame(height: 44)
-        .glassCard(16)
-        .padding(.horizontal, 28)
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .glassCard(18)
     }
 
-    private var bottomControls: some View {
-        HStack {
+    /// The text box: types out messages; the catch / flee odds sit on the right once the intro is done.
+    private func textBox(_ L: Layout) -> some View {
+        HStack(alignment: .center) {
+            TypewriterText(text: message)
+                .font(.rounded(16, .heavy))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if showRates {
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text("\(pct(safari.catchChance(ball: ball)))% catch")
+                        .foregroundStyle(Theme.inkSoft)
+                    Text(safari.baitTurns > 0 ? "\(pct(safari.fleeChance))% flee · eating" : "\(pct(safari.fleeChance))% flee")
+                        .foregroundStyle(safari.baitTurns > 0 ? Theme.tealDark : Theme.orange)
+                }
+                .font(.rounded(13, .heavy))
+                .contentTransition(.numericText())
+                .transition(.opacity)
+            }
+        }
+        .foregroundStyle(Theme.ink)
+        .padding(.horizontal, 18)
+        .frame(height: L.barHeight)
+        .frame(maxWidth: .infinity)
+        .glassCard(22)
+        .padding(.horizontal, 12)
+    }
+
+    private func bottomControls(_ L: Layout) -> some View {
+        let canAct = introDone && showRates && !busy && safari.phase == .active
+        return HStack(alignment: .center) {
             // Berry: tap throws the one you have most of; hold to pick which
             Menu {
                 ForEach(ownedBerries, id: \.self) { key in
                     Button("\(Dex.itemName(key)) ×\(store.state.bag[key] ?? 0)") { throwBerry(key) }
                 }
             } label: {
-                VStack(spacing: 2) {
+                controlLabel(berryCount == 0 ? "No berries" : "Berry ×\(berryCount)", tint: Theme.orange) {
                     if let key = ownedBerries.first {
-                        ItemSprite(key: key).frame(width: 28, height: 28)
+                        ItemSprite(key: key).frame(width: 30, height: 30)
                     } else {
                         Image(systemName: "leaf.fill").font(.system(size: 22, weight: .bold))
                     }
-                    Text(berryCount == 0 ? "No berries" : "Berry ×\(berryCount)").font(.rounded(11, .black))
                 }
-                .frame(width: 72, height: 72)
-                .foregroundStyle(.white)
-                .glassCircle(tint: Theme.orange)
             } primaryAction: {
                 if let key = ownedBerries.first { throwBerry(key) }
             }
-            .disabled(busy || !introDone || berryCount == 0)
-            .opacity(berryCount == 0 ? 0.6 : 1)
+            .disabled(!canAct || berryCount == 0)
+            .opacity(berryCount == 0 ? 0.55 : 1)
 
             Spacer()
 
+            // Ball: tap throws it; hold to switch ball
             Menu {
                 ForEach(BallKind.allCases.filter { $0.isStepBall || store.state.balls[$0, default: 0] > 0 }) { k in
-                    Button("\(k.name) ×\(store.state.balls[k, default: 0])") { ball = k }
-                        .disabled(store.state.balls[k, default: 0] == 0)
+                    Button {
+                        ball = k
+                        SoundKit.shared.play(.select)
+                    } label: {
+                        if k == ball {
+                            Label("\(k.name) ×\(store.state.balls[k, default: 0])", systemImage: "checkmark")
+                        } else {
+                            Text("\(k.name) ×\(store.state.balls[k, default: 0])")
+                        }
+                    }
+                    .disabled(store.state.balls[k, default: 0] == 0)
                 }
             } label: {
-                VStack(spacing: 0) {
-                    Text("×\(ballsLeft)").font(.rounded(18, .black))
-                    Text(ball.name).font(.rounded(10, .heavy)).foregroundStyle(Theme.inkSoft)
+                controlLabel("\(ball.name) ×\(ballsLeft)", size: 86) {
+                    ItemSprite(key: ball.itemKey).frame(width: 40, height: 40)
                 }
-                .frame(width: 72, height: 72)
-                .foregroundStyle(.white)
-                .glassCircle()
+            } primaryAction: {
+                if ballsLeft > 0 { throwBall(L) }
+                else { message = "No \(ball.name)s left! Hold to pick another." }
             }
-            .disabled(busy)
+            .disabled(!canAct)
+            .opacity(ballsLeft > 0 ? 1 : 0.55)
+            .accessibilityLabel("Throw \(ball.name), \(ballsLeft) left. Hold to change ball.")
+
+            Spacer()
+
+            Button(action: run) {
+                controlLabel("Run", tint: nil) {
+                    Image(systemName: "figure.run").font(.system(size: 22, weight: .bold))
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(!introDone || busy)
         }
         .padding(.horizontal, 24)
         .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
     }
 
-    // MARK: Throwing
+    private func controlLabel<Icon: View>(_ title: String, size: CGFloat = 72, tint: Color? = nil,
+                                          @ViewBuilder icon: () -> Icon) -> some View {
+        VStack(spacing: 2) {
+            icon()
+            Text(title).font(.rounded(10, .black)).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .padding(.horizontal, 4)
+        .frame(width: size, height: size)
+        .foregroundStyle(.white)
+        .glassCircle(tint: tint)
+    }
 
-    private func throwBall(distance: CGFloat) {
+    // MARK: Actions
+
+    private func run() {
+        guard introDone, !busy else { return }
+        busy = true
+        SoundKit.shared.play(.runAway)
+        safari.run()
+        store.finish(safari)
+        Task { @MainActor in
+            await type("Got away safely!", hold: 0.4)
+            dismiss()
+        }
+    }
+
+    /// Plays the trainer's throwing frames (Gen 3 trainers; Gold/Kris just stand there, like Gen 2).
+    private func playThrowAnimation() {
+        let anim = style.backThrow
+        guard !anim.frames.isEmpty, !trainerFrames.isEmpty else { return }
+        Task { @MainActor in
+            for (f, d) in anim.frames {
+                if trainerFrames.indices.contains(f) { trainerFrame = f }
+                if d > 0 { try? await Task.sleep(for: .seconds(d)) }
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+            trainerFrame = style.backIdleFrame
+        }
+    }
+
+    private func throwBall(_ L: Layout) {
         guard !busy, introDone, safari.phase == .active, store.useBall(ball) else { return }
         busy = true
-        throwing = "You threw a \(ball.name)!"
+        message = "\(trainerName) threw a \(ball.name)!"
         Task { @MainActor in
-            // 1. Throw: the ball arcs up to the Pokémon
+            // 1. Wind up and throw: the ball arcs from your hand to the Pokémon
+            playThrowAnimation()
+            try? await Task.sleep(for: .seconds(trainerFrames.isEmpty || style.backThrow.frames.isEmpty ? 0.1 : style.backThrow.release))
             SoundKit.shared.play(.ballThrow)
-            withAnimation(.easeOut(duration: 0.45)) { ballOffset = distance; ballScale = 0.55 }
-            try? await Task.sleep(for: .milliseconds(480))
+            let hit = hitPoint(L)
+            ballOpen = false; wobble = 0; ballDim = false; stars = false
+            ballPos = L.hand
+            ballVisible = true
+            flight = Flight(from: L.hand, to: hit, start: .now, duration: 0.6)
+            try? await Task.sleep(for: .milliseconds(600))
+            ballPos = hit
+            flight = nil
 
             let result = safari.throwBall(ball, quality: nil)
 
             // 2. It hits: the ball pops open, the Pokémon is pulled in with a flash, then it snaps shut
             SoundKit.shared.play(.ballOpen)
-            withAnimation(.spring(response: 0.18, dampingFraction: 0.6)) { ballOpen = true }
-            withAnimation(.easeOut(duration: 0.12)) { flash = 0.6 }
+            ballOpen = true
+            withAnimation(.easeOut(duration: 0.12)) { flash = 0.7 }
             withAnimation(.easeIn(duration: 0.35)) { spriteHidden = true }
-            try? await Task.sleep(for: .milliseconds(420))
+            try? await Task.sleep(for: .milliseconds(450))
             withAnimation(.easeOut(duration: 0.3)) { flash = 0 }
-            withAnimation(.spring(response: 0.16, dampingFraction: 0.7)) { ballOpen = false }
-            try? await Task.sleep(for: .milliseconds(160))
+            ballOpen = false
+            try? await Task.sleep(for: .milliseconds(200))
 
-            // 3. It drops and bounces on the ground three times
-            let ground = distance + 70
+            // 3. It drops to the ground and bounces three times
+            let ground = groundPoint(L)
             for (i, h) in [CGFloat(0), 26, 12].enumerated() {
-                if i > 0 { withAnimation(.easeOut(duration: 0.16)) { ballOffset = ground - h } ; try? await Task.sleep(for: .milliseconds(170)) }
-                withAnimation(.easeIn(duration: i == 0 ? 0.28 : 0.16)) { ballOffset = ground }
-                try? await Task.sleep(for: .milliseconds(i == 0 ? 290 : 170))
+                if i > 0 {
+                    withAnimation(.easeOut(duration: 0.16)) { ballPos.y = ground.y - h }
+                    try? await Task.sleep(for: .milliseconds(170))
+                }
+                withAnimation(.easeIn(duration: i == 0 ? 0.3 : 0.16)) { ballPos = ground }
+                try? await Task.sleep(for: .milliseconds(i == 0 ? 310 : 170))
                 SoundKit.shared.play(.ballBounce)
             }
             try? await Task.sleep(for: .milliseconds(450))
@@ -315,36 +497,39 @@ struct SafariView: View {
                 } else {
                     SoundKit.shared.play(.ballCatch)
                 }
-                throwing = nil
-                await show("Gotcha!\n\(wild.species.name) was caught!", duration: 1.6)
+                await type("Gotcha! \(wild.species.name) was caught!", hold: 1.2)
                 caught = store.finish(safari)
                 return
             }
             // Broke free: the ball bursts open and the Pokémon comes back out
             SoundKit.shared.play(.ballOpen)
-            withAnimation(.spring(response: 0.18, dampingFraction: 0.55)) { ballOpen = true }
-            withAnimation(.easeOut(duration: 0.1)) { flash = 0.6 }
+            ballOpen = true
+            withAnimation(.easeOut(duration: 0.1)) { flash = 0.7 }
             withAnimation(.spring(duration: 0.3)) { spriteHidden = false }
-            try? await Task.sleep(for: .milliseconds(150))
+            try? await Task.sleep(for: .milliseconds(180))
             withAnimation(.easeOut(duration: 0.35)) { flash = 0 }
-            try? await Task.sleep(for: .milliseconds(300))
-            throwing = nil
-            await show(safari.log.last ?? "It broke free!", duration: 0.8)
+            try? await Task.sleep(for: .milliseconds(220))
+            withAnimation(.easeOut(duration: 0.15)) { ballVisible = false }
+            ballOpen = false
+            await type(safari.log.last ?? "Oh no! It broke free!", hold: 0.6)
             if result.fled { endFled(); return }
-            withAnimation(.spring(duration: 0.4)) { ballOffset = 0; ballScale = 1; wobble = 0; ballOpen = false }
             pickAvailableBall()
+            message = store.state.totalBalls == 0 ? "Out of balls! Walk to earn more." : "What will \(trainerName) do?"
             busy = false
         }
     }
 
-    /// Waits (at most ~2.5 s) until the wild Pokémon's sprite is downloaded and decoded.
+    /// Waits (at most ~2.5 s) until the wild Pokémon's sprite is downloaded, then measures where its feet are.
     private func preloadSprite() async {
         let id = wild.speciesID, shiny = wild.isShiny
-        let load = Task.detached { () -> Void in
-            if let u = await SpriteStore.shared.url(shiny ? .shiny : .front, speciesID: id) { _ = GIFCache.shared.image(at: u) }
+        let load = Task.detached { () -> SpriteBounds? in
+            var u = await SpriteStore.shared.url(shiny ? .shiny : .front, speciesID: id)
+            if u == nil && shiny { u = await SpriteStore.shared.url(.front, speciesID: id) }
+            guard let u, let img = GIFCache.shared.image(at: u) else { return nil }
+            return SpriteBounds(img)
         }
         let timeout = Task { try? await Task.sleep(for: .milliseconds(2_500)); load.cancel() }
-        _ = await load.value
+        if let b = await load.value { enemyBounds = b }
         timeout.cancel()
     }
 
@@ -369,106 +554,48 @@ struct SafariView: View {
         guard store.consume(key) else { return }
         SoundKit.shared.play(.useItem)
         withAnimation { safari.giveBerry(Dex.itemName(key)) }
+        message = safari.log.last ?? "\(trainerName) threw a \(Dex.itemName(key))!"
         if safari.phase == .fled { endFled() }
     }
 
     private func pickAvailableBall() {
         if store.state.balls[ball, default: 0] == 0,
            let k = BallKind.allCases.first(where: { store.state.balls[$0, default: 0] > 0 }) { ball = k }
-        if store.state.totalBalls == 0 { bannerText = "Out of balls!\nWalk to earn more." }
     }
 
     private func endFled() {
         busy = true
         Task { @MainActor in
             withAnimation { spriteHidden = true }
-            await show("\(wild.species.name) fled!", duration: 1.2)
+            await type("\(wild.species.name) fled!", hold: 0.9)
             store.finish(safari)
             dismiss()
         }
     }
-
-    private func show(_ text: String, duration: Double) async {
-        withAnimation(.spring) { bannerText = text }
-        try? await Task.sleep(for: .seconds(duration))
-        withAnimation { bannerText = nil }
-    }
 }
 
-
-/// The thrown ball, drawn with SwiftUI (so it can fly, bounce, wobble and flip open smoothly).
-/// The top half hinges open at the back, with light spilling out, like the games.
-private struct BattleBall: View {
-    let kind: BallKind
-    var open: Bool
-    @State private var image: UIImage?
-    /// Where the ball's right edge is in its sprite (the hinge), found from the image itself.
-    @State private var hingeX: CGFloat = 0.85
+/// Text that types itself out letter by letter, like the games' text boxes (the layout never jumps:
+/// letters not typed yet are just invisible).
+struct TypewriterText: View {
+    let text: String
+    static let perChar = 0.03
+    @State private var shown = 0
 
     var body: some View {
-        GeometryReader { g in
-            let s = min(g.size.width, g.size.height)
-            ZStack {
-                if let image {
-                    // inside of the ball (seen when the top tips back) + light spilling out
-                    Ellipse().fill(Color(hex: 0x2A2A2A))
-                        .frame(width: s * 0.66, height: s * 0.24)
-                        .offset(y: -s * 0.06)
-                        .opacity(open ? 1 : 0)
-                    Ellipse().fill(.white)
-                        .frame(width: s * 0.5, height: s * 0.16)
-                        .blur(radius: s * 0.05)
-                        .offset(y: -s * 0.07)
-                        .opacity(open ? 0.9 : 0)
-                    // bottom half
-                    half(image, top: false, size: s)
-                    // top half: flips up and back from the hinge
-                    half(image, top: true, size: s)
-                        // Opens like the games: the top half tips back along the ball's middle line (a clam opening
-                        // towards you), staying joined at the seam
-                        .rotation3DEffect(.degrees(open ? -48 : 0), axis: (x: 1, y: 0, z: 0),
-                                          anchor: .center, perspective: 0.35)
-                        .offset(y: open ? -s * 0.03 : 0)
-                } else {
-                    BallGlyph(kind: kind)
+        var typed = AttributedString(String(text.prefix(shown)))
+        typed.foregroundColor = Theme.ink
+        var rest = AttributedString(String(text.dropFirst(shown)))
+        rest.foregroundColor = .clear
+        return Text(typed + rest)
+            .lineLimit(2)
+            .minimumScaleFactor(0.8)
+            .task(id: text) {
+                shown = 0
+                for i in 1...max(1, text.count) {
+                    try? await Task.sleep(for: .seconds(Self.perChar))
+                    if Task.isCancelled { return }
+                    shown = i
                 }
-            }
-            .frame(width: s, height: s)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .task(id: kind) {
-            guard let url = await SpriteStore.shared.itemURL(kind.itemKey) else { return }
-            let img = await Task.detached { GIFCache.shared.image(at: url) }.value
-            image = img?.images?.first ?? img
-            if let cg = image?.cgImage { hingeX = Self.rightEdge(cg) }
-        }
-    }
-
-    /// Right-most opaque pixel on the middle row, as a fraction of the width.
-    static func rightEdge(_ cg: CGImage) -> CGFloat {
-        let w = cg.width, h = cg.height
-        var px = [UInt8](repeating: 0, count: w * h * 4)
-        guard let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                                  space: CGColorSpaceCreateDeviceRGB(),
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return 0.85 }
-        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
-        var best = 0
-        for y in max(0, h / 2 - 2)...min(h - 1, h / 2 + 2) {
-            for x in stride(from: w - 1, through: 0, by: -1) where px[(y * w + x) * 4 + 3] > 40 {
-                best = max(best, x); break
-            }
-        }
-        return best > 0 ? (CGFloat(best) + 0.5) / CGFloat(w) : 0.85
-    }
-
-    private func half(_ img: UIImage, top: Bool, size s: CGFloat) -> some View {
-        Image(uiImage: img)
-            .interpolation(.none)
-            .resizable()
-            .scaledToFit()
-            .frame(width: s, height: s)
-            .mask(alignment: top ? .top : .bottom) {
-                Rectangle().frame(height: s * (top ? 0.5 : 0.5))
             }
     }
 }

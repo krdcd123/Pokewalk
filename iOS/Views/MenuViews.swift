@@ -3,6 +3,11 @@ import UniformTypeIdentifiers
 
 // MARK: - Main menu
 
+extension Notification.Name {
+    /// Posted the moment the map's menu panel starts closing.
+    static let menuPanelClosing = Notification.Name("menuPanelClosing")
+}
+
 struct MainMenuView: View {
     @EnvironmentObject private var store: GameStore
     var close: () -> Void = {}
@@ -22,8 +27,10 @@ struct MainMenuView: View {
         .init(dest: .settings, title: "Settings", symbol: "gearshape.fill"),
     ]
 
+    @State private var path: [Dest] = []
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 14) {
                     if let buddy = store.state.buddy {
@@ -47,9 +54,19 @@ struct MainMenuView: View {
                     }
                 }
                 .padding()
+                // Fade the menu out while a screen slides in over it (the panel is see-through)
+                .opacity(path.isEmpty ? 1 : 0)
+                .animation(.easeInOut(duration: 0.22), value: path.isEmpty)
             }
             .navigationTitle("Menu")
             .glassScreen(transparent: true)
+            // The PC's closing sound plays the moment you leave it, not after the slide finishes
+            .onChange(of: path) { old, new in
+                if old.contains(.pc) && !new.contains(.pc) { SoundKit.shared.play(.closePC) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .menuPanelClosing)) { _ in
+                if path.contains(.pc) { SoundKit.shared.play(.closePC) }
+            }
             .navigationDestination(for: Dest.self) { d in
                 switch d {
                 case .pc: PCView()

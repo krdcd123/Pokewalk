@@ -18,6 +18,8 @@ struct PCView: View {
         [0xF6D5DE, 0xEFA7BC], [0xD9E4E2, 0xA9BCB9], [0xFFF1B8, 0xF2D06B], [0x2A3B4C, 0x1B2733],
     ]
 
+    private var pushed: Bool { open != nil || showStorage }
+
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 6)
 
     var body: some View {
@@ -35,11 +37,14 @@ struct PCView: View {
                 }
             }
             .padding()
+            // While a summary / Storage slides in over the see-through panel, fade the PC out so the two
+            // screens never show on top of each other
+            .opacity(pushed ? 0 : 1)
+            .animation(.easeInOut(duration: 0.22), value: pushed)
         }
         .navigationTitle("PC")
         .navigationDestination(isPresented: $showStorage) { StorageView() }
         .onAppear { if !playedOpen { playedOpen = true; SoundKit.shared.play(.openPC) } }
-        .onDisappear { if open == nil && !showStorage { SoundKit.shared.play(.closePC) } }
         .glassScreen()
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search names, species, places")
         .toolbar {

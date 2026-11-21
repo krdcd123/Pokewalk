@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SummaryView: View {
     @Environment(\.summaryActive) private var summaryActive
+    @Environment(\.summaryPaged) private var summaryPaged
     @EnvironmentObject private var store: GameStore
     @Environment(\.dismiss) private var dismiss
     let pokemonID: UUID
@@ -117,17 +118,8 @@ struct SummaryView: View {
             .onAppear { if isBuddy && summaryActive { CryPlayer.shared.play(mon.speciesID) } }
             .onChange(of: summaryActive) { _, now in if now && isBuddy { CryPlayer.shared.play(mon.speciesID) } }
             .background {
-                ZStack {
-                    if !overMap { AppBackground() }
-                    // Fades in from clear at the top, so there's no hard edge under the panel's handle.
-                    LinearGradient(stops: [.init(color: tint.opacity(0), location: 0),
-                                           .init(color: tint.opacity(0.42), location: 0.16),
-                                           .init(color: tint.opacity(0.24), location: 0.38),
-                                           .init(color: tint.opacity(0.07), location: 0.6),
-                                           .init(color: .clear, location: 0.85)],
-                                   startPoint: .top, endPoint: .bottom)
-                        .ignoresSafeArea()
-                }
+                // In the swipeable summary the pager draws this itself (full height, behind the title bar)
+                if !summaryPaged { SummaryBackdrop(tint: tint, overMap: overMap) }
             }
             .navigationBarTitleDisplayMode(.inline)
             .alert("Nickname", isPresented: $renaming) {
@@ -275,15 +267,54 @@ struct PagedSummaryView: View {
         _current = State(initialValue: start)
     }
 
+    @EnvironmentObject private var store: GameStore
+    @Environment(\.overMap) private var overMap
+
     var body: some View {
         TabView(selection: $current) {
             ForEach(ids, id: \.self) { id in
                 SummaryView(pokemonID: id).tag(id)
                     .environment(\.summaryActive, id == current)
+                    .environment(\.summaryPaged, true)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .ignoresSafeArea(edges: .bottom)
+        // The type colour sits behind the whole page (pages of a TabView stop at the title bar, which cut it off)
+        .background {
+            SummaryBackdrop(tint: store.state.mon(current).map { Color($0.species.primaryType) } ?? Theme.teal,
+                            overMap: overMap)
+                .animation(.easeInOut(duration: 0.35), value: current)
+        }
+        .containerBackground(.clear, for: .navigation)
+    }
+}
+
+/// The Summary's background: the Pokémon's type colour fading down the screen.
+struct SummaryBackdrop: View {
+    let tint: Color
+    var overMap: Bool
+
+    var body: some View {
+        ZStack {
+            if !overMap { AppBackground() }
+            // Fades in from clear at the top, so there's no hard edge under the panel's handle.
+            LinearGradient(stops: [.init(color: tint.opacity(0), location: 0),
+                                   .init(color: tint.opacity(0.42), location: 0.16),
+                                   .init(color: tint.opacity(0.24), location: 0.38),
+                                   .init(color: tint.opacity(0.07), location: 0.6),
+                                   .init(color: .clear, location: 0.85)],
+                           startPoint: .top, endPoint: .bottom)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+private struct SummaryPagedKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var summaryPaged: Bool {
+        get { self[SummaryPagedKey.self] }
+        set { self[SummaryPagedKey.self] = newValue }
     }
 }
 

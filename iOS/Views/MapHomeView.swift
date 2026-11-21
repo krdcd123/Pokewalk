@@ -10,10 +10,30 @@ struct MapHomeView: View {
     @State private var camera: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
     @State private var refollowTask: Task<Void, Never>?
     @Environment(\.scenePhase) private var scenePhase
+    /// We follow you ourselves (instead of MapKit's .userLocation, which resets the zoom every time),
+    /// so the map keeps whatever zoom you chose when menus close or you come back to the app.
+    @State private var following = true
+    @AppStorage("mapZoomDistance") private var zoomDistance: Double = 900
+    @State private var lastCamera: MapCamera?
 
-    private func followMe() {
+    /// Tap the location button / menus close / app reopens: glide back to you at the same zoom.
+    private func followMe(distance: Double? = nil, duration: Double = 0.6) {
         refollowTask?.cancel()
-        withAnimation(.smooth(duration: 0.6)) { camera = .userLocation(followsHeading: false, fallback: .automatic) }
+        if let distance { zoomDistance = distance }
+        following = true
+        guard let loc = tracker.currentLocation() else {
+            camera = .userLocation(followsHeading: false, fallback: .automatic)
+            return
+        }
+        let cam = MapCamera(centerCoordinate: loc.coordinate, distance: zoomDistance,
+                            heading: lastCamera?.heading ?? 0, pitch: lastCamera?.pitch ?? 0)
+        withAnimation(.smooth(duration: duration)) { camera = .camera(cam) }
+    }
+
+    /// Long-press the location button: zoom out for an overview (long-press again to come back in).
+    private func zoomOutOverview() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        followMe(distance: zoomDistance < 3_000 ? max(4_000, zoomDistance * 4) : 900, duration: 0.8)
     }
     @State private var sheet: HomeSheet?
     @State private var showCard = false
@@ -67,18 +87,20 @@ struct MapHomeView: View {
                     HStack {
                         Spacer()
                         Button {
-                            withAnimation(.smooth(duration: 0.6)) { camera = .userLocation(followsHeading: false, fallback: .automatic) }
+                            followMe()
                         } label: {
-                            Image(systemName: camera.followsUserLocation ? "location.fill" : "location")
+                            Image(systemName: following ? "location.fill" : "location")
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundStyle(.white)
                                 .frame(width: 48, height: 48)
                                 .contentShape(Circle())
-                                .glassCircle(tint: camera.followsUserLocation ? Theme.teal : nil)
+                                .glassCircle(tint: following ? Theme.teal : nil)
                                 .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
                         }
                         .buttonStyle(.plain)
+                        .simultaneousGesture(LongPressGesture(minimumDuration: 0.45).onEnded { _ in zoomOutOverview() })
                         .accessibilityLabel("Show my location")
+                        .accessibilityHint("Hold to zoom out")
                     }
                     Spacer()
                     bottomBar
@@ -136,6 +158,7 @@ struct MapHomeView: View {
     }
 
     private func close() {
+        NotificationCenter.default.post(name: .menuPanelClosing, object: nil)
         withAnimation(.spring(duration: 0.4)) { sheet = nil }
         panelSession += 1
     }
@@ -179,17 +202,32 @@ struct MapHomeView: View {
         .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
         .mapControls { MapCompass() }
         // Always keep you in view: if you pan away, it glides back to you after a few seconds
-        .onMapCameraChange(frequency: .onEnd) { _ in
+        .onMapCameraChange(frequency: .onEnd) { ctx in
+            lastCamera = ctx.camera
+            zoomDistance = ctx.camera.distance          // pinch-zooming sets the zoom we keep from now on
+            // Did you pan away from yourself? Then stop following, and glide back after a few seconds.
+            if let me = tracker.currentLocation() {
+                let centre = CLLocation(latitude: ctx.camera.centerCoordinate.latitude, longitude: ctx.camera.centerCoordinate.longitude)
+                following = centre.distance(from: me) < max(25, ctx.camera.distance * 0.05)
+            }
             refollowTask?.cancel()
-            guard !camera.followsUserLocation else { return }
+            guard !following else { return }
             refollowTask = Task { @MainActor in
                 try? await Task.sleep(for: .seconds(6))
                 guard !Task.isCancelled else { return }
-                withAnimation(.smooth(duration: 0.8)) { camera = .userLocation(followsHeading: false, fallback: .automatic) }
+                followMe(duration: 0.8)
             }
         }
-        .onChange(of: sheet) { _, now in if now == nil { followMe() } }
+        // Keep you in the middle as you walk (same zoom)
+        .onChange(of: tracker.lastLocation) { _, loc in
+            guard following, sheet == nil, let loc else { return }
+            let cam = MapCamera(centerCoordinate: loc.coordinate, distance: zoomDistance,
+                                heading: lastCamera?.heading ?? 0, pitch: lastCamera?.pitch ?? 0)
+            withAnimation(.linear(duration: 0.8)) { camera = .camera(cam) }
+        }
+        .onChange(of: sheet) { _, now in if now == nil && following { followMe() } }
         .onChange(of: scenePhase) { _, p in if p == .active { followMe() } }
+        .onAppear { if tracker.currentLocation() != nil { followMe(duration: 0) } }
         .ignoresSafeArea()
     }
 
