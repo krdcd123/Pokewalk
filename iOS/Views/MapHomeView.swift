@@ -152,6 +152,7 @@ struct MapHomeView: View {
                     .onTapGesture { withAnimation(.spring(duration: 0.35)) { showCard = false } }
             }
         }
+        .overlay { ConfettiRain(start: store.confettiAt) }
         .fullScreenCover(item: $store.activeEncounter) { SafariView(wild: $0) }
         .animation(.spring(duration: 0.4), value: store.toast)
     }

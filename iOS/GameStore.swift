@@ -13,6 +13,8 @@ final class GameStore: ObservableObject {
     @Published var stepsToday = 0
     @Published var metersToday: Double = 0
     @Published var toast: String?
+    /// When to rain confetti (the daily stamp).
+    @Published var confettiAt: Date?
     @Published var activeEncounter: PendingEncounter?
     @Published var evolutionCandidate: EvolutionCandidate?
     private var rampTimer: Timer?
@@ -473,9 +475,10 @@ final class GameStore: ObservableObject {
         var result: (day: Int, rewards: [DailyStamps.Reward])?
         mutate { result = DailyStamps.stamp(&$0) }
         guard let result else { return }
+        confettiAt = .now
         if result.day == DailyStamps.days {
             SoundKit.shared.play(.ballCatch)
-            toast = "Stamp card complete! You got \(DailyStamps.text(result.rewards))."
+            toast = "Stamp card complete! The present had \(DailyStamps.text(result.rewards))."
         } else {
             SoundKit.shared.play(.useItem)
             toast = "Day \(result.day) stamp! You got \(DailyStamps.text(result.rewards)). Tap your trainer card to see it."

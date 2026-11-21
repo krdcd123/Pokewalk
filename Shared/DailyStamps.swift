@@ -39,10 +39,31 @@ enum DailyStamps {
         [Reward(kind: .item("exp-candy-m"), count: 1)],
         [Reward(kind: .money, count: 200)],
         [Reward(kind: .ball(.ultra), count: 2)],
-        // Day 7: the big one
-        [Reward(kind: .item("rare-candy"), count: 2, big: true), Reward(kind: .ball(.ultra), count: 3, big: true),
-         Reward(kind: .money, count: 500, big: true)],
+        [],   // Day 7: a present — see `present(for:)`
     ]
+
+    /// Day 7's present: a different bundle each week, all worth about the same.
+    static let presents: [[Reward]] = [
+        [Reward(kind: .item("rare-candy"), count: 2), Reward(kind: .ball(.ultra), count: 3), Reward(kind: .money, count: 500)],
+        [Reward(kind: .item("exp-candy-l"), count: 1), Reward(kind: .ball(.ultra), count: 5)],
+        [Reward(kind: .item("rare-candy"), count: 1), Reward(kind: .item("exp-candy-m"), count: 2), Reward(kind: .money, count: 800)],
+        [Reward(kind: .item("rare-candy"), count: 1), Reward(kind: .ball(.timer), count: 2), Reward(kind: .ball(.nest), count: 2),
+         Reward(kind: .money, count: 300)],
+        [Reward(kind: .item("moon-stone"), count: 1), Reward(kind: .ball(.ultra), count: 3), Reward(kind: .money, count: 400)],
+        [Reward(kind: .item("nugget"), count: 1), Reward(kind: .item("rare-candy"), count: 1), Reward(kind: .ball(.great), count: 5)],
+        [Reward(kind: .item("star-piece"), count: 1), Reward(kind: .ball(.luxury), count: 2), Reward(kind: .item("rare-candy"), count: 1),
+         Reward(kind: .money, count: 500)],
+    ]
+
+    /// This week's present (picked from the week, so it stays the same all week but changes every Monday).
+    static func present(for now: Date = .now) -> [Reward] {
+        let weeks = Int(weekStart(now).timeIntervalSince1970 / (7 * 86_400))
+        // scramble the order a little so it doesn't just cycle 1, 2, 3…
+        let i = ((weeks &* 2_654_435_761) >> 7) % presents.count
+        return presents[abs(i)]
+    }
+
+    static func rewards(day i: Int, now: Date = .now) -> [Reward] { i == days - 1 ? present(for: now) : rewards[i] }
 
     static func text(_ rs: [Reward]) -> String {
         let parts = rs.map(\.text)
@@ -79,7 +100,7 @@ enum DailyStamps {
         guard !s.stampDays.contains(k), done < days else { return nil }
         s.stampDays.append(k)
         if s.stampDays.count > 400 { s.stampDays.removeFirst(s.stampDays.count - 400) }
-        let rs = rewards[done]
+        let rs = rewards(day: done, now: now)
         for r in rs {
             switch r.kind {
             case .ball(let b): s.balls[b, default: 0] += r.count

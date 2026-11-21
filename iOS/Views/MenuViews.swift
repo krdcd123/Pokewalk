@@ -342,7 +342,8 @@ struct TrainerCardView: View {
     @State private var totalSteps: Int = 0
 
     private let gold = Color(hex: 0xF2CC4A)
-    @State private var flipped = false
+    @State private var showingBack = false
+    @State private var flipScale: CGFloat = 1
 
     private var stars: Int {
         let s = store.state
@@ -373,21 +374,31 @@ struct TrainerCardView: View {
         }
     }
 
-    /// Tap the card to flip it over: the back has your daily stamps.
+    /// Tap the card to flip it over: the back has your stamp card. (It flips by squashing sideways rather than
+    /// turning in 3D — Liquid Glass flickers when it's rotated in 3D. Only one side is drawn at a time, and
+    /// the back takes the front's size.)
     private var card: some View {
         ZStack {
-            cardFront
-                .opacity(flipped ? 0 : 1)
-            cardBack
-                .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
-                .opacity(flipped ? 1 : 0)
+            if showingBack {
+                cardFront.hidden()
+                    .overlay { cardBack }
+            } else {
+                cardFront
+            }
         }
-        .rotation3DEffect(.degrees(flipped ? 180 : 0), axis: (x: 0, y: 1, z: 0), perspective: 0.4)
+        .scaleEffect(x: flipScale, y: 1)
         .contentShape(Rectangle())
-        .onTapGesture {
-            SoundKit.shared.play(.trainerCard)
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) { flipped.toggle() }
+        .onTapGesture { flip() }
+    }
+
+    private func flip() {
+        SoundKit.shared.play(.trainerCard)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        Task { @MainActor in
+            withAnimation(.easeIn(duration: 0.16)) { flipScale = 0.01 }
+            try? await Task.sleep(for: .milliseconds(170))
+            showingBack.toggle()
+            withAnimation(.easeOut(duration: 0.2)) { flipScale = 1 }
         }
     }
 
@@ -406,11 +417,14 @@ struct TrainerCardView: View {
                 Spacer()
                 Text("\(done)/\(DailyStamps.days)").font(.system(size: 17, weight: .heavy, design: .monospaced))
             }
-            HStack(spacing: 8) { ForEach(0..<4, id: \.self) { stampSlot($0, done: done) } }
-            HStack(spacing: 8) {
-                ForEach(4..<6, id: \.self) { stampSlot($0, done: done) }
-                stampSlot(6, done: done).frame(maxWidth: .infinity)
-                    .layoutPriority(1)
+            // 4 columns: Day 5 and 6 sit under Day 1 and 2, the Day 7 present spans the last two
+            Grid(horizontalSpacing: 8, verticalSpacing: 10) {
+                GridRow { ForEach(0..<4, id: \.self) { stampSlot($0, done: done) } }
+                GridRow {
+                    stampSlot(4, done: done)
+                    stampSlot(5, done: done)
+                    stampSlot(6, done: done).gridCellColumns(2)
+                }
             }
             VStack(spacing: 3) {
                 Text(done == DailyStamps.days ? "Card complete! A new one starts on Monday."
@@ -432,12 +446,12 @@ struct TrainerCardView: View {
     }
 
     private func slotBadge(_ rs: [DailyStamps.Reward]) -> String {
-        guard rs.count == 1 else { return "BIG" }
+        guard rs.count == 1 else { return "?" }
         return rs[0].kind.isMoney ? "₽\(rs[0].count)" : "×\(rs[0].count)"
     }
 
     private func stampSlot(_ i: Int, done: Int) -> some View {
-        let rewards = DailyStamps.rewards[i]
+        let rewards = DailyStamps.rewards(day: i)
         let stamped = i < done
         let big = i == DailyStamps.days - 1
         let ink = Color(hex: 0xFF4A4A)
@@ -450,13 +464,17 @@ struct TrainerCardView: View {
             ZStack {
                 Circle().fill(.white.opacity(0.08))
                 Circle().stroke(big ? gold.opacity(0.8) : .white.opacity(0.25), lineWidth: big ? 2 : 1.2)
-                HStack(spacing: -6) {
-                    ForEach(Array(rewards.enumerated()), id: \.offset) { _, r in
-                        Group {
-                            if let k = r.iconKey { ItemSprite(key: k) }
-                            else { Image(systemName: "yensign.circle.fill").resizable().scaledToFit().foregroundStyle(gold).padding(4) }
-                        }
-                        .frame(width: big ? 30 : 30, height: big ? 30 : 30)
+                Group {
+                    if big {
+                        // Day 7: a present — what's inside changes every week
+                        Image(systemName: "gift.fill")
+                            .font(.system(size: 30, weight: .bold))
+                            .foregroundStyle(Color(hex: 0xFF5A5A), gold)
+                            .symbolRenderingMode(.palette)
+                            .shadow(color: gold.opacity(0.6), radius: 6)
+                    } else if let r = rewards.first {
+                        if let k = r.iconKey { ItemSprite(key: k).frame(width: 30, height: 30) }
+                        else { Image(systemName: "yensign.circle.fill").resizable().scaledToFit().foregroundStyle(gold).frame(width: 26, height: 26) }
                     }
                 }
                 .opacity(stamped ? 0.35 : 1)
@@ -470,7 +488,8 @@ struct TrainerCardView: View {
                         .transition(.scale(scale: 1.6).combined(with: .opacity))
                 }
             }
-            .frame(width: big ? 96 : 58, height: 58)
+            .frame(height: 58)
+            .frame(maxWidth: big ? .infinity : 58)
             .overlay(alignment: .bottomTrailing) {
                 Text(slotBadge(rewards))
                     .font(.system(size: 9, weight: .black, design: .monospaced))
@@ -479,7 +498,7 @@ struct TrainerCardView: View {
                     .offset(x: 4, y: 2)
             }
         }
-        .frame(maxWidth: big ? .infinity : nil)
+        .frame(maxWidth: .infinity)
     }
 
     private var cardFront: some View {
