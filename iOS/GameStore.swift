@@ -468,17 +468,17 @@ final class GameStore: ObservableObject {
         return earned
     }
 
-    /// Stamps today's box on the trainer card (once a day); every 7 in a row gives a reward.
+    /// Stamps today's box on the weekly stamp card (once a day) and gives that day's reward.
     func stampToday() {
-        var result: (streak: Int, reward: Bool)?
+        var result: (day: Int, rewards: [DailyStamps.Reward])?
         mutate { result = DailyStamps.stamp(&$0) }
         guard let result else { return }
-        let day = (result.streak - 1) % DailyStamps.rewardEvery + 1
-        if result.reward {
+        if result.day == DailyStamps.days {
             SoundKit.shared.play(.ballCatch)
-            toast = "7-day stamp streak! You got \(DailyStamps.rewardText)."
+            toast = "Stamp card complete! You got \(DailyStamps.text(result.rewards))."
         } else {
-            toast = "Daily stamp! Day \(day) of \(DailyStamps.rewardEvery) — tap your trainer card to see it."
+            SoundKit.shared.play(.useItem)
+            toast = "Day \(result.day) stamp! You got \(DailyStamps.text(result.rewards)). Tap your trainer card to see it."
         }
     }
 
