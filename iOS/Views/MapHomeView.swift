@@ -44,7 +44,7 @@ struct MapHomeView: View {
     @ObservedObject private var weather = WeatherService.shared      // new identity each time a panel opens, so menus start at the top
 
     enum HomeSheet: Hashable, Identifiable {
-        case menu, encounters, bag, journal, summary(UUID)
+        case menu, party, encounters, bag, journal, summary(UUID)
         var id: Self { self }
     }
 
@@ -120,6 +120,7 @@ struct MapHomeView: View {
                     switch which {
                     case .menu: MainMenuView(close: close)
                     case .encounters: EncounterListView(open: { enc in close(); open(enc) })
+                    case .party: NavigationStack { PartyView() }
                     case .bag: NavigationStack { BagView() }
                     case .journal: NavigationStack { JournalView() }
                     case .summary(let id): NavigationStack { SummaryView(pokemonID: id) }
@@ -349,7 +350,7 @@ struct MapHomeView: View {
                 }
             }
             HStack(alignment: .bottom) {
-                Button { SoundKit.shared.play(.trainerCard); withAnimation(.spring(duration: 0.35)) { showCard = true } } label: {
+                Button { SoundKit.shared.play(.menuOpen); withAnimation(.spring(duration: 0.4)) { sheet = .party } } label: {
                     // Your trainer's small overworld sprite, walking on the spot.
                     TrainerSprite(style: store.state.trainer.style, pose: walking.isDriving ? .bike : .walk,
                                   animating: walking.isWalking || walking.isDriving)
@@ -360,7 +361,7 @@ struct MapHomeView: View {
                         .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Trainer card")
+                .accessibilityLabel("Party")
 
                 Spacer()
 
