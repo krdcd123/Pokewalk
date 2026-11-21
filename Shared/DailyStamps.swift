@@ -59,7 +59,7 @@ enum DailyStamps {
     static func present(for now: Date = .now) -> [Reward] {
         let weeks = Int(weekStart(now).timeIntervalSince1970 / (7 * 86_400))
         // scramble the order a little so it doesn't just cycle 1, 2, 3…
-        let i = ((weeks &* 2_654_435_761) >> 7) % presents.count
+        let i = ((weeks &* 40_503) &+ 7) % presents.count
         return presents[abs(i)]
     }
 
