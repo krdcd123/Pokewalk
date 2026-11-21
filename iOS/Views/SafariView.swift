@@ -19,6 +19,8 @@ struct SafariView: View {
     @State private var throwing: String?        // shown instead of the result while the ball is shaking
     @State private var introDone = false        // Pokémon slides in from the left, like Emerald
     @State private var slideX: CGFloat = -600
+    @State private var introFade = 0.0           // Pokémon + platform fade in together while sliding
+    @State private var shaded = true             // darker until it reaches the middle (like Emerald)
     @State private var flash = 0.0               // white flash when the ball opens
     @State private var stars = false             // little stars when it's caught
     @State private var ballDim = false
@@ -41,6 +43,8 @@ struct SafariView: View {
                     Ellipse().fill(Theme.ink.opacity(0.16)).frame(width: 200, height: 46).offset(y: 100)
                     AnimatedSprite(speciesID: wild.speciesID, shiny: wild.isShiny)
                         .frame(width: 170, height: 170)
+                        .brightness(shaded ? -0.45 : 0)
+                        .saturation(shaded ? 0.6 : 1)
                         .colorMultiply(spriteHidden ? Color(hex: 0xFF6B6B) : .white)
                         .opacity(spriteHidden ? 0 : 1)
                         .scaleEffect(spriteHidden ? 0.1 : 1, anchor: .bottom)
@@ -48,6 +52,7 @@ struct SafariView: View {
                         .opacity(flash).allowsHitTesting(false)
                 }
                 .offset(x: slideX)
+                .opacity(introFade)
                 .position(x: geo.size.width / 2, y: spriteY)
 
                 statusCard.position(x: geo.size.width / 2, y: geo.size.height * 0.66)
@@ -105,10 +110,14 @@ struct SafariView: View {
             SoundKit.shared.setScene(.battle)
             safari.caughtBefore = store.state.dexCaught.contains(wild.speciesID)
             pickAvailableBall()
-            // Slides in from the left, then cries once it's in the middle
-            withAnimation(.easeOut(duration: 1.1)) { slideX = 0 }
             Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(1_150))
+                // Load the sprite first, so the Pokémon and its platform arrive together
+                await preloadSprite()
+                // Slides in from the left (shaded), lights up in the middle, then cries
+                withAnimation(.easeOut(duration: 1.1)) { slideX = 0; introFade = 1 }
+                try? await Task.sleep(for: .milliseconds(1_100))
+                withAnimation(.easeOut(duration: 0.35)) { shaded = false }
+                try? await Task.sleep(for: .milliseconds(200))
                 CryPlayer.shared.play(wild.speciesID)
                 introDone = true
                 if wild.isShiny {
@@ -316,6 +325,17 @@ struct SafariView: View {
             pickAvailableBall()
             busy = false
         }
+    }
+
+    /// Waits (at most ~2.5 s) until the wild Pokémon's sprite is downloaded and decoded.
+    private func preloadSprite() async {
+        let id = wild.speciesID, shiny = wild.isShiny
+        let load = Task.detached { () -> Void in
+            if let u = await SpriteStore.shared.url(shiny ? .shiny : .front, speciesID: id) { _ = GIFCache.shared.image(at: u) }
+        }
+        let timeout = Task { try? await Task.sleep(for: .milliseconds(2_500)); load.cancel() }
+        _ = await load.value
+        timeout.cancel()
     }
 
     private func pct(_ p: Double) -> Int { Int((p * 100).rounded()) }
