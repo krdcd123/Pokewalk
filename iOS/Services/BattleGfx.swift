@@ -23,17 +23,49 @@ enum BattleGfx {
     /// The player's back sprite, one image per frame.
     static func trainerBack(_ style: TrainerStyle) async -> [UIImage] {
         guard let d = await data(style.backPicURL, name: "back-\(style.id).png"), var px = Pixels(d) else { return [] }
-        if style.id == "gold" || style.id == "kris" {
-            // Crystal: 4-shade greyscale; white around the sprite is the background
-            // Only seed from the top and the upper sides: the jacket is white too and is cut off at the
-            // bottom edge, so filling from there would erase it
-            px.floodClear(from: (255, 255, 255), seedBottom: false, sideSeedLimit: px.h * 6 / 10)
-            let accent: UInt32 = style.id == "gold" ? 0xFF3A08 : 0x524AFF
-            px.recolourGreys(skin: 0xF8B888, accent: accent)
-        } else if px.alpha(0, 0) == 255 {
-            px.clearColour(px.rgb(0, 0))        // no transparency chunk: palette colour 0 is the background
+        switch style.sheet {
+        case .gbc(let accent):
+            px.clearGameBoyBackground()
+            px.mapGreys(light: 0xF8B888, dark: accent)
+        case .gb:
+            px.clearGameBoyBackground()
+            px.mapGreys(light: 0xAAAAAA, dark: 0x555555)
+        case .gen3:
+            if px.alpha(0, 0) == 255 { px.clearColour(px.rgb(0, 0)) }   // no transparency: colour 0 is the background
         }
         return px.frames(height: px.w)
+    }
+
+    /// Balls Game Boy trainers throw with their own game's sprite (Crystal's thrown ball, coloured per ball;
+    /// Red from Red/Blue/Yellow keeps it black and white). Newer balls use Emerald's.
+    private static let gen2Colours: [BallKind: (UInt32, UInt32)] = [
+        .poke: (rgb5(31, 19, 24), rgb5(30, 10, 6)),
+        .great: (rgb5(8, 12, 31), rgb5(1, 4, 31)),
+        .ultra: (rgb5(31, 31, 7), rgb5(31, 16, 1)),
+        .master: (rgb5(12, 25, 1), rgb5(5, 14, 0)),
+    ]
+    private static func rgb5(_ r: UInt32, _ g: UInt32, _ b: UInt32) -> UInt32 {
+        ((r * 255 / 31) << 16) | ((g * 255 / 31) << 8) | (b * 255 / 31)
+    }
+
+    /// The in-battle ball for this trainer: [closed, open].
+    static func ball(_ kind: BallKind, for style: TrainerStyle) async -> [UIImage] {
+        if style.isGameBoy {
+            let gen1 = { if case .gb = style.sheet { return true }; return false }()
+            let colours: (UInt32, UInt32)? = gen1
+                ? ([.poke, .great, .ultra, .master, .safari].contains(kind) ? (0xAAAAAA, 0x555555) : nil)
+                : gen2Colours[kind]
+            if let colours,
+               let d = await data(URL(string: "https://raw.githubusercontent.com/pret/pokecrystal/master/gfx/battle_anims/pokeball.png")!,
+                                  name: "ball-gen2.png"),
+               var px = Pixels(d) {
+                px.clearColour((255, 255, 255))           // colour 0 is always see-through on the Game Boy
+                px.mapGreys(light: colours.0, dark: colours.1)
+                let f = px.frames(height: 16)               // 0 closed, 1 tilted, 2 open
+                if f.count >= 3 { return [f[0], f[2]] }
+            }
+        }
+        return await ball(kind)
     }
 
     /// Emerald's in-battle ball: [closed, open].
@@ -90,17 +122,37 @@ private struct Pixels {
         }
     }
 
-    /// Game Boy Color-style colouring of a greyscale sprite.
-    mutating func recolourGreys(skin: UInt32, accent: UInt32) {
+    /// Colours a 4-shade Game Boy sprite: light and dark shades get these colours (white and black stay).
+    mutating func mapGreys(light: UInt32, dark: UInt32) {
         for i in stride(from: 0, to: p.count, by: 4) where p[i + 3] > 0 {
             let c: UInt32
             switch p[i] {
             case 200...: c = 0xF8F8F8
-            case 128..<200: c = skin
-            case 40..<128: c = accent
+            case 128..<200: c = light
+            case 40..<128: c = dark
             default: c = 0x181818
             }
             p[i] = UInt8((c >> 16) & 0xFF); p[i + 1] = UInt8((c >> 8) & 0xFF); p[i + 2] = UInt8(c & 0xFF)
+        }
+    }
+
+    /// Game Boy back sprites sit on a white background, but the trainer's clothes are white too and run
+    /// off the bottom edge (with gaps in the outline), so a plain flood fill eats them. Instead: clear the
+    /// white reachable from the top, then in each row the white before the first / after the last drawn pixel.
+    mutating func clearGameBoyBackground() {
+        func isWhite(_ x: Int, _ y: Int) -> Bool { let i = (y * w + x) * 4; return p[i] >= 250 && p[i + 1] >= 250 && p[i + 2] >= 250 }
+        func clear(_ x: Int, _ y: Int) { let i = (y * w + x) * 4; p[i] = 0; p[i + 1] = 0; p[i + 2] = 0; p[i + 3] = 0 }
+        var stack: [(Int, Int)] = (0..<w).map { ($0, 0) }
+        while let (x, y) = stack.popLast() {
+            guard x >= 0, x < w, y >= 0, y < h, alpha(x, y) > 0, isWhite(x, y) else { continue }
+            clear(x, y)
+            stack.append((x + 1, y)); stack.append((x - 1, y)); stack.append((x, y + 1)); stack.append((x, y - 1))
+        }
+        for y in 0..<h {
+            var x = 0
+            while x < w, alpha(x, y) == 0 || isWhite(x, y) { clear(x, y); x += 1 }
+            x = w - 1
+            while x >= 0, alpha(x, y) == 0 || isWhite(x, y) { clear(x, y); x -= 1 }
         }
     }
 

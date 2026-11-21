@@ -116,7 +116,7 @@ struct SafariView: View {
         .ignoresSafeArea(edges: .bottom)
         .fullScreenCover(item: $caught, onDismiss: { dismiss() }) { CaughtView(pokemonID: $0.id, safari: safari) }
         .onDisappear { SoundKit.shared.setScene(.map) }
-        .task(id: ball) { ballFrames = await BattleGfx.ball(ball) }
+        .task(id: ball) { ballFrames = await BattleGfx.ball(ball, for: style) }
         .onAppear(perform: start)
     }
 

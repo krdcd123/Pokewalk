@@ -5,7 +5,11 @@ struct TrainerStyle: Identifiable, Hashable {
     enum Sheet: Hashable {
         case gen3                 // 9 frames, 16×32, background = top-left pixel colour
         case gbc(accent: UInt32)  // 6 frames, 16×16 greyscale; coloured with the Game Boy Color palette
+        case gb                   // same layout, left in the original Game Boy black and white
     }
+
+    /// Game Boy trainers (Red from Red/Blue/Yellow, Gold, Kris): Gen 1/2 battle graphics.
+    var isGameBoy: Bool { if case .gen3 = sheet { return false }; return true }
 
     let id: String              // file-name key: Sprites/trainers/<id>-walk.gif, <id>-card.png
     let name: String
@@ -16,6 +20,8 @@ struct TrainerStyle: Identifiable, Hashable {
     let cardHex: UInt32
 
     static let all: [TrainerStyle] = [
+        .init(id: "red1", name: "Red", game: "Red, Blue & Yellow", showdownKey: "red-gen1",
+              overworldPath: "pret/pokered/master/gfx/sprites/red.png", sheet: .gb, cardHex: 0x8A8A8A),
         .init(id: "red", name: "Red", game: "FireRed & LeafGreen", showdownKey: "red-gen3",
               overworldPath: "pret/pokefirered/master/graphics/object_events/pics/people/red_normal.png", sheet: .gen3, cardHex: 0xE04A3F),
         .init(id: "leaf", name: "Leaf", game: "FireRed & LeafGreen", showdownKey: "leaf-gen3",
@@ -30,7 +36,7 @@ struct TrainerStyle: Identifiable, Hashable {
               overworldPath: "pret/pokeemerald/master/graphics/object_events/pics/people/may/walking.png", sheet: .gen3, cardHex: 0xE0577A),
     ]
 
-    static func style(_ id: String?) -> TrainerStyle { all.first { $0.id == id } ?? all[4] }
+    static func style(_ id: String?) -> TrainerStyle { all.first { $0.id == id } ?? all.first { $0.id == "brendan" }! }
 
     var remoteSpriteURL: URL { URL(string: "https://play.pokemonshowdown.com/sprites/trainers/\(showdownKey).png")! }
     var overworldURL: URL { URL(string: "https://raw.githubusercontent.com/\(overworldPath)")! }
@@ -41,6 +47,7 @@ struct TrainerStyle: Identifiable, Hashable {
             .replacingOccurrences(of: "_normal.png", with: "_bike.png")       // red_normal → red_bike
             .replacingOccurrences(of: "walking.png", with: "mach_bike.png")   // brendan/may
             .replacingOccurrences(of: "chris.png", with: "chris_bike.png")
+            .replacingOccurrences(of: "sprites/red.png", with: "sprites/red_bike.png")
             .replacingOccurrences(of: "kris.png", with: "kris_bike.png")
     }
     var bikeURL: URL { URL(string: "https://raw.githubusercontent.com/\(bikePath)")! }
@@ -50,6 +57,7 @@ struct TrainerStyle: Identifiable, Hashable {
         switch id {
         case "gold": return URL(string: "https://raw.githubusercontent.com/pret/pokecrystal/master/gfx/player/chris_back.png")!
         case "kris": return URL(string: "https://raw.githubusercontent.com/pret/pokecrystal/master/gfx/player/kris_back.png")!
+        case "red1": return URL(string: "https://raw.githubusercontent.com/pret/pokered/master/gfx/player/redb.png")!
         default: return URL(string: "https://raw.githubusercontent.com/pret/pokeemerald/master/graphics/trainers/back_pics/\(id).png")!
         }
     }

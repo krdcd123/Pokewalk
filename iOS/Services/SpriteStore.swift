@@ -479,6 +479,16 @@ enum OverworldSheet {
             }
             // frames: 0 stand-down, 3 walk-down (the GBC mirrors it for the other step)
             frameRects = [0, 3, 0, 3].map { CGRect(x: 0, y: $0 * 16, width: 16, height: 16) }
+            flipLast = true        case .gb:
+            for i in stride(from: 0, to: px.count, by: 4) {
+                switch px[i] {                       // original Game Boy shades
+                case 200...: px[i] = 0; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 0
+                case 128..<200: setRGBA(i, 0xAAAAAA)
+                case 40..<128: setRGBA(i, 0x555555)
+                default: setRGBA(i, 0x101010)
+                }
+            }
+            frameRects = [0, 3, 0, 3].map { CGRect(x: 0, y: $0 * 16, width: 16, height: 16) }
             flipLast = true
         }
 
