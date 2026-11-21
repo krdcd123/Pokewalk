@@ -250,10 +250,10 @@ final class SoundKit: ObservableObject {
         while let cur = v, !isControl { isControl = cur is UIControl && (cur as? UIControl)?.isEnabled == true; v = cur.superview }
         if !isControl {
             let p = r.location(in: window)
-            guard let el = window.accessibilityHitTest(p, with: nil) as? NSObject else { return }
-            let t = el.accessibilityTraits
-            guard !t.contains(.notEnabled),
-                  !t.intersection([.button, .link, .adjustable, .keyboardKey, .tabBar]).isEmpty else { return }
+            guard let el = window.accessibilityHitTest(p, event: nil) as? NSObject else { return }
+            let t: UIAccessibilityTraits = el.accessibilityTraits
+            let tappable: UIAccessibilityTraits = [.button, .link, .adjustable, .keyboardKey, .tabBar]
+            guard !t.contains(UIAccessibilityTraits.notEnabled), !t.intersection(tappable).isEmpty else { return }
         }
         play(.select)
     }
