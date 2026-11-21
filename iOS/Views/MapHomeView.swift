@@ -151,7 +151,7 @@ struct MapHomeView: View {
                 Annotation(mon.name, coordinate: CLLocationCoordinate2D(latitude: mon.metLocation!.latitude,
                                                                         longitude: mon.metLocation!.longitude)) {
                     Button { withAnimation(.spring(duration: 0.35)) { infoID = mon.id } } label: {
-                        MapPin(speciesID: mon.speciesID, ring: Theme.orange)
+                        MapPin(speciesID: mon.speciesID, ring: Theme.orange, shiny: mon.isShiny)
                     }
                     .buttonStyle(.plain)
                 }.annotationTitles(.hidden)
@@ -355,12 +355,13 @@ struct MapPin: View {
     let speciesID: Int
     var ring: Color
     var wild = false
+    var shiny = false
 
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
                 Circle().fill(.white)
-                AnimatedSprite(speciesID: speciesID, kind: .icons).padding(5)
+                AnimatedSprite(speciesID: speciesID, shiny: shiny, kind: .icons).padding(5)
             }
             .frame(width: 44, height: 44)
             .overlay(Circle().stroke(ring, lineWidth: 3))
@@ -392,7 +393,7 @@ struct BuddyMarker: View {
                 if let speciesID {
                     TimelineView(.periodic(from: .now, by: 0.22)) { tl in
                         let up = Int(tl.date.timeIntervalSinceReferenceDate / 0.22) % 2 == 0
-                        AnimatedSprite(speciesID: speciesID, kind: .icons).padding(6)
+                        AnimatedSprite(speciesID: speciesID, shiny: shiny, kind: .icons).padding(6)
                             .offset(y: up ? -4 : 0)
                     }
                 }
@@ -425,7 +426,7 @@ struct EncounterListView: View {
                 ForEach(live.reversed()) { enc in
                     Button { open(enc) } label: {
                         HStack(spacing: 12) {
-                            AnimatedSprite(speciesID: enc.speciesID, kind: .icons).frame(width: 48, height: 40)
+                            AnimatedSprite(speciesID: enc.speciesID, shiny: enc.isShiny, kind: .icons).frame(width: 48, height: 40)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("\(enc.species.name)\(enc.isShiny ? " ✨" : "")  Lv. \(enc.level)")
                                     .font(.rounded(16, .heavy)).foregroundStyle(Theme.ink)

@@ -11,7 +11,7 @@ final class SpriteStore {
     static let shared = SpriteStore()
 
     enum Kind: String, CaseIterable {
-        case front, shiny, back, backShiny, icons, items, trainers
+        case front, shiny, back, backShiny, icons, iconsShiny, items, trainers
 
         var exts: [String] { [.front, .shiny, .back, .backShiny].contains(self) ? ["gif", "png", "webp"] : ["png", "gif"] }
 
@@ -25,7 +25,9 @@ final class SpriteStore {
             case .shiny: return id <= 649 ? URL(string: "\(base)/pokemon/versions/generation-v/black-white/animated/shiny/\(id).gif") : nil
             case .back: return id <= 649 ? URL(string: "\(base)/pokemon/versions/generation-v/black-white/animated/back/\(id).gif") : nil
             case .backShiny: return id <= 649 ? URL(string: "\(base)/pokemon/versions/generation-v/black-white/animated/back/shiny/\(id).gif") : nil
-            case .icons: return SharedStore.remoteIconURL(id)
+            // Box icons (regular + shiny, same style) from PokeSprite
+            case .icons: return URL(string: "https://raw.githubusercontent.com/msikma/pokesprite/master/pokemon-gen8/regular/\(key).png")
+            case .iconsShiny: return URL(string: "https://raw.githubusercontent.com/msikma/pokesprite/master/pokemon-gen8/shiny/\(key).png")
             case .items: return URL(string: "\(base)/items/\(key).png")
             case .trainers: return TrainerStyle.all.first { $0.id == key }?.remoteSpriteURL
             }
@@ -44,6 +46,11 @@ final class SpriteStore {
     private let lock = NSLock()
 
     init() {
+        // One-time: box icons switched to the PokeSprite set (which has shiny versions) — drop the old ones
+        if !UserDefaults.standard.bool(forKey: "iconsV2") {
+            UserDefaults.standard.set(true, forKey: "iconsV2")
+            try? FileManager.default.removeItem(at: cacheRoot.appendingPathComponent(Kind.icons.rawValue))
+        }
         for k in Kind.allCases {
             try? FileManager.default.createDirectory(at: userRoot.appendingPathComponent(k.rawValue), withIntermediateDirectories: true)
             try? FileManager.default.createDirectory(at: cacheRoot.appendingPathComponent(k.rawValue), withIntermediateDirectories: true)
@@ -129,8 +136,8 @@ final class SpriteStore {
 
     /// Small PNG of the buddy for the Live Activity (it has to fit in ActivityKit's ~4 KB payload).
     /// Tiny party/box icon for the Dynamic Island.
-    func liveActivityIcon(speciesID: Int) async -> Data? {
-        guard let u = await url(.icons, speciesID: speciesID),
+    func liveActivityIcon(speciesID: Int, shiny: Bool = false) async -> Data? {
+        guard let u = await url(shiny ? .iconsShiny : .icons, speciesID: speciesID),
               let img = GIFCache.shared.image(at: u), let frame = img.images?.first ?? Optional(img),
               let cg = frame.cgImage?.croppedToContent() else { return nil }
         for side in [40, 32, 26] {
@@ -258,7 +265,8 @@ struct AnimatedSprite: View {
         }
         .spriteHitArea()
         .task(id: "\(speciesID)-\(shiny)-\(kind?.rawValue ?? "")") {
-            let k = kind ?? (shiny ? .shiny : .front)
+            var k = kind ?? (shiny ? .shiny : .front)
+            if k == .icons && shiny { k = .iconsShiny }
             var url = await SpriteStore.shared.url(k, speciesID: speciesID)
             if url == nil && k == .shiny { url = await SpriteStore.shared.url(.front, speciesID: speciesID) }
             if url == nil && k == .backShiny { url = await SpriteStore.shared.url(.back, speciesID: speciesID) }
@@ -481,7 +489,7 @@ final class SpriteDownloader: ObservableObject {
         progress = 0; failed = 0; finished = false
         Task.detached(priority: .utility) {
             var jobs: [(SpriteStore.Kind, Int)] = []
-            for id in 1...Dex.count { for k in [SpriteStore.Kind.front, .icons, .shiny, .back, .backShiny] { jobs.append((k, id)) } }
+            for id in 1...Dex.count { for k in [SpriteStore.Kind.front, .icons, .iconsShiny, .shiny, .back, .backShiny] { jobs.append((k, id)) } }
             let total = Double(jobs.count + TrainerStyle.all.count)
             var done = 0, bad = 0
             await withTaskGroup(of: Bool.self) { group in

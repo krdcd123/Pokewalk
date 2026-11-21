@@ -160,7 +160,7 @@ struct PCView: View {
         } label: {
             VStack(spacing: 1) {
                 if let mon {
-                    AnimatedSprite(speciesID: mon.speciesID, kind: .icons).frame(height: 30)
+                    AnimatedSprite(speciesID: mon.speciesID, shiny: mon.isShiny, kind: .icons).frame(height: 30)
                     if tall { Text("Lv \(mon.level)").font(.rounded(10, .heavy)) }
                 } else {
                     Color.clear.frame(height: 30)
@@ -257,7 +257,7 @@ struct PCView: View {
             ForEach(hits) { mon in
                 Button { open = mon.id } label: {
                     HStack(spacing: 12) {
-                        AnimatedSprite(speciesID: mon.speciesID, kind: .icons).frame(width: 44, height: 34)
+                        AnimatedSprite(speciesID: mon.speciesID, shiny: mon.isShiny, kind: .icons).frame(width: 44, height: 34)
                         VStack(alignment: .leading) {
                             Text("\(mon.name)  Lv \(mon.level)").font(.rounded(15, .heavy))
                             Text(store.state.locationText(of: mon.id)).font(.rounded(12)).foregroundStyle(Theme.inkSoft)

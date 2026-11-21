@@ -24,7 +24,7 @@ final class LiveActivityManager {
         let key = "\(buddy.speciesID)-\(buddy.isShiny)"
         if spriteCache?.key != key || spriteCache?.icon == nil {
             spriteCache = (key, await SpriteStore.shared.liveActivityImage(speciesID: buddy.speciesID, shiny: buddy.isShiny),
-                           await SpriteStore.shared.liveActivityIcon(speciesID: buddy.speciesID))
+                           await SpriteStore.shared.liveActivityIcon(speciesID: buddy.speciesID, shiny: buddy.isShiny))
         }
         return .init(buddyName: buddy.name, speciesID: buddy.speciesID, level: buddy.level,
                      progress: buddy.levelProgress, expToNext: buddy.expToNext, stepsToday: store.stepsToday,

@@ -88,7 +88,7 @@ struct JournalView: View {
                     }
                     ForEach(encounters.filter { $0.location != nil }) { e in
                         Annotation(e.species.name, coordinate: .init(latitude: e.location!.latitude, longitude: e.location!.longitude)) {
-                            MapPin(speciesID: e.speciesID, ring: e.caught ? Theme.orange : Color.white.opacity(0.7))
+                            MapPin(speciesID: e.speciesID, ring: e.caught ? Theme.orange : Color.white.opacity(0.7), shiny: e.isShiny)
                                 .scaleEffect(selected == e.id ? 1.3 : 1)
                                 .animation(.spring(duration: 0.3), value: selected)
                                 .onTapGesture { select(e) }
@@ -120,7 +120,7 @@ struct JournalView: View {
                 ForEach(encounters) { e in
                     Button { select(e) } label: {
                         HStack(spacing: 12) {
-                            AnimatedSprite(speciesID: e.speciesID, kind: .icons)
+                            AnimatedSprite(speciesID: e.speciesID, shiny: e.isShiny, kind: .icons)
                                 .frame(width: 44, height: 40)
                                 .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                             VStack(alignment: .leading, spacing: 2) {

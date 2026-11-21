@@ -363,7 +363,7 @@ struct TrainerCardView: View {
                     ForEach(0..<GameState.maxParty, id: \.self) { i in
                         let mon = i < store.state.party.count ? store.state.party[i] : nil
                         ZStack {
-                            if let mon { AnimatedSprite(speciesID: mon.speciesID, kind: .icons).padding(3) }
+                            if let mon { AnimatedSprite(speciesID: mon.speciesID, shiny: mon.isShiny, kind: .icons).padding(3) }
                         }
                         .frame(maxWidth: .infinity).frame(height: 40)
                         .glassCard(10)
@@ -582,6 +582,7 @@ struct SettingsView: View {
         case .back: return "animated (back)"
         case .backShiny: return "shiny (back)"
         case .icons: return "party icon"
+        case .iconsShiny: return "shiny party icon"
         case .items: return "item"
         case .trainers: return "trainer"
         }
@@ -747,7 +748,7 @@ private struct BagItemRow: View {
                         }
                     } label: {
                         HStack(spacing: 10) {
-                            AnimatedSprite(speciesID: mon.speciesID, kind: .icons).frame(width: 34, height: 28)
+                            AnimatedSprite(speciesID: mon.speciesID, shiny: mon.isShiny, kind: .icons).frame(width: 34, height: 28)
                             Text(mon.name).font(.rounded(15, .heavy))
                             Text("Lv \(mon.level)").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
                             Spacer()

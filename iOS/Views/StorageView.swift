@@ -37,7 +37,7 @@ struct StorageView: View {
                         ForEach(list) { mon in
                             Button { picked = mon } label: {
                                 VStack(spacing: 2) {
-                                    AnimatedSprite(speciesID: mon.speciesID, kind: .icons).frame(width: 46, height: 40)
+                                    AnimatedSprite(speciesID: mon.speciesID, shiny: mon.isShiny, kind: .icons).frame(width: 46, height: 40)
                                     Text(mon.name + (mon.isShiny ? "✨" : "")).font(.rounded(11, .heavy)).lineLimit(1)
                                     Text("Lv \(mon.level)").font(.rounded(10, .heavy)).foregroundStyle(Theme.inkSoft)
                                 }

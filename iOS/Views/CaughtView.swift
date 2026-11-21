@@ -77,7 +77,7 @@ struct MetCard: View {
                 let coord = CLLocationCoordinate2D(latitude: met.latitude, longitude: met.longitude)
                 Map(initialPosition: .camera(MapCamera(centerCoordinate: coord, distance: 900))) {
                     Annotation(mon.name, coordinate: coord) {
-                        MapPin(speciesID: mon.speciesID, ring: Theme.orange)
+                        MapPin(speciesID: mon.speciesID, ring: Theme.orange, shiny: mon.isShiny)
                     }.annotationTitles(.hidden)
                 }
                 .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
