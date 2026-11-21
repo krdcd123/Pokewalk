@@ -37,16 +37,6 @@ struct PartyView: View {
                                 }
                             }
                         }
-                        // …or hold and drag it onto another slot
-                        .draggable(mon.id.uuidString) {
-                            AnimatedSprite(speciesID: mon.speciesID, shiny: mon.isShiny, kind: .icons)
-                                .frame(width: 72, height: 72)
-                        }
-                        .dropDestination(for: String.self) { items, _ in
-                            guard let s = items.first, let id = UUID(uuidString: s), id != mon.id else { return false }
-                            move(id, to: max(1, i))
-                            return true
-                        }
                 }
                 ForEach(party.count..<6, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: 24)
