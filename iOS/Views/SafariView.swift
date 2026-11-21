@@ -410,18 +410,24 @@ private struct BattleBall: View {
             let s = min(g.size.width, g.size.height)
             ZStack {
                 if let image {
-                    // light from inside
-                    Ellipse().fill(.white)
-                        .frame(width: s * 0.62, height: s * 0.22)
-                        .blur(radius: s * 0.06)
-                        .offset(y: -s * 0.02)
+                    // inside of the ball (seen when the top tips back) + light spilling out
+                    Ellipse().fill(Color(hex: 0x2A2A2A))
+                        .frame(width: s * 0.66, height: s * 0.24)
+                        .offset(y: -s * 0.06)
                         .opacity(open ? 1 : 0)
+                    Ellipse().fill(.white)
+                        .frame(width: s * 0.5, height: s * 0.16)
+                        .blur(radius: s * 0.05)
+                        .offset(y: -s * 0.07)
+                        .opacity(open ? 0.9 : 0)
                     // bottom half
                     half(image, top: false, size: s)
                     // top half: flips up and back from the hinge
                     half(image, top: true, size: s)
-                        // hinged on the seam at the ball's right edge, so the lid stays attached as it lifts
-                        .rotationEffect(.degrees(open ? 42 : 0), anchor: UnitPoint(x: hingeX, y: 0.5))
+                        // Opens like the games: the top half tips back along the ball's middle line (a clam opening
+                        // towards you), staying joined at the seam
+                        .rotation3DEffect(.degrees(open ? 62 : 0), axis: (x: 1, y: 0, z: 0),
+                                          anchor: .center, perspective: 0.55)
                 } else {
                     BallGlyph(kind: kind)
                 }
