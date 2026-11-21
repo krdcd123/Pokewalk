@@ -218,6 +218,7 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         // Keep walking-speed fixes with decent accuracy; ignore driving and GPS noise.
         guard loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 35 else { return }
         if loc.speed > 4.5 { return }
+        if WalkingDetector.shared.isDriving { return }           // in a vehicle: don't draw it as a walk
         TrackStore.shared.append(loc)
         onMovement?(loc)
     }

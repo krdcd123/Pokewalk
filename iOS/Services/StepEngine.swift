@@ -79,6 +79,9 @@ final class WalkingDetector: ObservableObject {
     private let motion = CMMotionActivityManager()
     private let pedometer = CMPedometer()
     private var motionSaysMoving = false
+    /// In a car, bus or train (or on a bike): the trainer stands still and the trail isn't recorded.
+    @Published private(set) var isDriving = false
+    private var motionSaysVehicle = false
     private var lastStepAt = Date.distantPast
     private var lastSteps = 0
     private var timer: Timer?
@@ -89,6 +92,7 @@ final class WalkingDetector: ObservableObject {
                 guard let self, let a else { return }
                 Task { @MainActor in
                     self.motionSaysMoving = (a.walking || a.running) && a.confidence != .low
+                    self.motionSaysVehicle = (a.automotive || a.cycling) && a.confidence != .low
                     if a.stationary && a.confidence != .low { self.motionSaysMoving = false; self.lastStepAt = .distantPast }
                     self.refresh()
                 }
@@ -112,8 +116,12 @@ final class WalkingDetector: ObservableObject {
 
     private func refresh() {
         let recentSteps = Date().timeIntervalSince(lastStepAt) < 4
-        let speed = LocationTracker.shared.lastLocation.map { $0.speed > 0.6 && Date().timeIntervalSince($0.timestamp) < 6 } ?? false
-        let now = motionSaysMoving || recentSteps || speed
+        let fix = LocationTracker.shared.lastLocation.flatMap { Date().timeIntervalSince($0.timestamp) < 6 ? $0 : nil }
+        let tooFast = (fix?.speed ?? 0) > 4.5                     // faster than ~10 mph isn't walking or running
+        let driving = (motionSaysVehicle && !motionSaysMoving) || tooFast
+        if driving != isDriving { isDriving = driving }
+        let speed = (fix?.speed ?? 0) > 0.6
+        let now = !driving && (motionSaysMoving || recentSteps || speed)
         if now != isWalking { isWalking = now }
     }
 }
