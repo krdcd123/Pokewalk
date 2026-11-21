@@ -402,6 +402,8 @@ private struct BattleBall: View {
     let kind: BallKind
     var open: Bool
     @State private var image: UIImage?
+    /// Where the ball's right edge is in its sprite (the hinge), found from the image itself.
+    @State private var hingeX: CGFloat = 0.85
 
     var body: some View {
         GeometryReader { g in
@@ -418,8 +420,8 @@ private struct BattleBall: View {
                     half(image, top: false, size: s)
                     // top half: flips up and back from the hinge
                     half(image, top: true, size: s)
-                        .rotationEffect(.degrees(open ? 38 : 0), anchor: UnitPoint(x: 0.82, y: 0.5))      // clockwise around the right hinge = lid lifts up
-                        .offset(y: open ? -s * 0.10 : 0)
+                        // hinged on the seam at the ball's right edge, so the lid stays attached as it lifts
+                        .rotationEffect(.degrees(open ? 42 : 0), anchor: UnitPoint(x: hingeX, y: 0.5))
                 } else {
                     BallGlyph(kind: kind)
                 }
@@ -431,7 +433,25 @@ private struct BattleBall: View {
             guard let url = await SpriteStore.shared.itemURL(kind.itemKey) else { return }
             let img = await Task.detached { GIFCache.shared.image(at: url) }.value
             image = img?.images?.first ?? img
+            if let cg = image?.cgImage { hingeX = Self.rightEdge(cg) }
         }
+    }
+
+    /// Right-most opaque pixel on the middle row, as a fraction of the width.
+    static func rightEdge(_ cg: CGImage) -> CGFloat {
+        let w = cg.width, h = cg.height
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return 0.85 }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var best = 0
+        for y in max(0, h / 2 - 2)...min(h - 1, h / 2 + 2) {
+            for x in stride(from: w - 1, through: 0, by: -1) where px[(y * w + x) * 4 + 3] > 40 {
+                best = max(best, x); break
+            }
+        }
+        return best > 0 ? (CGFloat(best) + 0.5) / CGFloat(w) : 0.85
     }
 
     private func half(_ img: UIImage, top: Bool, size s: CGFloat) -> some View {
