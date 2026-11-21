@@ -36,6 +36,7 @@ struct SafariView: View {
     @State private var stars = false
     @State private var spriteHidden = false
     @State private var flash = 0.0
+    @State private var shinyStart: Date?
 
     private struct Flight { var from: CGPoint; var to: CGPoint; var start: Date; var duration: Double }
 
@@ -145,6 +146,7 @@ struct SafariView: View {
             if wild.isShiny {
                 try? await Task.sleep(for: .milliseconds(350))
                 SoundKit.shared.play(.shiny)
+                shinyStart = .now
             }
             await type(wild.isShiny ? "A shiny \(foeName) appeared!" : "A wild \(foeName) appeared!",
                        hold: 1.1)
@@ -215,6 +217,8 @@ struct SafariView: View {
                 .position(x: L.enemyPlatform.x, y: cy)
             Circle().fill(.white).frame(width: 150, height: 150).blur(radius: 24)
                 .opacity(flash).allowsHitTesting(false)
+                .position(hitPoint(L))
+            ShinySparkles(start: shinyStart, radius: max(70, (b.bottom - b.top) * L.e * 0.75))
                 .position(hitPoint(L))
         }
         .offset(x: dx)

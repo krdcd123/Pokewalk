@@ -66,7 +66,8 @@ enum Fishing {
         s.bag[key, default: 0] -= 1
         if s.bag[key] == 0 { s.bag[key] = nil }
         s.lastFishedAt = now
-        guard Double.random(in: 0..<1) < biteChance(berries: n) else { return .nothing }
+        // No nibble: the bait's gone, but you can cast again straight away
+        guard Double.random(in: 0..<1) < biteChance(berries: n) else { s.lastFishedAt = nil; return .nothing }
 
         let tiers = [common, uncommon, rare].map { $0.filter { $0 <= Dex.count } }
         let tier = GameRules.weightedPick(Array(zip([0, 1, 2], tierWeights(berries: n))).filter { !tiers[$0.0].isEmpty })

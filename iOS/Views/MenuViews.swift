@@ -275,7 +275,7 @@ struct BagView: View {
                     Section {
                         FishingRodRow { fished = $0 }.glassRow()
                     } footer: {
-                        Text("Cast once every 20 minutes. Bait made from more berries gets more bites and rarer Pokémon (Dratini, Gyarados, Feebas…).")
+                        Text("After a bite you can cast again in 20 minutes (no wait if nothing bites). Bait made from more berries gets more bites and rarer Pokémon (Dratini, Gyarados, Feebas…).")
                     }
                 }
                 Section {
@@ -295,6 +295,20 @@ struct BagView: View {
             }
         }
         .animation(.snappy, value: pocket)
+        // Swipe left / right to flip between pockets
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 30).onEnded { v in
+                let dx = v.translation.width, dy = v.translation.height
+                guard abs(dx) > 70, abs(dx) > abs(dy) * 1.8 else { return }
+                let all = Pocket.allCases
+                guard let i = all.firstIndex(of: pocket) else { return }
+                let next = dx < 0 ? min(all.count - 1, i + 1) : max(0, i - 1)
+                guard next != i else { return }
+                SoundKit.shared.play(.select)
+                UISelectionFeedbackGenerator().selectionChanged()
+                withAnimation(.snappy) { pocket = all[next]; openItem = nil }
+            }
+        )
         .navigationTitle("Bag")
         .glassScreen()
         .fullScreenCover(item: $fished) { SafariView(wild: $0) }
@@ -970,7 +984,7 @@ private struct FishingRodRow: View {
                 try? await Task.sleep(for: .milliseconds(600))
                 onBite(wild)
             case .nothing:
-                store.toast = "Not even a nibble… Try again in 20 minutes."
+                store.toast = "Not even a nibble… You can cast again right away."
             case .notReady:
                 break
             }

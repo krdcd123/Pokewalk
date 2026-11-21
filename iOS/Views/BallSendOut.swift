@@ -15,7 +15,7 @@ struct BallSendOut: View {
     @State private var stage = 0          // 0 ball drops · 1 wobble · 2 burst · 3 out
     @State private var burst = false
     @State private var flash = 0.0
-    @State private var sparkle = false
+    @State private var sparkleStart: Date?
 
     private var effect: BallEffect { BallEffect(ball) }
 
@@ -48,14 +48,7 @@ struct BallSendOut: View {
 
             // Shiny stars after it appears
             if shiny {
-                ForEach(0..<6, id: \.self) { i in
-                    Image(systemName: "sparkle")
-                        .font(.system(size: i.isMultiple(of: 2) ? 18 : 12, weight: .black))
-                        .foregroundStyle(Color(hex: 0xFFE27A))
-                        .offset(x: CGFloat([-48, 44, -30, 52, -56, 26][i]), y: CGFloat([-40, -50, 34, 18, -4, -62][i]))
-                        .scaleEffect(sparkle ? 1 : 0.1)
-                        .opacity(sparkle ? 0 : 1)
-                }
+                ShinySparkles(start: sparkleStart, radius: 85)
             }
 
             // The ball
@@ -134,7 +127,7 @@ struct BallSendOut: View {
             if shiny {
                 try? await Task.sleep(for: .milliseconds(250))
                 if playSounds { SoundKit.shared.play(.shiny) }
-                withAnimation(.easeOut(duration: 0.9)) { sparkle = true }
+                sparkleStart = .now
             }
         }
     }

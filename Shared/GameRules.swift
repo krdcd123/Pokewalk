@@ -237,6 +237,17 @@ enum GameRules {
     nonisolated(unsafe) static var currentWeather: WeatherCondition?
     static let weatherBoost = 1.05
 
+    static let timeOfDayBoost = 1.1
+    /// Night-time Pokémon from Gold/Silver/Crystal and Ruby/Sapphire/Emerald's time tables, plus Ghost and Dark types.
+    static let nightPokemon: Set<Int> = [19, 20, 41, 42, 43, 44, 92, 93, 94, 163, 164, 167, 168, 169, 197, 198, 200,
+                                         215, 228, 229, 302, 353, 354, 355, 356, 313, 314, 290, 291, 292]
+    /// Daytime Pokémon (morning/day tables).
+    static let dayPokemon: Set<Int> = [10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22, 165, 166, 187, 188, 189, 191, 192,
+                                       193, 204, 205, 234, 276, 277, 311, 312, 333, 334]
+    static func isNightPokemon(_ sp: Species) -> Bool {
+        nightPokemon.contains(sp.id) || sp.types.contains(.ghost) || sp.types.contains(.dark)
+    }
+
     static func encounterWeight(_ sp: Species, context: EncounterContext, lifetimeSteps: Int) -> Double {
         if sp.isLegendary || sp.isMythical { return 0 }     // handled separately (legendaryChance)
         var w = rarityWeight(sp)
@@ -246,8 +257,9 @@ enum GameRules {
         }
         if sp.isBaby { w *= 0.5 }
         if !context.habitats.isDisjoint(with: sp.habitats) { w *= 1.5 }   // a gentle nudge, still mostly random
-        let spooky = sp.types.contains(.ghost) || sp.types.contains(.dark)
-        if spooky { w *= context.isNight ? 1.5 : 0.8 }
+        // Time of day: Pokémon that come out at night (Ghost/Dark types, Hoothoot, Zubat…) or by day
+        // (Ledyba, Sunkern…) are 10% more likely at their time
+        if context.isNight ? isNightPokemon(sp) : dayPokemon.contains(sp.id) { w *= timeOfDayBoost }
         // Weather where you are: matching types are ~5% more likely (rain → Water, sun → Fire…)
         if let weather = currentWeather, !weather.boostedTypes.isDisjoint(with: sp.types) { w *= weatherBoost }
         return w
