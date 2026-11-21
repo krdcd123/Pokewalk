@@ -342,6 +342,7 @@ struct TrainerCardView: View {
     @State private var totalSteps: Int = 0
 
     private let gold = Color(hex: 0xF2CC4A)
+    @State private var flipped = false
 
     private var stars: Int {
         let s = store.state
@@ -372,7 +373,90 @@ struct TrainerCardView: View {
         }
     }
 
+    /// Tap the card to flip it over: the back has your daily stamps.
     private var card: some View {
+        ZStack {
+            cardFront
+                .opacity(flipped ? 0 : 1)
+            cardBack
+                .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
+                .opacity(flipped ? 1 : 0)
+        }
+        .rotation3DEffect(.degrees(flipped ? 180 : 0), axis: (x: 0, y: 1, z: 0), perspective: 0.4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            SoundKit.shared.play(.trainerCard)
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) { flipped.toggle() }
+        }
+    }
+
+    /// The back: this week's stamps (Poké Ball outlines, stamped in red ink once you've opened the game that day).
+    private var cardBack: some View {
+        let t = store.state.trainer
+        let accent = Color(hex: t.style.cardHex)
+        let streak = DailyStamps.streak(store.state)
+        let today = DailyStamps.stampedToday(store.state)
+        let every = DailyStamps.rewardEvery
+        // stamps filled this week (a full week shows all 7 on the day you finish it)
+        let filled = streak == 0 ? 0 : ((streak - 1) % every) + 1
+        let left = every - filled
+        return VStack(spacing: 14) {
+            HStack {
+                Text("DAILY STAMPS")
+                    .font(.system(size: 14, weight: .black, design: .monospaced))
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .glassCapsule(tint: Color(hex: 0xE0393E))
+                Spacer()
+                Text("STREAK \(streak)").font(.system(size: 17, weight: .heavy, design: .monospaced))
+            }
+            VStack(spacing: 12) {
+                HStack(spacing: 12) { ForEach(0..<4, id: \.self) { stampSlot($0, filled: filled) } }
+                HStack(spacing: 12) { ForEach(4..<7, id: \.self) { stampSlot($0, filled: filled) } }
+            }
+            .padding(.vertical, 6)
+            VStack(spacing: 4) {
+                Text(today ? "Today's stamp is in! Come back tomorrow." : "Open the game today to get a stamp.")
+                    .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                Text(left == 0 && today ? "Week complete — you got \(DailyStamps.rewardText)!"
+                     : "\(left == 0 ? every : left) more day\((left == 0 ? every : left) == 1 ? "" : "s") in a row: \(DailyStamps.rewardText)")
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .multilineTextAlignment(.center)
+                Text("Resets at midnight · miss a day and the streak starts over")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .frame(maxWidth: .infinity)
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .foregroundStyle(.white)
+        .glassCard(28, tint: accent)
+        .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
+    }
+
+    private func stampSlot(_ i: Int, filled: Int) -> some View {
+        let stamped = i < filled
+        return ZStack {
+            PokeBallOutline()
+                .stroke(.white.opacity(stamped ? 0 : 0.35), style: StrokeStyle(lineWidth: 2.5, dash: [5, 4]))
+            if stamped {
+                PokeBallOutline()
+                    .stroke(Color(hex: 0xFF4A4A), lineWidth: 4)
+                    .rotationEffect(.degrees(Double([-12, 8, -5, 14, -9, 6, -14][i])))
+                    .shadow(color: Color(hex: 0xFF4A4A).opacity(0.5), radius: 3)
+                    .transition(.scale(scale: 1.6).combined(with: .opacity))
+            }
+            Text("\(i + 1)").font(.system(size: 10, weight: .black, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.6)).offset(y: 34)
+        }
+        .frame(width: 56, height: 56)
+        .padding(.bottom, 10)
+    }
+
+    private var cardFront: some View {
         let t = store.state.trainer
         let accent = Color(hex: t.style.cardHex)
         return VStack(spacing: 14) {
@@ -441,6 +525,20 @@ struct TrainerCardView: View {
             totalSteps = all.steps
             totalMeters = max(totalMeters, all.meters)
         }
+    }
+}
+
+/// A Poké Ball drawn as an outline: the circle, the middle band and the button.
+struct PokeBallOutline: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let d = min(r.width, r.height), c = CGPoint(x: r.midX, y: r.midY)
+        let R = d / 2 - 2, b = d * 0.14
+        p.addEllipse(in: CGRect(x: c.x - R, y: c.y - R, width: R * 2, height: R * 2))
+        p.move(to: CGPoint(x: c.x - R, y: c.y)); p.addLine(to: CGPoint(x: c.x - b, y: c.y))
+        p.move(to: CGPoint(x: c.x + b, y: c.y)); p.addLine(to: CGPoint(x: c.x + R, y: c.y))
+        p.addEllipse(in: CGRect(x: c.x - b, y: c.y - b, width: b * 2, height: b * 2))
+        return p
     }
 }
 

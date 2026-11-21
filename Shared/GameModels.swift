@@ -300,6 +300,7 @@ struct GameState: Codable {
     var settings = GameSettings()
     var lastSyncDate = Date()
     var lastFishedAt: Date?          // fishing cooldown (20 minutes)
+    var stampDays: [String] = []     // "yyyy-MM-dd" days stamped on the trainer card
 
     static let maxParty = 6
 
@@ -422,6 +423,7 @@ extension GameState {
         settings = c.value(.settings, d.settings)
         lastSyncDate = c.value(.lastSyncDate, Date())
         lastFishedAt = c.value(.lastFishedAt, nil)
+        stampDays = c.value(.stampDays, [])
     }
 }
 

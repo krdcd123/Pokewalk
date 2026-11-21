@@ -468,6 +468,20 @@ final class GameStore: ObservableObject {
         return earned
     }
 
+    /// Stamps today's box on the trainer card (once a day); every 7 in a row gives a reward.
+    func stampToday() {
+        var result: (streak: Int, reward: Bool)?
+        mutate { result = DailyStamps.stamp(&$0) }
+        guard let result else { return }
+        let day = (result.streak - 1) % DailyStamps.rewardEvery + 1
+        if result.reward {
+            SoundKit.shared.play(.ballCatch)
+            toast = "7-day stamp streak! You got \(DailyStamps.rewardText)."
+        } else {
+            toast = "Daily stamp! Day \(day) of \(DailyStamps.rewardEvery) — tap your trainer card to see it."
+        }
+    }
+
     func buyFishingRod() -> Bool {
         guard (state.bag[Fishing.rodKey] ?? 0) == 0, state.money >= Fishing.rodPrice else { return false }
         mutate { s in

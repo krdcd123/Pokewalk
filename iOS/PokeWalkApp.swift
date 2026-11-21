@@ -49,6 +49,7 @@ struct PokeWalkApp: App {
                         SoundKit.shared.installTapSound()
                         SoundKit.shared.appBecameActive()
                         store.pruneExpiredEncounters()
+                        store.stampToday()
                         Task {
                             await store.tick()
                             store.checkPendingEvolutions()
