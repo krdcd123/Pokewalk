@@ -18,8 +18,7 @@ struct SafariView: View {
     @State private var caught: OwnedPokemon?
     @State private var throwing: String?        // shown instead of the result while the ball is shaking
     @State private var introDone = false        // Pokémon slides in from the left, like Emerald
-    @State private var slideX: CGFloat = -600
-    @State private var introFade = 0.0           // Pokémon + platform fade in together while sliding
+    @State private var slideStart: Date?          // when the slide-in began
     @State private var shaded = true             // darker until it reaches the middle (like Emerald)
     @State private var flash = 0.0               // white flash when the ball opens
     @State private var stars = false             // little stars when it's caught
@@ -39,6 +38,10 @@ struct SafariView: View {
 
                 VStack { header; Spacer() }.padding(.top, 8)
 
+                // The sprite is a UIKit view, which SwiftUI won't slide with a normal animation —
+                // so the slide-in is driven frame by frame here.
+                TimelineView(.animation(paused: slideStart == nil || introDone)) { tl in
+                let p = introProgress(at: tl.date)
                 ZStack {
                     Ellipse().fill(Theme.ink.opacity(0.16)).frame(width: 200, height: 46).offset(y: 100)
                     AnimatedSprite(speciesID: wild.speciesID, shiny: wild.isShiny)
@@ -51,8 +54,9 @@ struct SafariView: View {
                     Circle().fill(.white).frame(width: 150, height: 150).blur(radius: 24)
                         .opacity(flash).allowsHitTesting(false)
                 }
-                .offset(x: slideX)
-                .opacity(introFade)
+                .offset(x: -geo.size.width * 0.9 * (1 - p))
+                .opacity(p)
+                }
                 .position(x: geo.size.width / 2, y: spriteY)
 
                 statusCard.position(x: geo.size.width / 2, y: geo.size.height * 0.66)
@@ -114,8 +118,8 @@ struct SafariView: View {
                 // Load the sprite first, so the Pokémon and its platform arrive together
                 await preloadSprite()
                 // Slides in from the left (shaded), lights up in the middle, then cries
-                withAnimation(.easeOut(duration: 1.1)) { slideX = 0; introFade = 1 }
-                try? await Task.sleep(for: .milliseconds(1_100))
+                slideStart = .now
+                try? await Task.sleep(for: .milliseconds(1_120))
                 withAnimation(.easeOut(duration: 0.35)) { shaded = false }
                 try? await Task.sleep(for: .milliseconds(200))
                 CryPlayer.shared.play(wild.speciesID)
@@ -336,6 +340,14 @@ struct SafariView: View {
         let timeout = Task { try? await Task.sleep(for: .milliseconds(2_500)); load.cancel() }
         _ = await load.value
         timeout.cancel()
+    }
+
+    /// 0 → 1 over 1.1 s, eased out (fast start, gentle stop).
+    private func introProgress(at date: Date) -> Double {
+        if introDone { return 1 }
+        guard let start = slideStart else { return 0 }
+        let t = min(1, max(0, date.timeIntervalSince(start) / 1.1))
+        return 1 - pow(1 - t, 3)
     }
 
     private func pct(_ p: Double) -> Int { Int((p * 100).rounded()) }
