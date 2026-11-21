@@ -25,7 +25,9 @@ enum BattleGfx {
         guard let d = await data(style.backPicURL, name: "back-\(style.id).png"), var px = Pixels(d) else { return [] }
         if style.id == "gold" || style.id == "kris" {
             // Crystal: 4-shade greyscale; white around the sprite is the background
-            px.floodClear(from: (255, 255, 255))
+            // Only seed from the top and the upper sides: the jacket is white too and is cut off at the
+            // bottom edge, so filling from there would erase it
+            px.floodClear(from: (255, 255, 255), seedBottom: false, sideSeedLimit: px.h * 6 / 10)
             let accent: UInt32 = style.id == "gold" ? 0xFF3A08 : 0x524AFF
             px.recolourGreys(skin: 0xF8B888, accent: accent)
         } else if px.alpha(0, 0) == 255 {
@@ -70,14 +72,15 @@ private struct Pixels {
     }
 
     /// Clears pixels of colour `c` reachable from the edges of each frame.
-    mutating func floodClear(from c: (UInt8, UInt8, UInt8), frameHeight: Int? = nil) {
+    mutating func floodClear(from c: (UInt8, UInt8, UInt8), frameHeight: Int? = nil,
+                             seedBottom: Bool = true, sideSeedLimit: Int? = nil) {
         let fh = frameHeight ?? h
         func matches(_ x: Int, _ y: Int) -> Bool { let i = (y * w + x) * 4; return p[i + 3] > 0 && (p[i], p[i + 1], p[i + 2]) == c }
         for top in stride(from: 0, to: h, by: fh) {
             let bottom = min(h, top + fh) - 1
             var stack: [(Int, Int)] = []
-            for x in 0..<w { stack.append((x, top)); stack.append((x, bottom)) }
-            for y in top...bottom { stack.append((0, y)); stack.append((w - 1, y)) }
+            for x in 0..<w { stack.append((x, top)); if seedBottom { stack.append((x, bottom)) } }
+            for y in top...min(bottom, top + (sideSeedLimit ?? fh) - 1) { stack.append((0, y)); stack.append((w - 1, y)) }
             while let (x, y) = stack.popLast() {
                 guard x >= 0, x < w, y >= top, y <= bottom, matches(x, y) else { continue }
                 let i = (y * w + x) * 4

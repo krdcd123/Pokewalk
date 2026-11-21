@@ -70,11 +70,18 @@ struct SafariView: View {
         var enemyPlatform: CGPoint { CGPoint(x: W * 0.70, y: H * 0.355) }
         var trainerSize: CGFloat { 64 * t }
         var trainerX: CGFloat { W * 0.30 }
-        var playerPlatform: CGPoint { CGPoint(x: trainerX + 6, y: barTop - 16) }
+        var playerPlatformWidth: CGFloat { W * 0.56 }
+        /// Kept inside the text box's edges, and low enough that its bottom half tucks behind it
+        var playerPlatform: CGPoint { CGPoint(x: max(trainerX + 6, 12 + playerPlatformWidth / 2), y: barTop - 2) }
         var trainerTop: CGFloat { barTop + 6 - trainerSize }       // its waist tucks behind the text box
         var ballSize: CGFloat { 16 * t * 0.85 }
         var hand: CGPoint { CGPoint(x: trainerX + trainerSize * 0.28, y: trainerTop + trainerSize * 0.3) }
-        var buttonsY: CGFloat { H - 92 }
+        /// The Berry / Ball / Run buttons fill the space under the text box
+        var buttonsTop: CGFloat { barTop + barHeight + 14 }
+        var buttonsHeight: CGFloat { min(170, max(90, H - 40 - buttonsTop)) }
+        var buttonsY: CGFloat { buttonsTop + buttonsHeight / 2 }
+        var sideButtonWidth: CGFloat { (W - 24 - 20) * 0.28 }
+        var ballButtonWidth: CGFloat { (W - 24 - 20) * 0.44 }
     }
 
     var body: some View {
@@ -217,7 +224,7 @@ struct SafariView: View {
     /// Your trainer's back sprite on the near platform.
     @ViewBuilder private func trainer(_ L: Layout, p: Double) -> some View {
         ZStack {
-            platform(width: L.W * 0.66)
+            platform(width: L.playerPlatformWidth)
                 .position(L.playerPlatform)
             if trainerFrames.indices.contains(trainerFrame) {
                 Image(uiImage: trainerFrames[trainerFrame])
@@ -341,18 +348,19 @@ struct SafariView: View {
 
     private func bottomControls(_ L: Layout) -> some View {
         let canAct = introDone && showRates && !busy && safari.phase == .active
-        return HStack(alignment: .center) {
+        return HStack(alignment: .center, spacing: 10) {
             // Berry: tap throws the one you have most of; hold to pick which
             Menu {
                 ForEach(ownedBerries, id: \.self) { key in
                     Button("\(Dex.itemName(key)) ×\(store.state.bag[key] ?? 0)") { throwBerry(key) }
                 }
             } label: {
-                controlLabel(berryCount == 0 ? "No berries" : "Berry ×\(berryCount)", tint: Theme.orange) {
+                controlLabel(berryCount == 0 ? "No berries" : "Berry ×\(berryCount)",
+                             width: L.sideButtonWidth, height: L.buttonsHeight, tint: Theme.orange) {
                     if let key = ownedBerries.first {
-                        ItemSprite(key: key).frame(width: 30, height: 30)
+                        ItemSprite(key: key).frame(width: 44, height: 44)
                     } else {
-                        Image(systemName: "leaf.fill").font(.system(size: 22, weight: .bold))
+                        Image(systemName: "leaf.fill").font(.system(size: 34, weight: .bold))
                     }
                 }
             } primaryAction: {
@@ -360,8 +368,6 @@ struct SafariView: View {
             }
             .disabled(!canAct || berryCount == 0 || test)
             .opacity(berryCount == 0 ? 0.55 : 1)
-
-            Spacer()
 
             // Ball: tap throws it; hold to switch ball
             Menu {
@@ -379,8 +385,9 @@ struct SafariView: View {
                     .disabled(store.state.balls[k, default: 0] == 0)
                 }
             } label: {
-                controlLabel("\(ball.name) ×\(ballsLeft)", size: 86) {
-                    ItemSprite(key: ball.itemKey).frame(width: 40, height: 40)
+                controlLabel("\(ball.name) ×\(ballsLeft)", width: L.ballButtonWidth, height: L.buttonsHeight,
+                             tint: nil, big: true) {
+                    ItemSprite(key: ball.itemKey).frame(width: 64, height: 64)
                 }
             } primaryAction: {
                 if ballsLeft > 0 { throwBall(L) }
@@ -390,30 +397,29 @@ struct SafariView: View {
             .opacity(ballsLeft > 0 ? 1 : 0.55)
             .accessibilityLabel("Throw \(ball.name), \(ballsLeft) left. Hold to change ball.")
 
-            Spacer()
-
             Button(action: run) {
-                controlLabel("Run", tint: nil) {
-                    Image(systemName: "figure.run").font(.system(size: 22, weight: .bold))
+                controlLabel("Run", width: L.sideButtonWidth, height: L.buttonsHeight, tint: Color(hex: 0x2F7BFF)) {
+                    Image(systemName: "figure.run").font(.system(size: 34, weight: .bold))
                 }
             }
             .buttonStyle(.plain)
             .disabled(!introDone || busy)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 12)
         .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
     }
 
-    private func controlLabel<Icon: View>(_ title: String, size: CGFloat = 72, tint: Color? = nil,
-                                          @ViewBuilder icon: () -> Icon) -> some View {
-        VStack(spacing: 2) {
+    private func controlLabel<Icon: View>(_ title: String, width: CGFloat, height: CGFloat, tint: Color? = nil,
+                                          big: Bool = false, @ViewBuilder icon: () -> Icon) -> some View {
+        VStack(spacing: 8) {
             icon()
-            Text(title).font(.rounded(10, .black)).lineLimit(1).minimumScaleFactor(0.7)
+            Text(title).font(.rounded(big ? 17 : 14, .black)).lineLimit(1).minimumScaleFactor(0.6)
         }
-        .padding(.horizontal, 4)
-        .frame(width: size, height: size)
+        .padding(.horizontal, 8)
+        .frame(width: width, height: height)
         .foregroundStyle(.white)
-        .glassCircle(tint: tint)
+        .contentShape(RoundedRectangle(cornerRadius: 26))
+        .glassCard(26, tint: tint)
     }
 
     // MARK: Actions
