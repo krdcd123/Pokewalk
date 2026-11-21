@@ -253,7 +253,7 @@ struct GameSettings: Codable, Hashable {
     var encounterSteps = 500        // average steps between wild encounters
     var ballSteps = 1_000           // steps per Poké Ball
     var itemSteps = 1_500           // steps per found item
-    var shinyOdds = 8_192           // each Pokémon has a 1-in-N random chance (not a guaranteed every-Nth)
+    var shinyOdds = 512           // each Pokémon has a 1-in-N random chance (not a guaranteed every-Nth)
     var maxPendingEncounters = 5
     var encounterLifetimeHours = 4
     var notifyEncounters = true

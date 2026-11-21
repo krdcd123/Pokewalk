@@ -457,12 +457,12 @@ struct SettingsView: View {
                         value: binding(\.encounterSteps), in: 100...2_000, step: 50).glassRow()
                 Stepper("Ball every \(store.state.settings.ballSteps) steps", value: binding(\.ballSteps), in: 50...2_000, step: 50).glassRow()
                 Stepper("Item every \(store.state.settings.itemSteps.formatted()) steps", value: binding(\.itemSteps), in: 250...5_000, step: 250).glassRow()
-                Picker("Shiny chance", selection: binding(\.shinyOdds)) {
+                Picker("Wild shiny chance", selection: binding(\.shinyOdds)) {
                     Text("1 in 8192 (Gen 3)").tag(8192); Text("1 in 4096").tag(4096); Text("1 in 1000").tag(1000); Text("1 in 512").tag(512); Text("1 in 128").tag(128)
                 }
                 .glassRow()
             } header: { Text("Game balance") } footer: {
-                Text("Your buddy gets the Exp per step; the rest of your party gets the share of that (e.g. 10 Exp → 2 Exp at 20%). Pokémon in the PC don't gain Exp.")
+                Text("Your buddy gets the Exp per step; the rest of your party gets the share of that (e.g. 10 Exp → 2 Exp at 20%). Pokémon in the PC don't gain Exp. Wild shiny chance applies to Pokémon you meet on walks; starters are always 1 in 8192.")
             }
 
             Section {

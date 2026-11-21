@@ -181,9 +181,10 @@ final class GameStore: ObservableObject {
     func start() {
         guard hasGame else { return }
         // One-time: balls now come every 1,000 steps
-        if !UserDefaults.standard.bool(forKey: "shiny8192") {
-            UserDefaults.standard.set(true, forKey: "shiny8192")
-            mutate { $0.settings.shinyOdds = 8_192 }
+        // One-time: wild Pokémon on walks are shiny 1 in 512 (starters stay fixed at 1 in 8192)
+        if !UserDefaults.standard.bool(forKey: "shinyWild512") {
+            UserDefaults.standard.set(true, forKey: "shinyWild512")
+            mutate { $0.settings.shinyOdds = 512 }
         }
         if !UserDefaults.standard.bool(forKey: "ballSteps1000") {
             UserDefaults.standard.set(true, forKey: "ballSteps1000")
