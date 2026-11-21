@@ -31,6 +31,10 @@ enum BattleGfx {
             px.clearGameBoyBackground()
             px.mapGreys(light: 0xAAAAAA, dark: 0x555555)
         case .gen3:
+            break
+        }
+        if style.isGameBoy { px.dropToBottom() }      // Red's sprite has empty rows under him: sit him on the box
+        if case .gen3 = style.sheet {
             if px.alpha(0, 0) == 255 { px.clearColour(px.rgb(0, 0)) }   // no transparency: colour 0 is the background
         }
         return px.frames(height: px.w)
@@ -119,6 +123,20 @@ private struct Pixels {
                 p[i] = 0; p[i + 1] = 0; p[i + 2] = 0; p[i + 3] = 0
                 stack.append((x + 1, y)); stack.append((x - 1, y)); stack.append((x, y + 1)); stack.append((x, y - 1))
             }
+        }
+    }
+
+    /// Moves the picture down so its lowest drawn row touches the bottom edge.
+    mutating func dropToBottom() {
+        var last = -1
+        for y in 0..<h where (0..<w).contains(where: { alpha($0, y) > 0 }) { last = y }
+        let shift = h - 1 - last
+        guard last >= 0, shift > 0 else { return }
+        let row = w * 4
+        for y in stride(from: h - 1, through: 0, by: -1) {
+            let dst = y * row
+            if y >= shift { for i in 0..<row { p[dst + i] = p[(y - shift) * row + i] } }
+            else { for i in 0..<row { p[dst + i] = 0 } }
         }
     }
 
