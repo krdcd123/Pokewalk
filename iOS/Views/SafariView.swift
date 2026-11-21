@@ -204,7 +204,7 @@ struct SafariView: View {
         let cy = feet - (b.bottom - b.size.height / 2) * L.e - lift
         let dx = -L.W * (1 - p)
         ZStack {
-            platform(width: L.W * 0.52)
+            BattlePlatform(type: test ? nil : wild.species.types.first, width: L.W * 0.52)
                 .position(L.enemyPlatform)
             Group {
                 if test { MissingNoSprite() } else { AnimatedSprite(speciesID: wild.speciesID, shiny: wild.isShiny) }
