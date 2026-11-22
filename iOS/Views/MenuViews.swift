@@ -28,26 +28,31 @@ struct MainMenuView: View {
 
     @State private var path: [Dest] = []
 
+    @ToolbarContentBuilder private var menuTitleBar: some ToolbarContent {
+        ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }   // no centred title
+        if #available(iOS 26.0, *) {
+            ToolbarItem(placement: .topBarLeading) { menuTitle }.sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .topBarLeading) { menuTitle }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            NavigationLink(value: Dest.settings) {
+                Image(systemName: "gearshape.fill").font(.system(size: 17, weight: .bold))
+            }
+            .accessibilityLabel("Settings")
+        }
+    }
+
+    private var menuTitle: some View {
+        Text("Menu").font(.system(size: 32, weight: .bold)).foregroundStyle(.white)
+            .fixedSize()
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 14) {
-                    // "Menu" with a small Settings cog on the same row, top right
-                    HStack {
-                        Text("Menu").font(.system(size: 34, weight: .bold)).foregroundStyle(.white)
-                        Spacer()
-                        NavigationLink(value: Dest.settings) {
-                            Image(systemName: "gearshape.fill")
-                                .font(.system(size: 19, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 44, height: 44)
-                                .glassCircle()
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Settings")
-                    }
-                    .padding(.top, 4)
-                    .padding(.bottom, 22)          // a bit more room under the title, so the tiles sit lower
+                    Color.clear.frame(height: 14)      // a bit more room under the title, so the tiles sit lower
                     if let buddy = store.state.buddy {
                         NavigationLink(value: Dest.summary(buddy.id)) { BuddyHeader(mon: buddy) }
                             .buttonStyle(.plain)
@@ -74,7 +79,10 @@ struct MainMenuView: View {
                 .animation(.easeInOut(duration: 0.22), value: path.isEmpty)
             }
             .navigationTitle("Menu")
-            .toolbar(.hidden, for: .navigationBar)        // the title row is drawn above, with the cog
+            .navigationBarTitleDisplayMode(.inline)
+            // "Menu" and the Settings cog share the title bar's row. (The bar stays visible — hiding it here
+            // made the next screen jump down when its own bar appeared after sliding in.)
+            .toolbar { menuTitleBar }
             .glassScreen(transparent: true)
             // The PC's closing sound plays the moment you leave it, not after the slide finishes
             .onChange(of: path) { old, new in
