@@ -24,7 +24,6 @@ struct MainMenuView: View {
         .init(dest: .shop, title: "Poké Mart", symbol: "cart.fill"),
         .init(dest: .journal, title: "Journal", symbol: "map.fill"),
         .init(dest: .trainer, title: "Trainer", symbol: "person.text.rectangle.fill"),
-        .init(dest: .settings, title: "Settings", symbol: "gearshape.fill"),
     ]
 
     @State private var path: [Dest] = []
@@ -33,6 +32,21 @@ struct MainMenuView: View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 14) {
+                    // "Menu" with a small Settings cog on the same row, top right
+                    HStack {
+                        Text("Menu").font(.system(size: 34, weight: .bold)).foregroundStyle(.white)
+                        Spacer()
+                        NavigationLink(value: Dest.settings) {
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: 19, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .glassCircle()
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Settings")
+                    }
+                    .padding(.top, 4)
                     if let buddy = store.state.buddy {
                         NavigationLink(value: Dest.summary(buddy.id)) { BuddyHeader(mon: buddy) }
                             .buttonStyle(.plain)
@@ -59,6 +73,7 @@ struct MainMenuView: View {
                 .animation(.easeInOut(duration: 0.22), value: path.isEmpty)
             }
             .navigationTitle("Menu")
+            .toolbar(.hidden, for: .navigationBar)        // the title row is drawn above, with the cog
             .glassScreen(transparent: true)
             // The PC's closing sound plays the moment you leave it, not after the slide finishes
             .onChange(of: path) { old, new in
