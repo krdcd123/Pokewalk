@@ -65,6 +65,21 @@ enum Fishing {
         return max(0, cooldown - now.timeIntervalSince(last))
     }
 
+    /// Mixes the berries you picked into one bait — or a lure.
+    @discardableResult
+    static func makeBait(using picks: [String: Int], lure: Bool, in s: inout GameState) -> Bool {
+        let n = picks.values.reduce(0, +)
+        guard n >= 1, n <= maxBerries,
+              picks.allSatisfy({ ItemCatalog.isBerry($0.key) && $0.value >= 0 && (s.bag[$0.key] ?? 0) >= $0.value })
+        else { return false }
+        for (k, c) in picks where c > 0 {
+            s.bag[k, default: 0] -= c
+            if s.bag[k] == 0 { s.bag[k] = nil }
+        }
+        s.bag[lure ? lureKey(berries: n) : baitKey(berries: n), default: 0] += 1
+        return true
+    }
+
     /// Mixes `n` berries (taking the ones you have most of first) into one bait — or a lure.
     @discardableResult
     static func makeBait(berries n: Int, lure: Bool = false, in s: inout GameState) -> Bool {

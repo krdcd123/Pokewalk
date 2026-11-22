@@ -529,6 +529,12 @@ final class GameStore: ObservableObject {
         return ok
     }
 
+    func makeBait(using picks: [String: Int], lure: Bool) -> Bool {
+        var ok = false
+        mutate { ok = Fishing.makeBait(using: picks, lure: lure, in: &$0) }
+        return ok
+    }
+
     /// Buys a ready-made bait or lure at the Poké Mart.
     func buyBaitOrLure(_ key: String) -> Bool {
         guard let price = Fishing.price(key), state.money >= price else { return false }

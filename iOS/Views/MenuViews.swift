@@ -243,7 +243,8 @@ struct BagView: View {
         }
         static func of(_ key: String) -> Pocket {
             if key == Fishing.rodKey { return .key }
-            if ItemCatalog.isBerry(key) || Fishing.isBait(key) || Fishing.isLure(key) { return .berries }
+            if Fishing.isBait(key) || Fishing.isLure(key) { return .items }
+            if ItemCatalog.isBerry(key) { return .berries }
             if key == "rare-candy" || ExpCandy.exp(key) != nil { return .candies }
             return .items
         }
@@ -1110,15 +1111,13 @@ private struct BagItemRow: View {
 /// Berries pocket: mix berries into bait for the Fishing Rod.
 private struct BaitMaker: View {
     @EnvironmentObject private var store: GameStore
-    @State private var count = 3
     @State private var lure = false
+    @State private var picking = false
 
     private var berries: Int { ItemCatalog.berries.reduce(0) { $0 + (store.state.bag[$1] ?? 0) } }
 
     var body: some View {
         if berries > 0 {
-            let n = min(count, berries, Fishing.maxBerries)
-            let w = Fishing.tierWeights(berries: n), total = w.reduce(0, +)
             Section {
                 VStack(alignment: .leading, spacing: 10) {
                     Picker("Make", selection: $lure) {
@@ -1126,40 +1125,105 @@ private struct BaitMaker: View {
                         Text("Lure (30 min)").tag(true)
                     }
                     .pickerStyle(.segmented)
-                    HStack(spacing: 12) {
-                        ItemSprite(key: lure ? Fishing.lureKey(berries: n) : Fishing.baitKey(berries: n)).frame(width: 30, height: 30)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(lure ? Fishing.lureName(berries: n) : Fishing.baitName(berries: n)).font(.rounded(16, .heavy))
-                            Text(lure ? "Rarest of \(Fishing.lurePicks(berries: n)) wild Pokémon · +\(Fishing.lureLevelBonus(berries: n)) levels"
-                                      : "\(Int(Fishing.biteChance(berries: n) * 100))% bite · \(Int((w[2] / total * 100).rounded()))% rare catch")
-                                .font(.rounded(12, .heavy)).foregroundStyle(Theme.tealDark)
+                    Button { picking = true } label: {
+                        HStack(spacing: 10) {
+                            ItemSprite(key: lure ? Fishing.lureKey(berries: 1) : Fishing.baitKey(berries: 1))
+                                .frame(width: 28, height: 28)
+                            Text(lure ? "Make a lure…" : "Make bait…").font(.rounded(15, .heavy))
+                            Spacer()
+                            Text("Pick berries").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
+                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.inkSoft)
                         }
+                        .padding(.horizontal, 12).frame(height: 44)
+                        .background(Theme.teal.opacity(0.3), in: RoundedRectangle(cornerRadius: 14))
+                        .contentShape(Rectangle())
                     }
-                    HStack(spacing: 10) {
-                        Stepper("\(n) \(n == 1 ? "berry" : "berries")",
-                                value: Binding(get: { n }, set: { count = $0 }), in: 1...max(1, min(berries, Fishing.maxBerries)))
-                            .font(.rounded(15, .heavy))
-                        Button {
-                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            if store.makeBait(berries: n, lure: lure) {
-                                SoundKit.shared.play(.useItem)
-                                store.toast = "Made \(lure ? Fishing.lureName(berries: n) : Fishing.baitName(berries: n))!"
-                            }
-                        } label: {
-                            Text(lure ? "Make lure" : "Make bait").font(.rounded(14, .heavy)).foregroundStyle(.white)
-                                .padding(.horizontal, 14).frame(height: 36)
-                                .background(Theme.teal.opacity(0.8), in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    .buttonStyle(.plain)
                 }
                 .glassRow()
             } header: {
                 Text("Make bait or a lure")
             } footer: {
-                Text("Mix up to \(Fishing.maxBerries) berries. Bait is for the Fishing Rod; a lure attracts a wild Pokémon after 30 minutes. More berries, better odds.")
+                Text("Choose up to \(Fishing.maxBerries) berries to mix. Bait is for the Fishing Rod; a lure attracts a wild Pokémon after 30 minutes. More berries, better odds. What you make goes in the Items pocket.")
+            }
+            .sheet(isPresented: $picking) {
+                BerryMixSheet(lure: lure).environmentObject(store)
             }
         }
+    }
+}
+
+/// Pick exactly which berries go into a bait or lure.
+private struct BerryMixSheet: View {
+    @EnvironmentObject private var store: GameStore
+    @Environment(\.dismiss) private var dismiss
+    let lure: Bool
+    @State private var chosen: [String: Int] = [:]
+
+    private var owned: [String] { ItemCatalog.berries.filter { (store.state.bag[$0] ?? 0) > 0 } }
+    private var total: Int { chosen.values.reduce(0, +) }
+
+    var body: some View {
+        let n = max(1, total)
+        let w = Fishing.tierWeights(berries: n), sum = w.reduce(0, +)
+        NavigationStack {
+            List {
+                Section {
+                    HStack(spacing: 12) {
+                        ItemSprite(key: lure ? Fishing.lureKey(berries: n) : Fishing.baitKey(berries: n)).frame(width: 34, height: 34)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(total == 0 ? (lure ? "Lure" : "Bait") : lure ? Fishing.lureName(berries: total) : Fishing.baitName(berries: total))
+                                .font(.rounded(16, .heavy))
+                            Text(total == 0 ? "Add some berries below"
+                                 : lure ? "Rarest of \(Fishing.lurePicks(berries: n)) wild Pokémon · +\(Fishing.lureLevelBonus(berries: n)) levels"
+                                 : "\(Int(Fishing.biteChance(berries: n) * 100))% bite · \(Int((w[2] / sum * 100).rounded()))% rare catch")
+                                .font(.rounded(12, .heavy)).foregroundStyle(Theme.tealDark)
+                        }
+                        Spacer()
+                        Text("\(total)/\(Fishing.maxBerries)").font(.rounded(15, .heavy)).monospacedDigit()
+                    }
+                    .glassRow()
+                }
+                Section("Berries") {
+                    ForEach(owned, id: \.self) { key in
+                        let have = store.state.bag[key] ?? 0
+                        let count = chosen[key] ?? 0
+                        HStack(spacing: 12) {
+                            ItemSprite(key: key).frame(width: 30, height: 30)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(Dex.itemName(key)).font(.rounded(15, .heavy))
+                                Text("You have \(have)").font(.rounded(11)).foregroundStyle(Theme.inkSoft)
+                            }
+                            Spacer()
+                            Stepper("\(count)", value: Binding(get: { chosen[key] ?? 0 }, set: { chosen[key] = $0 }),
+                                    in: 0...min(have, count + Fishing.maxBerries - total))
+                                .font(.rounded(15, .heavy)).monospacedDigit()
+                                .fixedSize()
+                        }
+                        .glassRow()
+                    }
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .navigationTitle(lure ? "Make a lure" : "Make bait")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Make") {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        if store.makeBait(using: chosen.filter { $0.value > 0 }, lure: lure) {
+                            SoundKit.shared.play(.useItem)
+                            store.toast = "Made \(lure ? Fishing.lureName(berries: total) : Fishing.baitName(berries: total))! It's in your Items pocket."
+                            dismiss()
+                        }
+                    }
+                    .disabled(total == 0)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationBackground(.ultraThinMaterial)
     }
 }
 
