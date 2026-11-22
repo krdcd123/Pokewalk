@@ -22,7 +22,7 @@ struct CaughtView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.top, 60).padding(.bottom, 24)
-                    .background(LinearGradient(colors: [Theme.teal, Theme.tealDark], startPoint: .top, endPoint: .bottom))
+                    .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("GIVE IT A NICKNAME?").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
@@ -50,7 +50,7 @@ struct CaughtView: View {
                     .padding(.horizontal).padding(.bottom, 30)
                 }
             }
-            .background(AppBackground())
+            .background(LocationBackdrop(fallback: mon.metLocation))
             .scrollContentBackground(.hidden)
             .ignoresSafeArea(edges: .top)
             .foregroundStyle(Theme.ink)

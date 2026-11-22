@@ -125,23 +125,18 @@ struct BallOpenFX: View {
     // MARK: Crystal
 
     @ViewBuilder private func gen2(frame f: Int) -> some View {
-        // Ball poof: 4 steps of 3 frames — a small puff, then smoke spreading out in four directions
+        // Ball poof, exactly as Crystal's BATTLE_ANIM_OAMSET_00/07/08/09: the smoke graphic is the top-left
+        // quarter of the cloud, mirrored into the other three corners. Three smoke frames close together,
+        // then the last one spread 4 px further out — 3 frames each.
         if smoke.count >= 3, f < 12 {
-            let step = f / 3
-            if step == 0 {
-                Image(uiImage: smoke[1]).interpolation(.none).resizable()
+            let steps: [(img: Int, d: Double)] = [(0, 8), (1, 8), (2, 8), (2, 12)]
+            let s = steps[f / 3]
+            ForEach(0..<4, id: \.self) { i in
+                let sx: Double = i % 2 == 0 ? -1 : 1, sy: Double = i < 2 ? -1 : 1
+                Image(uiImage: smoke[s.img]).interpolation(.none).resizable()
                     .frame(width: 16 * px, height: 16 * px)
-            } else {
-                let d = Double(step) * 6
-                ForEach(0..<4, id: \.self) { i in
-                    let sx: Double = i % 2 == 0 ? -1 : 1, sy: Double = i < 2 ? -1 : 1
-                    Image(uiImage: smoke[step == 3 ? 2 : 0]).interpolation(.none).resizable()
-                        .frame(width: 16 * px, height: 16 * px)
-                        // the smoke piece is drawn as the top-right puff: mirror it out to each corner
-                        .scaleEffect(x: sx, y: -sy)
-                        .offset(x: sx * d * px, y: sy * d * px * 0.8)
-                        .opacity(step == 3 ? 0.7 : 1)
-                }
+                    .scaleEffect(x: -sx, y: -sy)          // top-left as drawn; X-flip right, Y-flip bottom
+                    .offset(x: sx * s.d * px, y: sy * s.d * px)
             }
         }
         // Master Ball: 8 sparkles shoot out (24 frames after the poof, for 64 frames)

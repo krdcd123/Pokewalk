@@ -179,30 +179,8 @@ struct SafariView: View {
 
     // MARK: Pieces
 
-    /// A zoomed-in, blurred view of the map where you met it.
-    @ViewBuilder private var background: some View {
-        // Where you are now (else where you met it), seen low down in 3D — streets and buildings — facing the
-        // way you're heading, then softly blurred
-        let here = LocationTracker.shared.currentLocation()
-        let loc = here?.coordinate
-            ?? wild.location.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
-        let heading = (here?.course ?? -1) >= 0 ? here!.course : 0
-        ZStack {
-            if let loc {
-                Map(initialPosition: .camera(MapCamera(centerCoordinate: loc, distance: 320, heading: heading, pitch: 72)),
-                    interactionModes: [])
-                    .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
-                    .allowsHitTesting(false)
-                    .scaleEffect(1.1)                  // hide the blurred edges
-                    .blur(radius: 7)
-            } else {
-                AppBackground()
-            }
-            LinearGradient(colors: [.black.opacity(0.35), .black.opacity(0.05), .black.opacity(0.45)],
-                           startPoint: .top, endPoint: .bottom)
-        }
-        .ignoresSafeArea()
-    }
+    /// A low, blurred 3D view of where you are.
+    private var background: some View { LocationBackdrop(fallback: wild.location) }
 
     private func platform(width: CGFloat) -> some View {
         Ellipse()
@@ -722,5 +700,34 @@ struct MissingNoSprite: View {
                 }
             }
         }
+    }
+}
+
+
+/// Where you are now (else `fallback`), seen low down in 3D — streets and buildings — facing the way you're
+/// heading, softly blurred. The backdrop for wild battles and the catch screen.
+struct LocationBackdrop: View {
+    var fallback: MetLocation?
+
+    var body: some View {
+        let here = LocationTracker.shared.currentLocation()
+        let loc = here?.coordinate
+            ?? fallback.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+        let heading = (here?.course ?? -1) >= 0 ? here!.course : 0
+        ZStack {
+            if let loc {
+                Map(initialPosition: .camera(MapCamera(centerCoordinate: loc, distance: 320, heading: heading, pitch: 72)),
+                    interactionModes: [])
+                    .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
+                    .allowsHitTesting(false)
+                    .scaleEffect(1.1)                  // hide the blurred edges
+                    .blur(radius: 7)
+            } else {
+                AppBackground()
+            }
+            LinearGradient(colors: [.black.opacity(0.35), .black.opacity(0.05), .black.opacity(0.45)],
+                           startPoint: .top, endPoint: .bottom)
+        }
+        .ignoresSafeArea()
     }
 }
