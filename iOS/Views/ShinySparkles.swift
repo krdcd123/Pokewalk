@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The shiny sparkle: two waves of big glowing stars bursting out in a ring, like the games' shiny animation.
+/// The shiny sparkle: one ring of big glowing stars bursting out, like the games' shiny animation.
 /// Set `start` to the moment it should begin.
 struct ShinySparkles: View {
     let start: Date?
@@ -14,7 +14,7 @@ struct ShinySparkles: View {
             }
             .allowsHitTesting(false)
             .task(id: start) {
-                try? await Task.sleep(for: .seconds(1.5))
+                try? await Task.sleep(for: .seconds(1.1))
                 done = true
             }
         }
@@ -28,7 +28,6 @@ private struct SparkleFrame: View {
     var body: some View {
         ZStack {
             SparkleWave(t: (elapsed - 0.0) / 0.95, turn: 0, radius: radius)
-            SparkleWave(t: (elapsed - 0.32) / 0.95, turn: 1.0 / 16, radius: radius)
             // a bright flash in the middle as it starts
             Circle().fill(.white)
                 .frame(width: radius * 1.2, height: radius * 1.2)
