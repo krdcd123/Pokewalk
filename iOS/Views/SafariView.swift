@@ -37,6 +37,9 @@ struct SafariView: View {
     @State private var spriteHidden = false
     @State private var flash = 0.0
     @State private var shinyStart: Date?
+    @State private var chosenBerry: String?
+    /// Test battle: MissingNo. sits on a random type's platform each time, so you can see them all
+    @State private var testTerrain: PokeType = PokeType.allCases.randomElement() ?? .normal
 
     private struct Flight { var from: CGPoint; var to: CGPoint; var start: Date; var duration: Double }
 
@@ -204,7 +207,7 @@ struct SafariView: View {
         let cy = feet - (b.bottom - b.size.height / 2) * L.e - lift
         let dx = -L.W * (1 - p)
         ZStack {
-            BattlePlatform(type: test ? nil : wild.species.types.first, width: L.W * 0.52)
+            BattlePlatform(type: test ? testTerrain : wild.species.types.first, width: L.W * 0.52)
                 .position(L.enemyPlatform)
             Group {
                 if test { MissingNoSprite() } else { AnimatedSprite(speciesID: wild.speciesID, shiny: wild.isShiny) }
@@ -358,39 +361,49 @@ struct SafariView: View {
         let canAct = introDone && showRates && !busy && safari.phase == .active
         return HStack(alignment: .center, spacing: 10) {
             // Berry: tap throws the one you have most of; hold to pick which
+            // Berry: tap throws the chosen berry; hold to choose which (choosing doesn't throw it)
             Menu {
                 ForEach(ownedBerries, id: \.self) { key in
-                    Button("\(Dex.itemName(key)) ×\(store.state.bag[key] ?? 0)") { throwBerry(key) }
+                    Button {
+                        chosenBerry = key
+                    } label: {
+                        if key == currentBerry {
+                            Label("\(Dex.itemName(key)) ×\(store.state.bag[key] ?? 0)", systemImage: "checkmark")
+                        } else {
+                            Text("\(Dex.itemName(key)) ×\(store.state.bag[key] ?? 0)")
+                        }
+                    }
                 }
             } label: {
-                controlLabel(berryCount == 0 ? "No berries" : "Berry ×\(berryCount)",
+                controlLabel(currentBerry.map { "\(Dex.itemName($0).replacingOccurrences(of: " Berry", with: "")) ×\(store.state.bag[$0] ?? 0)" }
+                                 ?? "No berries",
                              width: L.sideButtonWidth, height: L.buttonsHeight, tint: Theme.orange) {
-                    if let key = ownedBerries.first {
+                    if let key = currentBerry {
                         ItemSprite(key: key).frame(width: 44, height: 44)
                     } else {
                         Image(systemName: "leaf.fill").font(.system(size: 34, weight: .bold))
                     }
                 }
             } primaryAction: {
-                if let key = ownedBerries.first { throwBerry(key) }
+                if let key = currentBerry { throwBerry(key) }
             }
             .disabled(!canAct || berryCount == 0 || test)
             .opacity(berryCount == 0 ? 0.55 : 1)
 
             // Ball: tap throws it; hold to switch ball
             Menu {
-                ForEach(BallKind.allCases.filter { !test && ($0.isStepBall || store.state.balls[$0, default: 0] > 0) }) { k in
+                ForEach(BallKind.allCases.filter { test || $0.isStepBall || store.state.balls[$0, default: 0] > 0 }) { k in
                     Button {
                         ball = k
                         SoundKit.shared.play(.select)
                     } label: {
                         if k == ball {
-                            Label("\(k.name) ×\(store.state.balls[k, default: 0])", systemImage: "checkmark")
+                            Label("\(k.name) ×\(test ? 99 : store.state.balls[k, default: 0])", systemImage: "checkmark")
                         } else {
-                            Text("\(k.name) ×\(store.state.balls[k, default: 0])")
+                            Text("\(k.name) ×\(test ? 99 : store.state.balls[k, default: 0])")
                         }
                     }
-                    .disabled(store.state.balls[k, default: 0] == 0)
+                    .disabled(!test && store.state.balls[k, default: 0] == 0)
                 }
             } label: {
                 controlLabel("\(ball.name) ×\(ballsLeft)", width: L.ballButtonWidth, height: L.buttonsHeight,
@@ -579,6 +592,11 @@ struct SafariView: View {
     private var ownedBerries: [String] {
         ItemCatalog.berries.filter { (store.state.bag[$0] ?? 0) > 0 }
             .sorted { (store.state.bag[$0] ?? 0) > (store.state.bag[$1] ?? 0) }
+    }
+    /// The berry the Berry button throws: the one you picked (while you still have it), else your most plentiful.
+    private var currentBerry: String? {
+        if let k = chosenBerry, (store.state.bag[k] ?? 0) > 0 { return k }
+        return ownedBerries.first
     }
     private var berryCount: Int { ItemCatalog.berries.reduce(0) { $0 + (store.state.bag[$1] ?? 0) } }
 
