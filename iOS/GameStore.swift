@@ -578,8 +578,6 @@ final class GameStore: ObservableObject {
         toast = "Your lure attracted a wild \(enc.species.name)!\(enc.isShiny ? " ✨" : "") It's in your encounters."
     }
 
-    func buyFishingRod() -> Bool {
-
     func fish(with bait: String) -> Fishing.Result {
         var result = Fishing.Result.notReady
         let here = tracker.currentLocation().map {
