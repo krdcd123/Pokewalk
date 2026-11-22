@@ -31,6 +31,25 @@ enum ShortcutSteps {
     static var lastSync: Date? { d.object(forKey: "shortcutLastSync") as? Date }
 }
 
+/// Calories burned today (Apple Health › Active Energy, which includes your workouts) → in-game money.
+struct SyncHealthCaloriesIntent: AppIntent {
+    static var title: LocalizedStringResource = "Sync Calories to PokéWalk"
+    static var description = IntentDescription("Gives PokéWalk today's active calories from Apple Health. Every 10 kcal you burn earns ₽1.")
+    static var openAppWhenRun = false
+
+    @Parameter(title: "Active calories today (kcal)") var calories: Double
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Sync \(\.$calories) kcal to PokéWalk")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let earned = GameStore.shared.syncCalories(calories)
+        return .result(dialog: earned > 0 ? "You earned ₽\(earned) in PokéWalk!" : "No new calories since the last sync.")
+    }
+}
+
 struct SyncHealthStepsIntent: AppIntent {
     static var title: LocalizedStringResource = "Sync Steps to PokéWalk"
     static var description = IntentDescription("Gives PokéWalk today's step total from Apple Health (including your Apple Watch).")

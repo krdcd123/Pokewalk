@@ -485,6 +485,30 @@ final class GameStore: ObservableObject {
         }
     }
 
+    /// Active calories from Apple Health (via the Shortcut): ₽1 for every 10 kcal burned today.
+    /// The latest total for the day replaces the last one, so only new calories pay out.
+    static let pokeDollarsPerKcal = 0.1
+
+    @discardableResult
+    func syncCalories(_ total: Double) -> Int {
+        var earned = 0, gained = 0.0
+        mutate { s in
+            let today = DailyStamps.key(.now)
+            if s.caloriesDay != today { s.caloriesDay = today; s.caloriesPaid = 0 }
+            let t = max(0, total)
+            guard t > s.caloriesPaid else { return }
+            earned = Int(t * Self.pokeDollarsPerKcal) - Int(s.caloriesPaid * Self.pokeDollarsPerKcal)
+            gained = t - s.caloriesPaid
+            s.lifetimeCalories += gained
+            s.caloriesPaid = t
+            s.money += earned
+        }
+        if earned > 0 {
+            toast = "Burned \(Int(gained.rounded())) kcal — you earned ₽\(earned)!"
+        }
+        return earned
+    }
+
     func buyFishingRod() -> Bool {
         guard (state.bag[Fishing.rodKey] ?? 0) == 0, state.money >= Fishing.rodPrice else { return false }
         mutate { s in

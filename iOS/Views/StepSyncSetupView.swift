@@ -3,6 +3,7 @@ import SwiftUI
 /// Guided setup for the Shortcut that passes Apple Health steps (incl. Apple Watch) to PokéWalk.
 /// One Shortcut does the work; a few automations run it.
 struct StepSyncSetupView: View {
+    @EnvironmentObject private var store: GameStore
     @State private var done: Set<Int> = Self.loadDone()
     @State private var lastSync = ShortcutSteps.lastSync
     @State private var copied: String?
@@ -128,6 +129,17 @@ struct StepSyncSetupView: View {
                     Text("Want distance too?").font(.rounded(15, .heavy))
                     Text("In the same Shortcut, add another Find Health Samples (Type: Walking + Running Distance, Start Date is today, Unit: m, Group by: Day), then Calculate Statistics › Sum, and put that into Sync Steps' Distance.")
                         .font(.rounded(13)).foregroundStyle(Theme.inkSoft)
+                }
+                .glassRow()
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Earn money from workouts").font(.rounded(15, .heavy))
+                    Text("Every 10 kcal you burn earns ₽1. In the same Shortcut (or a new one), add Find Health Samples (Type: Active Energy, Start Date is today, Unit: kcal, Group by: Day), then Calculate Statistics › Sum, then Sync Calories to PokéWalk with that Sum. Active Energy includes your Apple Watch workouts. Only new calories pay out each time it runs.")
+                        .font(.rounded(13)).foregroundStyle(Theme.inkSoft)
+                    Text("Burned today so far: \(Int(store.state.caloriesDay == DailyStamps.key(.now) ? store.state.caloriesPaid : 0)) kcal")
+                        .font(.rounded(13, .heavy)).foregroundStyle(Theme.tealDark)
                 }
                 .glassRow()
             }
