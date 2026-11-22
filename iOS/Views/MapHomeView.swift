@@ -360,7 +360,7 @@ struct MapHomeView: View {
                 }
             }
             HStack(alignment: .bottom) {
-                Button { SoundKit.shared.play(.menuOpen); withAnimation(.spring(duration: 0.4)) { sheet = .party } } label: {
+                Button { Haptics.tap(); SoundKit.shared.play(.menuOpen); withAnimation(.spring(duration: 0.4)) { sheet = .party } } label: {
                     // Your trainer's small overworld sprite, walking on the spot.
                     TrainerSprite(style: store.state.trainer.style, pose: walking.isDriving ? .bike : .walk,
                                   animating: walking.isWalking || walking.isDriving)
@@ -387,7 +387,7 @@ struct MapHomeView: View {
 
                 Spacer()
 
-                Button { SoundKit.shared.play(.menuOpen); withAnimation(.spring(duration: 0.4)) { sheet = .menu } } label: {
+                Button { Haptics.tap(); SoundKit.shared.play(.menuOpen); withAnimation(.spring(duration: 0.4)) { sheet = .menu } } label: {
                     BallOutline(lineWidth: 3.5)
                         .foregroundStyle(.white)
                         .frame(width: 42, height: 42)
@@ -401,7 +401,7 @@ struct MapHomeView: View {
 
                 Spacer()
 
-                Button { withAnimation(.spring(duration: 0.4)) { sheet = .encounters } } label: {
+                Button { Haptics.tap(); withAnimation(.spring(duration: 0.4)) { sheet = .encounters } } label: {
                     WildGrassIcon()
                         .foregroundStyle(.white)
                         .frame(width: 64, height: 64)
@@ -758,6 +758,7 @@ struct WeatherPill: View {
             .glassCard(18)
             .contentShape(RoundedRectangle(cornerRadius: 18))
             .onTapGesture {
+                SoundKit.shared.play(.select)
                 withAnimation(.snappy) { showInfo.toggle() }
                 if showInfo {
                     Task { try? await Task.sleep(for: .seconds(6)); withAnimation(.snappy) { showInfo = false } }
@@ -780,4 +781,11 @@ struct WeatherPill: View {
             img.symbolEffect(.breathe.pulse.byLayer, options: .repeating)
         }
     }
+}
+
+
+/// A small vibration for button presses.
+enum Haptics {
+    static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+    static func hold() { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
 }

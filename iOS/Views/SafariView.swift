@@ -401,7 +401,10 @@ struct SafariView: View {
             } primaryAction: {
                 if let key = currentBerry { throwBerry(key) }
             }
-            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in SoundKit.shared.play(.menuOpen) })
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+                Haptics.hold()
+                SoundKit.shared.play(.menuOpen)
+            })
             .disabled(!canAct || berryCount == 0 || test)
             .opacity(berryCount == 0 ? 0.55 : 1)
 
@@ -435,7 +438,10 @@ struct SafariView: View {
                 if ballsLeft > 0 { throwBall(L) }
                 else { message = "No \(ball.name)s left! Hold to pick another." }
             }
-            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in SoundKit.shared.play(.menuOpen) })
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+                Haptics.hold()
+                SoundKit.shared.play(.menuOpen)
+            })
             .disabled(!canAct)
             .opacity(ballsLeft > 0 ? 1 : 0.55)
             .accessibilityLabel("Throw \(ball.name), \(ballsLeft) left. Hold to change ball.")
