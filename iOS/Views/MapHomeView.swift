@@ -381,8 +381,7 @@ struct MapHomeView: View {
                 Spacer()
 
                 Button { withAnimation(.spring(duration: 0.4)) { sheet = .encounters } } label: {
-                    Image(systemName: "leaf.fill")
-                        .font(.system(size: 26, weight: .bold))
+                    WildGrassIcon()
                         .foregroundStyle(.white)
                         .frame(width: 64, height: 64)
                         .contentShape(Circle())
@@ -401,6 +400,19 @@ struct MapHomeView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Wild Pokémon waiting: \(store.state.pending.count)")
+                // A lure going: a little timer bubble above the wild Pokémon button
+                .overlay(alignment: .top) {
+                    if let lure = store.state.activeLure {
+                        Button { withAnimation(.spring(duration: 0.4)) { sheet = .encounters } } label: {
+                            LureTimerBubble(lure: lure)
+                        }
+                        .buttonStyle(.plain)
+                        .offset(y: -66)
+                        .transition(.scale.combined(with: .opacity))
+                        .accessibilityLabel("Lure timer")
+                    }
+                }
+                .animation(.spring(duration: 0.35), value: store.state.activeLure)
             }
         }
     }
@@ -409,6 +421,35 @@ struct MapHomeView: View {
         content()
             .padding(.horizontal, 14).padding(.vertical, 10)
             .glassCard(20)
+    }
+}
+
+/// Counts down the lure: a ring that fills up, with the time left inside.
+struct LureTimerBubble: View {
+    let lure: ActiveLure
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { tl in
+            let total = lure.endsAt.timeIntervalSince(lure.startedAt)
+            let left = max(0, lure.endsAt.timeIntervalSince(tl.date))
+            let done = 1 - left / max(1, total)
+            ZStack {
+                Circle().stroke(.white.opacity(0.2), lineWidth: 3)
+                Circle().trim(from: 0, to: done)
+                    .stroke(Theme.teal, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                VStack(spacing: 0) {
+                    ItemSprite(key: Fishing.lureKey(berries: lure.berries)).frame(width: 18, height: 18)
+                    Text(left > 0 ? String(format: "%d:%02d", Int(left) / 60, Int(left) % 60) : "Ready!")
+                        .font(.rounded(10, .black)).monospacedDigit()
+                        .foregroundStyle(.white)
+                }
+            }
+            .padding(4)
+            .frame(width: 54, height: 54)
+            .glassCircle(tint: Theme.teal.opacity(0.5))
+            .shadow(color: .black.opacity(0.3), radius: 5, y: 2)
+        }
     }
 }
 

@@ -253,6 +253,7 @@ struct BagView: View {
     @State private var openItem: String?
     @State private var pocket: Pocket = .balls
     @State private var fished: PendingEncounter?
+    @State private var mixing: MixRequest?
     @EnvironmentObject private var store: GameStore
 
     private func keys(in p: Pocket) -> [String] {
@@ -295,7 +296,7 @@ struct BagView: View {
                     Text("A Poké Ball every \(store.state.settings.ballSteps.formatted()) steps (every 10th is a Great Ball, every 50th an Ultra Ball). Rarer balls turn up as items, or buy them at the Poké Mart.")
                 }
             } else {
-                if pocket == .berries { BaitMaker() }
+                if pocket == .berries { BaitMaker { mixing = MixRequest(lure: $0) } }
                 if pocket == .key, (store.state.bag[Fishing.rodKey] ?? 0) > 0 {
                     Section {
                         FishingRodRow { fished = $0 }.glassRow()
@@ -337,6 +338,7 @@ struct BagView: View {
         .navigationTitle("Bag")
         .glassScreen()
         .fullScreenCover(item: $fished) { SafariView(wild: $0) }
+        .sheet(item: $mixing) { BerryMixSheet(lure: $0.lure) }
     }
 
     private var emptyText: String {
@@ -1112,7 +1114,8 @@ private struct BagItemRow: View {
 private struct BaitMaker: View {
     @EnvironmentObject private var store: GameStore
     @State private var lure = false
-    @State private var picking = false
+    /// Opens the berry picker (presented by the Bag itself — a sheet attached inside a List row closed on its own)
+    var make: (Bool) -> Void
 
     private var berries: Int { ItemCatalog.berries.reduce(0) { $0 + (store.state.bag[$1] ?? 0) } }
 
@@ -1125,7 +1128,7 @@ private struct BaitMaker: View {
                         Text("Lure (30 min)").tag(true)
                     }
                     .pickerStyle(.segmented)
-                    Button { picking = true } label: {
+                    Button { make(lure) } label: {
                         HStack(spacing: 10) {
                             ItemSprite(key: lure ? Fishing.lureKey(berries: 1) : Fishing.baitKey(berries: 1))
                                 .frame(width: 28, height: 28)
@@ -1146,12 +1149,11 @@ private struct BaitMaker: View {
             } footer: {
                 Text("Choose up to \(Fishing.maxBerries) berries to mix. Bait is for the Fishing Rod; a lure attracts a wild Pokémon after 30 minutes. More berries, better odds. What you make goes in the Items pocket.")
             }
-            .sheet(isPresented: $picking) {
-                BerryMixSheet(lure: lure).environmentObject(store)
-            }
         }
     }
 }
+
+struct MixRequest: Identifiable { let id = UUID(); let lure: Bool }
 
 /// Pick exactly which berries go into a bait or lure.
 private struct BerryMixSheet: View {
@@ -1204,9 +1206,9 @@ private struct BerryMixSheet: View {
                     }
                 }
             }
-            .scrollContentBackground(.hidden)
             .navigationTitle(lure ? "Make a lure" : "Make bait")
             .navigationBarTitleDisplayMode(.inline)
+            .glassScreen(transparent: true)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -1223,7 +1225,7 @@ private struct BerryMixSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
-        .presentationBackground(.ultraThinMaterial)
+        // no custom background: iOS 26 gives sheets the Liquid Glass look, like the rest of the app
     }
 }
 

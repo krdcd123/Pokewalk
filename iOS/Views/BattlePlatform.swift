@@ -132,8 +132,20 @@ struct BattlePlatform: View {
     }
 }
 
+/// The wild Pokémon button's icon: a clump of tall wild grass.
+struct WildGrassIcon: View {
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            GrassTuft().frame(width: 16, height: 20).offset(x: -9, y: 0)
+            GrassTuft().frame(width: 16, height: 20).offset(x: 9, y: 0)
+            GrassTuft().frame(width: 20, height: 28)
+        }
+        .frame(width: 34, height: 30, alignment: .bottom)
+    }
+}
+
 /// Three little blades of grass.
-private struct GrassTuft: Shape {
+struct GrassTuft: Shape {
     func path(in r: CGRect) -> Path {
         var p = Path()
         let w = r.width, h = r.height
