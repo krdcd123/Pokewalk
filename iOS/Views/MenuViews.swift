@@ -243,7 +243,7 @@ struct BagView: View {
         }
         static func of(_ key: String) -> Pocket {
             if key == Fishing.rodKey { return .key }
-            if ItemCatalog.isBerry(key) || Fishing.isBait(key) { return .berries }
+            if ItemCatalog.isBerry(key) || Fishing.isBait(key) || Fishing.isLure(key) { return .berries }
             if key == "rare-candy" || ExpCandy.exp(key) != nil { return .candies }
             return .items
         }
@@ -988,6 +988,7 @@ private struct BagItemRow: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(Dex.itemName(key)).font(.rounded(16, .heavy))
                         Text(Fishing.isBait(key) ? "Berries mixed into bait. Use it with the Fishing Rod (Key Items)."
+                             : Fishing.isLure(key) ? "Set it and, after 30 minutes, it attracts a wild Pokémon — rarer with more berries."
                              : GameRules.itemDescription(key)).font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                             .lineLimit(expanded ? nil : 1)
                     }
@@ -1000,7 +1001,18 @@ private struct BagItemRow: View {
             }
             .buttonStyle(.plain)
 
-            if expanded, let n = Fishing.baitBerries(key) {
+            if expanded, let n = Fishing.lureBerries(key) {
+                Text("Picks the rarest of \(Fishing.lurePicks(berries: n)) wild Pokémon · +\(Fishing.lureLevelBonus(berries: n)) levels")
+                    .font(.rounded(12, .heavy)).foregroundStyle(Theme.tealDark)
+                Button { setLure() } label: {
+                    Text(store.state.activeLure == nil ? "Use lure" : "A lure is already going")
+                        .font(.rounded(14, .heavy)).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity).frame(height: 38)
+                        .background(Theme.teal.opacity(store.state.activeLure == nil ? 0.8 : 0.3), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(store.state.activeLure != nil)
+            } else if expanded, let n = Fishing.baitBerries(key) {
                 let w = Fishing.tierWeights(berries: n), total = w.reduce(0, +)
                 Text("\(Int(Fishing.biteChance(berries: n) * 100))% chance of a bite · \(Int((w[2] / total * 100).rounded()))% chance of a rare catch")
                     .font(.rounded(12, .heavy)).foregroundStyle(Theme.tealDark)
@@ -1038,7 +1050,10 @@ private struct BagItemRow: View {
         }
         // Hold an item: use it on a party Pokémon, or sell it
         .contextMenu {
-            if !Fishing.isBait(key) && ItemCatalog.sellPrice[key] == nil {
+            if Fishing.isLure(key) {
+                Button("Use lure", systemImage: "sparkles") { setLure() }.disabled(store.state.activeLure != nil)
+            }
+            if !Fishing.isBait(key) && !Fishing.isLure(key) && ItemCatalog.sellPrice[key] == nil {
                 Menu("Use on…", systemImage: "hand.point.up.left.fill") {
                     ForEach(store.state.party) { mon in
                         Button("\(mon.name) · Lv \(mon.level)") { use(on: mon) }
@@ -1053,6 +1068,16 @@ private struct BagItemRow: View {
                     Button("Sell all \(have) · ₽\((price * have).formatted())", systemImage: "yensign.circle.fill") { sell(have) }
                 }
             }
+        }
+    }
+
+    private func setLure() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        if store.useLure(key) {
+            SoundKit.shared.play(.useItem)
+            store.toast = "Lure set! Check your wild encounters in 30 minutes."
+        } else {
+            store.toast = "You already have a lure going."
         }
     }
 
@@ -1086,6 +1111,7 @@ private struct BagItemRow: View {
 private struct BaitMaker: View {
     @EnvironmentObject private var store: GameStore
     @State private var count = 3
+    @State private var lure = false
 
     private var berries: Int { ItemCatalog.berries.reduce(0) { $0 + (store.state.bag[$1] ?? 0) } }
 
@@ -1095,11 +1121,17 @@ private struct BaitMaker: View {
             let w = Fishing.tierWeights(berries: n), total = w.reduce(0, +)
             Section {
                 VStack(alignment: .leading, spacing: 10) {
+                    Picker("Make", selection: $lure) {
+                        Text("Bait (fishing)").tag(false)
+                        Text("Lure (30 min)").tag(true)
+                    }
+                    .pickerStyle(.segmented)
                     HStack(spacing: 12) {
-                        ItemSprite(key: Fishing.baitKey(berries: n)).frame(width: 30, height: 30)
+                        ItemSprite(key: lure ? Fishing.lureKey(berries: n) : Fishing.baitKey(berries: n)).frame(width: 30, height: 30)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(Fishing.baitName(berries: n)).font(.rounded(16, .heavy))
-                            Text("\(Int(Fishing.biteChance(berries: n) * 100))% bite · \(Int((w[2] / total * 100).rounded()))% rare catch")
+                            Text(lure ? Fishing.lureName(berries: n) : Fishing.baitName(berries: n)).font(.rounded(16, .heavy))
+                            Text(lure ? "Rarest of \(Fishing.lurePicks(berries: n)) wild Pokémon · +\(Fishing.lureLevelBonus(berries: n)) levels"
+                                      : "\(Int(Fishing.biteChance(berries: n) * 100))% bite · \(Int((w[2] / total * 100).rounded()))% rare catch")
                                 .font(.rounded(12, .heavy)).foregroundStyle(Theme.tealDark)
                         }
                     }
@@ -1109,12 +1141,12 @@ private struct BaitMaker: View {
                             .font(.rounded(15, .heavy))
                         Button {
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            if store.makeBait(berries: n) {
+                            if store.makeBait(berries: n, lure: lure) {
                                 SoundKit.shared.play(.useItem)
-                                store.toast = "Made \(Fishing.baitName(berries: n))!"
+                                store.toast = "Made \(lure ? Fishing.lureName(berries: n) : Fishing.baitName(berries: n))!"
                             }
                         } label: {
-                            Text("Make bait").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                            Text(lure ? "Make lure" : "Make bait").font(.rounded(14, .heavy)).foregroundStyle(.white)
                                 .padding(.horizontal, 14).frame(height: 36)
                                 .background(Theme.teal.opacity(0.8), in: Capsule())
                         }
@@ -1123,9 +1155,9 @@ private struct BaitMaker: View {
                 }
                 .glassRow()
             } header: {
-                Text("Make bait")
+                Text("Make bait or a lure")
             } footer: {
-                Text("Mix up to \(Fishing.maxBerries) berries into bait for the Fishing Rod (sold at the Poké Mart). More berries, better odds.")
+                Text("Mix up to \(Fishing.maxBerries) berries. Bait is for the Fishing Rod; a lure attracts a wild Pokémon after 30 minutes. More berries, better odds.")
             }
         }
     }
@@ -1296,6 +1328,36 @@ struct ShopView: View {
                 }
                 .glassRow()
             } header: { Text("Key items") }
+
+            Section {
+                ForEach([false, true], id: \.self) { isLure in
+                    ForEach(Fishing.shopSizes, id: \.self) { n in
+                        let key = isLure ? Fishing.lureKey(berries: n) : Fishing.baitKey(berries: n)
+                        let price = Fishing.price(key) ?? 0
+                        HStack(spacing: 12) {
+                            ItemSprite(key: key).frame(width: 30, height: 30)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(Dex.itemName(key)).font(.rounded(15, .heavy))
+                                Text("You have \(store.state.bag[key] ?? 0)").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                            }
+                            Spacer()
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                if store.buyBaitOrLure(key) { store.toast = "Bought a \(Dex.itemName(key))!" }
+                            } label: {
+                                Text("₽\(price.formatted())").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                                    .padding(.horizontal, 14).frame(height: 36)
+                                    .background(store.state.money >= price ? Theme.teal.opacity(0.8) : .white.opacity(0.1), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(store.state.money < price)
+                        }
+                        .glassRow()
+                    }
+                }
+            } header: { Text("Bait & lures") } footer: {
+                Text("Or make your own from berries in the Bag (Berries pocket) — it's cheaper.")
+            }
         }
         .scrollContentBackground(.hidden)
         .navigationTitle("Poké Mart")

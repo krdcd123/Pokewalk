@@ -479,7 +479,30 @@ struct EncounterListView: View {
         NavigationStack {
             List {
                 let live = store.state.pending.filter { $0.expiresAt > now }
-                if live.isEmpty {
+                // A lure that's been set: counts down 30 minutes, then a wild Pokémon appears in this list
+                if let lure = store.state.activeLure {
+                    HStack(spacing: 12) {
+                        ItemSprite(key: Fishing.lureKey(berries: lure.berries)).frame(width: 40, height: 40)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(Fishing.lureName(berries: lure.berries)).font(.rounded(16, .heavy)).foregroundStyle(Theme.ink)
+                            ProgressView(timerInterval: lure.startedAt...lure.endsAt, countsDown: false) { EmptyView() }
+                                currentValueLabel: { EmptyView() }
+                                .tint(Theme.teal)
+                            Text("Something will be attracted when the timer runs out")
+                                .font(.rounded(11)).foregroundStyle(Theme.inkSoft)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 1) {
+                            Text(timerInterval: now...max(now, lure.endsAt), countsDown: true)
+                                .font(.rounded(14, .heavy)).monospacedDigit().foregroundStyle(Theme.tealDark)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 64, alignment: .trailing)
+                            Text("lure").font(.rounded(10)).foregroundStyle(Theme.inkSoft)
+                        }
+                    }
+                    .glassRow()
+                }
+                if live.isEmpty && store.state.activeLure == nil {
                     ContentUnavailableView("No wild Pokémon yet", systemImage: "leaf",
                                            description: Text("One appears about every \(store.state.settings.encounterSteps) steps. Keep walking!"))
                         .listRowBackground(Color.clear)
@@ -510,6 +533,9 @@ struct EncounterListView: View {
             }
             .navigationTitle("Wild Pokémon")
             .navigationBarTitleDisplayMode(.inline)
+            .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+                if let lure = store.state.activeLure, Date() >= lure.endsAt { Task { await store.checkLure() } }
+            }
             .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { t in
                 now = t
                 store.pruneExpiredEncounters()

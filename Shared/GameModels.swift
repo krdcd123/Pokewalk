@@ -279,6 +279,13 @@ struct StepCounters: Codable, Hashable {
 
 // MARK: - Save game
 
+/// A lure that's been set: after `endsAt`, it brings a wild Pokémon.
+struct ActiveLure: Codable, Equatable {
+    var berries: Int
+    var startedAt: Date
+    var endsAt: Date
+}
+
 struct GameState: Codable {
     var version = 2
     var trainer = Trainer.new(named: "Trainer")
@@ -304,6 +311,7 @@ struct GameState: Codable {
     var caloriesDay = ""              // day the calorie total below is for
     var caloriesPaid: Double = 0      // today's active calories already turned into money
     var lifetimeCalories: Double = 0
+    var activeLure: ActiveLure?
 
     static let maxParty = 6
 
@@ -430,6 +438,7 @@ extension GameState {
         caloriesDay = c.value(.caloriesDay, "")
         caloriesPaid = c.value(.caloriesPaid, 0)
         lifetimeCalories = c.value(.lifetimeCalories, 0)
+        activeLure = c.value(.activeLure, nil)
     }
 }
 

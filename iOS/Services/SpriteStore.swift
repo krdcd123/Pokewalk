@@ -103,7 +103,8 @@ final class SpriteStore {
     }
 
     func itemURL(_ key: String) async -> URL? {
-        let k = Fishing.isBait(key) ? "honey" : key            // bait looks like a pot of Honey
+        // bait looks like a pot of Honey, a lure like an incense
+        let k = Fishing.isBait(key) ? "honey" : Fishing.isLure(key) ? "lax-incense" : key
         return await url(.items, id: 0, key: k, name: k)
     }
 

@@ -16,6 +16,31 @@ enum Fishing {
     }
     static func isBait(_ key: String) -> Bool { baitBerries(key) != nil }
 
+    // MARK: Lures — set one going and after 30 minutes it attracts a wild Pokémon (better lure, rarer Pokémon)
+
+    static let lureDuration: TimeInterval = 30 * 60
+    static func lureKey(berries n: Int) -> String { "lure-\(n)" }
+    static func lureBerries(_ key: String) -> Int? {
+        guard key.hasPrefix("lure-") else { return nil }
+        return Int(key.dropFirst(5))
+    }
+    static func isLure(_ key: String) -> Bool { lureBerries(key) != nil }
+    static func lureName(berries n: Int) -> String {
+        let tier = n <= 2 ? "Plain" : n <= 4 ? "Sweet" : n <= 7 ? "Rich" : "Deluxe"
+        return "\(tier) Lure (\(n) \(n == 1 ? "berry" : "berries"))"
+    }
+    /// How many Pokémon the lure "considers" — it brings the rarest of them, a few levels higher.
+    static func lurePicks(berries n: Int) -> Int { 1 + n / 2 }
+    static func lureLevelBonus(berries n: Int) -> Int { n / 3 }
+
+    /// Shop prices (a berry sells for ₽20, so buying ready-made costs a fair bit more than making your own).
+    static let shopSizes = [2, 4, 6, 10]
+    static func price(_ key: String) -> Int? {
+        if let n = baitBerries(key) { return n * 60 }
+        if let n = lureBerries(key) { return n * 90 }
+        return nil
+    }
+
     static func baitName(berries n: Int) -> String {
         let tier = n <= 2 ? "Plain" : n <= 4 ? "Sweet" : n <= 7 ? "Rich" : "Deluxe"
         return "\(tier) Bait (\(n) \(n == 1 ? "berry" : "berries"))"
@@ -40,9 +65,9 @@ enum Fishing {
         return max(0, cooldown - now.timeIntervalSince(last))
     }
 
-    /// Mixes `n` berries (taking the ones you have most of first) into one bait.
+    /// Mixes `n` berries (taking the ones you have most of first) into one bait — or a lure.
     @discardableResult
-    static func makeBait(berries n: Int, in s: inout GameState) -> Bool {
+    static func makeBait(berries n: Int, lure: Bool = false, in s: inout GameState) -> Bool {
         let have = ItemCatalog.berries.reduce(0) { $0 + (s.bag[$1] ?? 0) }
         guard n >= 1, n <= maxBerries, have >= n else { return false }
         var left = n
@@ -53,7 +78,7 @@ enum Fishing {
             if s.bag[k] == 0 { s.bag[k] = nil }
             left -= 1
         }
-        s.bag[baitKey(berries: n), default: 0] += 1
+        s.bag[lure ? lureKey(berries: n) : baitKey(berries: n), default: 0] += 1
         return true
     }
 

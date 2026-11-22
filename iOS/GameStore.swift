@@ -262,6 +262,7 @@ final class GameStore: ObservableObject {
 
     func tick() async {
         guard hasGame, !ticking else { return }
+        await checkLure()
         ticking = true
         defer { ticking = false; lastTick = .now }
 
@@ -372,7 +373,8 @@ final class GameStore: ObservableObject {
 
     /// Posts a notification. `icon` attaches that Pokémon's box sprite (iOS keeps the app icon in the corner;
     /// the sprite shows as the picture on the right).
-    private func notify(title: String, body: String, id: String, category: String? = nil, icon: (Int, Bool)? = nil) {
+    private func notify(title: String, body: String, id: String, category: String? = nil, icon: (Int, Bool)? = nil,
+                        at date: Date? = nil) {
         let c = UNMutableNotificationContent()
         c.title = title
         c.body = body
@@ -385,7 +387,10 @@ final class GameStore: ObservableObject {
                                                        options: [UNNotificationAttachmentOptionsTypeHintKey: "public.png"]) {
                 c.attachments = [att]
             }
-            try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: c, trigger: nil))
+            let trigger = date.map {
+                UNTimeIntervalNotificationTrigger(timeInterval: max(1, $0.timeIntervalSinceNow), repeats: false)
+            }
+            try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id, content: c, trigger: trigger))
         }
     }
 
@@ -518,11 +523,62 @@ final class GameStore: ObservableObject {
         return true
     }
 
-    func makeBait(berries n: Int) -> Bool {
+    func makeBait(berries n: Int, lure: Bool = false) -> Bool {
         var ok = false
-        mutate { ok = Fishing.makeBait(berries: n, in: &$0) }
+        mutate { ok = Fishing.makeBait(berries: n, lure: lure, in: &$0) }
         return ok
     }
+
+    /// Buys a ready-made bait or lure at the Poké Mart.
+    func buyBaitOrLure(_ key: String) -> Bool {
+        guard let price = Fishing.price(key), state.money >= price else { return false }
+        mutate { s in
+            s.money -= price
+            s.bag[key, default: 0] += 1
+        }
+        return true
+    }
+
+    /// Sets a lure going (one at a time): in 30 minutes it attracts a wild Pokémon.
+    func useLure(_ key: String) -> Bool {
+        guard state.activeLure == nil, let n = Fishing.lureBerries(key), (state.bag[key] ?? 0) > 0 else { return false }
+        let now = Date()
+        mutate { s in
+            s.bag[key, default: 0] -= 1
+            if s.bag[key] == 0 { s.bag[key] = nil }
+            s.activeLure = ActiveLure(berries: n, startedAt: now, endsAt: now.addingTimeInterval(Fishing.lureDuration))
+        }
+        notify(title: "Your lure is ready!", body: "Something was attracted by your \(Fishing.lureName(berries: n)). Open PokéWalk to see.",
+               id: "lure", at: now.addingTimeInterval(Fishing.lureDuration))
+        return true
+    }
+
+    /// When the lure's time is up: brings the rarest of a few candidate Pokémon (more berries, more candidates,
+    /// higher level) into your wild encounters.
+    func checkLure() async {
+        guard let lure = state.activeLure, Date() >= lure.endsAt else { return }
+        let loc = tracker.currentLocation()
+        var context = EncounterContext(habitats: await PlaceService.shared.habitats(near: loc),
+                                       isNight: TimeOfDay.at(.now) == .night)
+        if let loc {
+            context.location = MetLocation(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude,
+                                           placeName: await PlaceService.shared.placeName(for: loc))
+        }
+        guard state.activeLure == lure else { return }        // already handled while we were looking
+        let candidates = (0..<Fishing.lurePicks(berries: lure.berries)).map { _ in
+            GameRules.generateEncounter(context: context, lifetimeSteps: state.lifetimeSteps, settings: state.settings)
+        }
+        guard var enc = candidates.min(by: { GameRules.rarityWeight($0.species) < GameRules.rarityWeight($1.species) })
+        else { return }
+        enc.level = min(100, enc.level + Fishing.lureLevelBonus(berries: lure.berries))
+        mutate { s in
+            s.activeLure = nil
+            s.pending.append(enc)
+        }
+        toast = "Your lure attracted a wild \(enc.species.name)!\(enc.isShiny ? " ✨" : "") It's in your encounters."
+    }
+
+    func buyFishingRod() -> Bool {
 
     func fish(with bait: String) -> Fishing.Result {
         var result = Fishing.Result.notReady
