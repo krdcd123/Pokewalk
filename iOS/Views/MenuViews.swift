@@ -353,7 +353,7 @@ struct BagView: View {
     private var footerText: String {
         switch pocket {
         case .berries: return "You find a berry every \(store.state.settings.berrySteps.formatted()) steps (change it in Settings). Throw them in wild encounters so the Pokémon stays longer, or give one to a Pokémon to make it friendlier."
-        case .candies: return "Rare Candies raise a level; Exp. Candies give Exp. Your buddy finds an Exp. Candy about every 300 steps."
+        case .candies: return "Rare Candies raise a level; Exp. Candies give Exp. Each party Pokémon tries to pick something up every 1,500 steps."
         case .key: return "Key items are never used up."
         default: return "An item every \(store.state.settings.itemSteps.formatted()) steps: evolution stones, Link Cables, held items, bitter herbs and valuables to sell. Tap one to use or sell it."
         }
