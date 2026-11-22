@@ -623,6 +623,7 @@ struct SettingsView: View {
     @State private var message: String?
     @State private var confirmReset = false
     @State private var testBattle: PendingEncounter?
+    @AppStorage("homeSet") private var homeSet = false
     @State private var importingSave = false
     @State private var confirmImport: URL?
     @State private var exportURL: URL?
@@ -632,6 +633,43 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                HStack(spacing: 12) {
+                    Image(systemName: homeSet ? "house.fill" : "house").font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(Theme.teal)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Home").font(.rounded(16, .heavy))
+                        Text(homeSet ? "Set — places there show as Home in your Journal" : "Not set")
+                            .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                    }
+                    Spacer()
+                }
+                .glassRow()
+                Button {
+                    if let here = LocationTracker.shared.currentLocation() {
+                        HomeLocation.set(here)
+                        homeSet = true
+                        store.toast = "Home set! Stays here will show as Home in your Journal."
+                    } else {
+                        store.toast = "Couldn't find your location yet — try again in a moment."
+                    }
+                } label: {
+                    Label(homeSet ? "Move home to where I am now" : "Set home to where I am now", systemImage: "location.fill")
+                }
+                .glassRow()
+                if homeSet {
+                    Button(role: .destructive) {
+                        HomeLocation.set(nil)
+                        homeSet = false
+                    } label: {
+                        Label("Remove home", systemImage: "trash")
+                    }
+                    .glassRow()
+                }
+            } header: { Text("Home") } footer: {
+                Text("Stand at home and tap Set. Anywhere within about 120 m counts as home.")
+            }
+
             Section("Trainer") {
                 TextField("Trainer name", text: $name).onSubmit { store.setTrainerName(name) }.glassRow()
                 LabeledContent("ID No.", value: store.state.trainer.idString).glassRow()

@@ -14,6 +14,35 @@ struct Stay: Codable, Identifiable, Hashable {
     var coordinate: CLLocationCoordinate2D { .init(latitude: lat, longitude: lon) }
     var location: CLLocation { CLLocation(latitude: lat, longitude: lon) }
     func duration(now: Date = .now) -> TimeInterval { (left ?? now).timeIntervalSince(arrived) }
+
+    /// What the Journal calls it: "Home" if it's at your home location (Settings), otherwise its place name.
+    var shownName: String? { HomeLocation.contains(location) ? "Home" : name }
+}
+
+/// Your home, set in Settings. Stays within ~120 m of it show as "Home" in the Journal.
+enum HomeLocation {
+    static let radius: CLLocationDistance = 120
+    private static var d: UserDefaults { .standard }
+
+    static var location: CLLocation? {
+        guard d.bool(forKey: "homeSet") else { return nil }
+        return CLLocation(latitude: d.double(forKey: "homeLat"), longitude: d.double(forKey: "homeLon"))
+    }
+
+    static func set(_ loc: CLLocation?) {
+        if let loc {
+            d.set(loc.coordinate.latitude, forKey: "homeLat")
+            d.set(loc.coordinate.longitude, forKey: "homeLon")
+            d.set(true, forKey: "homeSet")
+        } else {
+            d.set(false, forKey: "homeSet")
+        }
+    }
+
+    static func contains(_ loc: CLLocation) -> Bool {
+        guard let home = location else { return false }
+        return home.distance(from: loc) <= radius
+    }
 }
 
 /// Notices when you stop somewhere for a while and names the place (shop, park, street…).

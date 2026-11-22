@@ -94,7 +94,7 @@ struct JournalView: View {
                     }
                     if !showAllTime {
                         ForEach(stays) { st in
-                            Annotation(st.name ?? "Place", coordinate: st.coordinate) {
+                            Annotation(st.shownName ?? "Place", coordinate: st.coordinate) {
                                 Image(systemName: "mappin.circle.fill")
                                     .font(.system(size: 22, weight: .bold))
                                     .foregroundStyle(.white, Theme.teal)
@@ -194,7 +194,7 @@ struct JournalView: View {
                     .font(.rounded(13)).foregroundStyle(Theme.inkSoft)
             } else {
                 if PlaceGroup.make(list).count > 1 {
-                    Text(list.map { $0.name ?? "Somewhere" }.removingDuplicatesInARow().joined(separator: " → "))
+                    Text(list.map { $0.shownName ?? "Somewhere" }.removingDuplicatesInARow().joined(separator: " → "))
                         .font(.rounded(15, .heavy))
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -335,7 +335,7 @@ struct PlaceGroup: Identifiable {
     struct Visit { var stay: Stay; var end: Date? }
     var visits: [Visit]
     var id: UUID { visits[0].stay.id }
-    var name: String? { visits.lazy.compactMap(\.stay.name).first }
+    var name: String? { visits.lazy.compactMap(\.stay.shownName).first }
     var start: Date { visits[0].stay.arrived }
     var end: Date? { visits.last?.end }
     var isOpen: Bool { end == nil }
@@ -350,7 +350,7 @@ struct PlaceGroup: Identifiable {
             if end == nil, i < list.count - 1 { end = list[i + 1].arrived }
             let v = Visit(stay: st, end: end)
             if let last = groups.last?.visits.last?.stay,
-               (last.name != nil && last.name == st.name) || last.location.distance(from: st.location) < PlaceLog.radius * 1.5 {
+               (last.shownName != nil && last.shownName == st.shownName) || last.location.distance(from: st.location) < PlaceLog.radius * 1.5 {
                 groups[groups.count - 1].visits.append(v)
             } else {
                 groups.append(PlaceGroup(visits: [v]))
