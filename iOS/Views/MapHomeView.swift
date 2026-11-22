@@ -153,6 +153,15 @@ struct MapHomeView: View {
             }
         }
         .overlay { ConfettiRain(start: store.confettiAt) }
+        // A pickup notification was tapped: show the Party
+        .onChange(of: store.openPartyAt) { _, at in
+            guard at != nil else { return }
+            store.openPartyAt = nil
+            withAnimation(.spring(duration: 0.4)) { sheet = .party }
+        }
+        .onAppear {
+            if store.openPartyAt != nil { store.openPartyAt = nil; sheet = .party }
+        }
         .fullScreenCover(item: $store.activeEncounter) { SafariView(wild: $0) }
         .animation(.spring(duration: 0.4), value: store.toast)
     }
@@ -359,6 +368,18 @@ struct MapHomeView: View {
                         .frame(width: 64, height: 64, alignment: .center)
                         .contentShape(Circle())
                         .glassCircle()
+                        // red badge: how many of your party are holding something you can take
+                        .overlay(alignment: .topTrailing) {
+                            let holding = store.state.party.filter { !$0.heldItems.isEmpty }.count
+                            if holding > 0 {
+                                Text("\(holding)")
+                                    .font(.rounded(12, .black)).foregroundStyle(.white)
+                                    .frame(minWidth: 22, minHeight: 22)
+                                    .background(Color(hex: 0xD63B3B), in: Circle())
+                                    .overlay(Circle().stroke(.white, lineWidth: 2))
+                                    .offset(x: 4, y: -4)
+                            }
+                        }
                         .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
                 }
                 .buttonStyle(.plain)

@@ -158,7 +158,7 @@ struct OwnedPokemon: Codable, Identifiable, Hashable {
     var evolvedOn: Date?
     var heldItems: [String] = []    // Exp. Candies picked up on walks, until you take them
     var pickupSteps = 0             // its own pickup timer (counts while in the party, empty-handed)
-    var nextPickupAt = 300
+    var nextPickupAt = 1_500
 
     var species: Species { Dex.species(speciesID) }
     var name: String { (nickname?.isEmpty == false) ? nickname! : species.name }
@@ -270,7 +270,7 @@ struct StepCounters: Codable, Hashable {
     var ballsEarnedTotal = 0
     var itemProgress = 0
     var pickupProgress = 0
-    var nextPickupAt = 300
+    var nextPickupAt = 1_500
     var moneyProgress = 0            // ₽0.01 per step → ₽1 every 100 steps
     var berryProgress = 0
 
@@ -388,7 +388,7 @@ extension OwnedPokemon {
         evolvedOn = c.value(.evolvedOn, nil)
         heldItems = c.value(.heldItems, [])
         pickupSteps = c.value(.pickupSteps, 0)
-        nextPickupAt = c.value(.nextPickupAt, 300)
+        nextPickupAt = c.value(.nextPickupAt, 1_500)
     }
 }
 

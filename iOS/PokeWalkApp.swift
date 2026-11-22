@@ -19,7 +19,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        if let id = response.notification.request.content.userInfo["encounterID"] as? String {
+        if (response.notification.request.content.userInfo["open"] as? String) == "pickup" {
+            Task { @MainActor in GameStore.shared.openPartyAt = .now }
+        } else if let id = response.notification.request.content.userInfo["encounterID"] as? String {
             Task { @MainActor in GameStore.shared.openEncounter(id: id) }
         }
         completionHandler()

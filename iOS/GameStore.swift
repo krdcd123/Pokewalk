@@ -16,6 +16,8 @@ final class GameStore: ObservableObject {
     /// When to rain confetti (the daily stamp).
     @Published var confettiAt: Date?
     @Published var activeEncounter: PendingEncounter?
+    /// Set when a pickup notification is tapped: the map opens the Party panel.
+    @Published var openPartyAt: Date?
     @Published var evolutionCandidate: EvolutionCandidate?
     private var rampTimer: Timer?
     @Published var healthError: String?
@@ -319,23 +321,24 @@ final class GameStore: ObservableObject {
         let background = UIApplication.State.current != .active
         var lines: [String] = []
         // Per-Pokémon news (level ups and pickups), each with that Pokémon's box icon
-        var news: [(id: UUID, text: String)] = []
+        var news: [(id: UUID, text: String, pickup: Bool)] = []
         if o.newLevel > o.oldLevel, let buddy = state.buddy {
-            news.append((buddy.id, "\(buddy.name) grew to Lv. \(o.newLevel)!"))
+            news.append((buddy.id, "\(buddy.name) grew to Lv. \(o.newLevel)!", false))
         }
         for up in o.partyLevelUps where up.id != state.buddyID {
-            if let mon = state.mon(up.id) { news.append((mon.id, "\(mon.name) grew to Lv. \(up.level)!")) }
+            if let mon = state.mon(up.id) { news.append((mon.id, "\(mon.name) grew to Lv. \(up.level)!", false)) }
         }
         for pick in o.pickedUp {
             guard let mon = state.mon(pick.id) else { continue }
             let name = Dex.itemName(pick.item)
-            news.append((mon.id, "\(mon.name) picked up \(name.first.map { "AEIOU".contains($0) } == true ? "an" : "a") \(name)!"))
+            news.append((mon.id, "\(mon.name) picked up \(name.first.map { "AEIOU".contains($0) } == true ? "an" : "a") \(name)!", true))
         }
         if background {
             for n in news {
                 let mon = state.mon(n.id)
                 notify(title: n.text, body: mon.map { "Lv. \($0.level) · Open PokéWalk to see." } ?? "",
                        id: "\(n.id.uuidString)-\(Int(Date().timeIntervalSince1970))-\(n.text.hashValue)",
+                       category: n.pickup ? "pickup" : nil,         // tapping a pickup opens your Party
                        icon: mon.map { ($0.speciesID, $0.isShiny) })
             }
         } else {
@@ -380,7 +383,10 @@ final class GameStore: ObservableObject {
         c.body = body
         c.sound = .default
         c.threadIdentifier = category ?? "pokewalk"
-        if let category { c.categoryIdentifier = category; c.userInfo = ["encounterID": id] }
+        if let category {
+            c.categoryIdentifier = category
+            c.userInfo = category == "encounter" ? ["encounterID": id] : ["open": category]
+        }
         Task {
             if let (species, shiny) = icon, let file = await SpriteStore.shared.notificationIcon(speciesID: species, shiny: shiny),
                let att = try? UNNotificationAttachment(identifier: "icon", url: file,

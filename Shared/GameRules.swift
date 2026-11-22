@@ -187,14 +187,20 @@ enum GameRules {
         s.money += s.counters.moneyProgress / 100
         s.counters.moneyProgress %= 100
 
-        // Pickup: each party Pokémon has its own timer — about every 300 of *its* steps (while it's in the
-        // party with empty hands) it finds an Exp. Candy or a berry and holds it until you take it.
+        // Pickup: each party Pokémon has its own timer — every 1,500 of *its* steps (while it's in the party
+        // with empty hands) it tries to find an Exp. Candy or a berry and holds it until you take it.
+        // Sometimes it finds nothing; then it tries again 1,000 steps later.
         for pid in s.partyIDs {
             guard let i = s.index(of: pid), s.pokemon[i].heldItems.count < ExpCandy.carryLimit else { continue }
+            if s.pokemon[i].nextPickupAt < Pickup.retryAfterMiss { s.pokemon[i].nextPickupAt = Pickup.every }  // old 300-step timers
             s.pokemon[i].pickupSteps += steps
             guard s.pokemon[i].pickupSteps >= s.pokemon[i].nextPickupAt else { continue }
             s.pokemon[i].pickupSteps = 0
-            s.pokemon[i].nextPickupAt = Int.random(in: 250...350)
+            guard Double.random(in: 0..<1) >= Pickup.missChance else {
+                s.pokemon[i].nextPickupAt = Pickup.retryAfterMiss
+                continue
+            }
+            s.pokemon[i].nextPickupAt = Pickup.every
             let found = Bool.random() ? weightedPick(ExpCandy.all.map { ($0.key, $0.weight) })
                                       : ItemCatalog.berries.randomElement()!
             s.pokemon[i].heldItems.append(found)
@@ -537,6 +543,12 @@ enum GameRules {
         s.partyIDs.remove(at: from)
         let minIndex = s.partyIDs.first == s.buddyID ? 1 : 0
         s.partyIDs.insert(id, at: min(max(index, minIndex), s.partyIDs.count))
+    }
+
+    enum Pickup {
+        static let every = 1_500          // steps between pickups
+        static let retryAfterMiss = 1_000 // found nothing: try again after this many steps
+        static let missChance = 0.3
     }
 
     static func setBuddy(_ id: UUID, in s: inout GameState) {
