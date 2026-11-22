@@ -419,6 +419,7 @@ final class GameStore: ObservableObject {
         var caught: OwnedPokemon?
         mutate { s in
             s.pending.removeAll { $0.id == safari.wild.id }
+            s.dexSeen.insert(safari.wild.speciesID)        // met it (fished, lured or walked into) — even if it got away
             let w = safari.wild
             var entry = EncounterLogEntry(id: w.id, speciesID: w.speciesID, level: w.level, isShiny: w.isShiny,
                                           date: w.appearedAt, location: w.location ?? self.tracker.currentLocation().map {

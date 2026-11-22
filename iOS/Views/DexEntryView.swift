@@ -17,7 +17,8 @@ struct DexEntryView: View {
     private var yours: [OwnedPokemon] {
         store.state.pokemon.filter { $0.speciesID == species.id }.sorted { $0.metDate < $1.metDate }
     }
-    private var tint: Color { Color(species.primaryType) }
+    /// Type colour once caught; a plain grey for a silhouette (so it doesn't give its type away)
+    private var tint: Color { caught ? Color(species.primaryType) : Color(white: 0.45) }
 
     var body: some View {
         ScrollView {
@@ -28,11 +29,13 @@ struct DexEntryView: View {
                     statsCard
                     detailsCard
                 } else {
-                    Text("Catch one to complete its Pokédex entry.")
+                    Text("You've seen this Pokémon, but it got away. Catch one to fill in its Pokédex entry.")
                         .font(.rounded(14, .heavy)).foregroundStyle(Theme.inkSoft)
+                        .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity).padding().glassCard(18)
                 }
-                evolutionCard
+                // nothing about it (not even its evolutions) until it's caught
+                if caught { evolutionCard }
                 if !yours.isEmpty { yoursCard }
             }
             .padding()
@@ -60,7 +63,7 @@ struct DexEntryView: View {
                 .transition(.scale(scale: 0.8).combined(with: .opacity))
                 .brightness(caught ? 0 : -1).opacity(caught ? 1 : 0.8)      // silhouette until caught
                 .contentShape(Rectangle())
-                .onTapGesture { CryPlayer.shared.play(species.id) }
+                .onTapGesture { if caught { CryPlayer.shared.play(species.id) } }
                 .overlay(alignment: .topTrailing) {
                     if hasShiny {
                         Button {
