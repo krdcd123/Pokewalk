@@ -316,20 +316,13 @@ struct BagView: View {
                             withAnimation(.snappy) { openItem = openItem == key ? nil : key }
                         }
                         .glassRow()
-                        // a swipe that starts on a row is for selling, not for changing pocket
-                        .simultaneousGesture(DragGesture(minimumDistance: 8).onChanged { _ in rowDragAt = .now })
-                        // Swipe left to sell (asks how many first)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            if ItemCatalog.price(key) != nil {
-                                Button {
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    selling = SellRequest(key: key)
-                                } label: {
-                                    Label("Sell", systemImage: "yensign.circle.fill")
-                                }
-                                .tint(Theme.orange)
-                            }
-                        }
+                        // Swipe left to sell (asks how many first); such a swipe doesn't change pocket
+                        .modifier(SwipeToSell(enabled: ItemCatalog.price(key) != nil,
+                                              onDrag: { rowDragAt = .now },
+                                              onSell: {
+                                                  UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                                  selling = SellRequest(key: key)
+                                              }))
                     }
                 } footer: {
                     Text(footerText)
@@ -1173,6 +1166,57 @@ private struct BaitMaker: View {
 
 struct MixRequest: Identifiable { let id = UUID(); let lure: Bool }
 struct SellRequest: Identifiable { let id = UUID(); let key: String }
+
+/// Drag a row left to reveal an orange Sell button; let go past halfway to sell.
+private struct SwipeToSell: ViewModifier {
+    let enabled: Bool
+    var onDrag: () -> Void
+    var onSell: () -> Void
+    @State private var dx: CGFloat = 0
+    @State private var horizontal: Bool?
+
+    private let reveal: CGFloat = 90
+
+    func body(content: Content) -> some View {
+        content
+            .offset(x: dx)
+            .background(alignment: .trailing) {
+                if dx < -2 {
+                    Button(action: { withAnimation(.snappy) { dx = 0 }; onSell() }) {
+                        Label("Sell", systemImage: "yensign.circle.fill")
+                            .font(.rounded(14, .heavy)).foregroundStyle(.white)
+                            .frame(width: max(0, -dx - 8), height: 44)
+                            .background(Theme.orange, in: Capsule())
+                            .opacity(min(1, Double(-dx / 50)))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 14)
+                    .onChanged { v in
+                        guard enabled else { return }
+                        if horizontal == nil { horizontal = abs(v.translation.width) > abs(v.translation.height) * 1.3 }
+                        guard horizontal == true else { return }
+                        onDrag()
+                        dx = min(0, max(-160, v.translation.width))
+                    }
+                    .onEnded { v in
+                        defer { horizontal = nil }
+                        guard enabled, horizontal == true else { return }
+                        onDrag()
+                        if dx < -reveal * 1.2 {
+                            withAnimation(.snappy) { dx = 0 }
+                            onSell()
+                        } else if dx < -40 {
+                            withAnimation(.snappy) { dx = -reveal }       // stays open: tap Sell
+                        } else {
+                            withAnimation(.snappy) { dx = 0 }
+                        }
+                    }
+            )
+    }
+}
 
 /// Liquid Glass pop-up: how many to sell?
 private struct SellSheet: View {
