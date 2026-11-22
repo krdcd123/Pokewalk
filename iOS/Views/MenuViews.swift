@@ -254,6 +254,8 @@ struct BagView: View {
     @State private var pocket: Pocket = .balls
     @State private var fished: PendingEncounter?
     @State private var mixing: MixRequest?
+    @State private var selling: SellRequest?
+    @State private var rowDragAt = Date.distantPast
     @EnvironmentObject private var store: GameStore
 
     private func keys(in p: Pocket) -> [String] {
@@ -314,6 +316,20 @@ struct BagView: View {
                             withAnimation(.snappy) { openItem = openItem == key ? nil : key }
                         }
                         .glassRow()
+                        // a swipe that starts on a row is for selling, not for changing pocket
+                        .simultaneousGesture(DragGesture(minimumDistance: 8).onChanged { _ in rowDragAt = .now })
+                        // Swipe left to sell (asks how many first)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            if ItemCatalog.price(key) != nil {
+                                Button {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    selling = SellRequest(key: key)
+                                } label: {
+                                    Label("Sell", systemImage: "yensign.circle.fill")
+                                }
+                                .tint(Theme.orange)
+                            }
+                        }
                     }
                 } footer: {
                     Text(footerText)
@@ -325,7 +341,8 @@ struct BagView: View {
         .simultaneousGesture(
             DragGesture(minimumDistance: 30).onEnded { v in
                 let dx = v.translation.width, dy = v.translation.height
-                guard abs(dx) > 70, abs(dx) > abs(dy) * 1.8 else { return }
+                guard abs(dx) > 70, abs(dx) > abs(dy) * 1.8,
+                      Date().timeIntervalSince(rowDragAt) > 0.6 else { return }
                 let all = Pocket.allCases
                 guard let i = all.firstIndex(of: pocket) else { return }
                 let next = dx < 0 ? min(all.count - 1, i + 1) : max(0, i - 1)
@@ -339,6 +356,7 @@ struct BagView: View {
         .glassScreen()
         .fullScreenCover(item: $fished) { SafariView(wild: $0) }
         .sheet(item: $mixing) { BerryMixSheet(lure: $0.lure) }
+        .sheet(item: $selling) { SellSheet(key: $0.key) }
     }
 
     private var emptyText: String {
@@ -1154,6 +1172,73 @@ private struct BaitMaker: View {
 }
 
 struct MixRequest: Identifiable { let id = UUID(); let lure: Bool }
+struct SellRequest: Identifiable { let id = UUID(); let key: String }
+
+/// Liquid Glass pop-up: how many to sell?
+private struct SellSheet: View {
+    @EnvironmentObject private var store: GameStore
+    @Environment(\.dismiss) private var dismiss
+    let key: String
+    @State private var count = 1
+
+    var body: some View {
+        let have = store.state.bag[key] ?? 0
+        let price = ItemCatalog.price(key) ?? 0
+        let n = min(max(1, count), max(1, have))
+        VStack(spacing: 16) {
+            HStack(spacing: 12) {
+                ItemSprite(key: key).frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sell \(Dex.itemName(key))?").font(.rounded(18, .heavy))
+                    Text("You have \(have) · ₽\(price) each").font(.rounded(13)).foregroundStyle(Theme.inkSoft)
+                }
+                Spacer()
+            }
+            HStack(spacing: 14) {
+                Button { count = max(1, n - 1) } label: {
+                    Image(systemName: "minus").font(.system(size: 18, weight: .bold)).frame(width: 48, height: 48)
+                        .glassCircle()
+                }
+                .buttonStyle(.plain).disabled(n <= 1)
+                Text("\(n)").font(.rounded(34, .black)).monospacedDigit().frame(minWidth: 70)
+                    .contentTransition(.numericText())
+                Button { count = min(have, n + 1) } label: {
+                    Image(systemName: "plus").font(.system(size: 18, weight: .bold)).frame(width: 48, height: 48)
+                        .glassCircle()
+                }
+                .buttonStyle(.plain).disabled(n >= have)
+                Button("All") { count = have }
+                    .font(.rounded(14, .heavy)).padding(.horizontal, 14).frame(height: 40)
+                    .glassCapsule()
+                    .buttonStyle(.plain)
+            }
+            .animation(.snappy, value: n)
+            HStack(spacing: 12) {
+                Button { dismiss() } label: {
+                    Text("Cancel").font(.rounded(16, .heavy)).frame(maxWidth: .infinity).frame(height: 50)
+                        .glassCapsule()
+                }
+                .buttonStyle(.plain)
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    let earned = store.sell(key, count: n)
+                    if earned > 0 { store.toast = "Sold \(n) for ₽\(earned.formatted()). You have ₽\(store.state.money.formatted())." }
+                    dismiss()
+                } label: {
+                    Text("Sell for ₽\((price * n).formatted())").font(.rounded(16, .heavy)).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity).frame(height: 50)
+                        .glassCapsule(tint: Theme.orange)
+                }
+                .buttonStyle(.plain)
+                .disabled(have == 0)
+            }
+        }
+        .foregroundStyle(Theme.ink)
+        .padding(20)
+        .presentationDetents([.height(270)])
+        // no custom background: iOS 26 draws the sheet in Liquid Glass
+    }
+}
 
 /// Pick exactly which berries go into a bait or lure.
 private struct BerryMixSheet: View {
