@@ -137,7 +137,8 @@ struct BallOpenFX: View {
                     let sx: Double = i % 2 == 0 ? -1 : 1, sy: Double = i < 2 ? -1 : 1
                     Image(uiImage: smoke[step == 3 ? 2 : 0]).interpolation(.none).resizable()
                         .frame(width: 16 * px, height: 16 * px)
-                        .scaleEffect(x: sx, y: sy)
+                        // the smoke piece is drawn as the top-right puff: mirror it out to each corner
+                        .scaleEffect(x: sx, y: -sy)
                         .offset(x: sx * d * px, y: sy * d * px * 0.8)
                         .opacity(step == 3 ? 0.7 : 1)
                 }

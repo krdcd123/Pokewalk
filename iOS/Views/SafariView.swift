@@ -181,16 +181,20 @@ struct SafariView: View {
 
     /// A zoomed-in, blurred view of the map where you met it.
     @ViewBuilder private var background: some View {
-        let loc = wild.location.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
-            ?? LocationTracker.shared.currentLocation()?.coordinate
+        // Where you are now (else where you met it), seen low down in 3D — streets and buildings — facing the
+        // way you're heading, then softly blurred
+        let here = LocationTracker.shared.currentLocation()
+        let loc = here?.coordinate
+            ?? wild.location.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+        let heading = (here?.course ?? -1) >= 0 ? here!.course : 0
         ZStack {
             if let loc {
-                Map(initialPosition: .camera(MapCamera(centerCoordinate: loc, distance: 260, heading: 0, pitch: 55)),
+                Map(initialPosition: .camera(MapCamera(centerCoordinate: loc, distance: 320, heading: heading, pitch: 72)),
                     interactionModes: [])
                     .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
                     .allowsHitTesting(false)
-                    .scaleEffect(1.15)                 // hide the blurred edges
-                    .blur(radius: 14)
+                    .scaleEffect(1.1)                  // hide the blurred edges
+                    .blur(radius: 7)
             } else {
                 AppBackground()
             }
@@ -397,6 +401,7 @@ struct SafariView: View {
             } primaryAction: {
                 if let key = currentBerry { throwBerry(key) }
             }
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in SoundKit.shared.play(.menuOpen) })
             .disabled(!canAct || berryCount == 0 || test)
             .opacity(berryCount == 0 ? 0.55 : 1)
 
@@ -430,6 +435,7 @@ struct SafariView: View {
                 if ballsLeft > 0 { throwBall(L) }
                 else { message = "No \(ball.name)s left! Hold to pick another." }
             }
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.35).onEnded { _ in SoundKit.shared.play(.menuOpen) })
             .disabled(!canAct)
             .opacity(ballsLeft > 0 ? 1 : 0.55)
             .accessibilityLabel("Throw \(ball.name), \(ballsLeft) left. Hold to change ball.")
