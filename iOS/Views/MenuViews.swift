@@ -47,11 +47,12 @@ struct MainMenuView: View {
                         .accessibilityLabel("Settings")
                     }
                     .padding(.top, 4)
+                    .padding(.bottom, 22)          // a bit more room under the title, so the tiles sit lower
                     if let buddy = store.state.buddy {
                         NavigationLink(value: Dest.summary(buddy.id)) { BuddyHeader(mon: buddy) }
                             .buttonStyle(.plain)
                     }
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 16) {
                         ForEach(items) { item in
                             let title = item.title, symbol = item.symbol
                             NavigationLink(value: item.dest) {
@@ -59,7 +60,7 @@ struct MainMenuView: View {
                                     Image(systemName: symbol).font(.system(size: 28, weight: .bold)).foregroundStyle(Theme.tealDark)
                                     Text(title).font(.rounded(17, .black)).foregroundStyle(.white)
                                 }
-                                .frame(maxWidth: .infinity).frame(height: 112)
+                                .frame(maxWidth: .infinity).frame(height: 124)
                                 .contentShape(RoundedRectangle(cornerRadius: 24))
                                 .glassCard(24)
                             }
