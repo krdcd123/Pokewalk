@@ -36,6 +36,8 @@ struct SafariView: View {
     @State private var stars = false
     @State private var spriteHidden = false
     @State private var flash = 0.0
+    /// The ball-opening burst (where and when)
+    @State private var openFX: (start: Date, at: CGPoint)?
     @State private var shinyStart: Date?
     @State private var chosenBerry: String?
     /// Test battle: MissingNo. sits on a random type's platform each time, so you can see them all
@@ -100,6 +102,11 @@ struct SafariView: View {
                         enemy(L, p: p)
                         trainer(L, p: p)
                         thrownBall(L, now: tl.date)
+                        if let fx = openFX {
+                            BallOpenFX(kind: ball, gameBoy: gameBoyBall, start: fx.start, px: L.t * 0.85)
+                                .id(fx.start)
+                                .position(fx.at)
+                        }
                     }
                 }
 
@@ -123,6 +130,9 @@ struct SafariView: View {
         .task(id: ball) { ballFrames = await BattleGfx.ball(ball, for: style) }
         .onAppear(perform: start)
     }
+
+    /// Gold, Kris and Red use their own game's ball graphics and opening effect (for the balls it had).
+    private var gameBoyBall: Bool { BattleGfx.usesGameBoyBall(ball, style: style) }
 
     private var animating: Bool { (slideStart != nil && !introDone) || flight != nil }
 
@@ -218,7 +228,7 @@ struct SafariView: View {
                 .opacity(spriteHidden ? 0 : 1)
                 .scaleEffect(spriteHidden ? 0.1 : 1)
                 .position(x: L.enemyPlatform.x, y: cy)
-            Circle().fill(.white).frame(width: 150, height: 150).blur(radius: 24)
+            Circle().fill(gameBoyBall ? Color.white : ball.openFadeColor).frame(width: 150, height: 150).blur(radius: 24)
                 .opacity(flash).allowsHitTesting(false)
                 .position(hitPoint(L))
             ShinySparkles(start: shinyStart, radius: max(70, (b.bottom - b.top) * L.e * 0.75))
@@ -408,7 +418,13 @@ struct SafariView: View {
             } label: {
                 controlLabel("\(ball.name) ×\(ballsLeft)", width: L.ballButtonWidth, height: L.buttonsHeight,
                              tint: Color(hex: 0xE0393E), big: true) {
-                    ItemSprite(key: ball.itemKey).frame(width: 64, height: 64)
+                    // Gold / Kris / Red: their own game's ball for the ones it had (Gen 2 had no bag icons, so it's the
+                    // in-battle ball); everyone else the bag icon
+                    if gameBoyBall, let closed = ballFrames.first {
+                        Image(uiImage: closed).interpolation(.none).resizable().frame(width: 56, height: 56)
+                    } else {
+                        ItemSprite(key: ball.itemKey).frame(width: 64, height: 64)
+                    }
                 }
             } primaryAction: {
                 if ballsLeft > 0 { throwBall(L) }
@@ -494,6 +510,7 @@ struct SafariView: View {
             // 2. It hits: the ball pops open, the Pokémon is pulled in with a flash, then it snaps shut
             SoundKit.shared.play(.ballOpen)
             ballOpen = true
+            openFX = (Date(), hit)
             withAnimation(.easeOut(duration: 0.12)) { flash = 0.7 }
             withAnimation(.easeIn(duration: 0.35)) { spriteHidden = true }
             try? await Task.sleep(for: .milliseconds(450))
@@ -548,6 +565,7 @@ struct SafariView: View {
             // Broke free: the ball bursts open and the Pokémon comes back out
             SoundKit.shared.play(.ballOpen)
             ballOpen = true
+            openFX = (Date(), ballPos)
             withAnimation(.easeOut(duration: 0.1)) { flash = 0.7 }
             withAnimation(.spring(duration: 0.3)) { spriteHidden = false }
             try? await Task.sleep(for: .milliseconds(180))

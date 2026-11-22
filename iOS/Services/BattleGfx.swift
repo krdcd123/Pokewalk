@@ -265,3 +265,139 @@ struct SpriteBounds {
         size = CGSize(width: W, height: H); top = CGFloat(minY); bottom = CGFloat(maxY + 1)
     }
 }
+
+// MARK: - Ball-opening effects
+
+extension BattleGfx {
+    /// Emerald's ball-opening particles (graphics/battle_anims/sprites/particles.png, 8 frames of 8×8)
+    /// coloured with the circle_impact palette like the game does.
+    static func ballParticles() async -> [UIImage] {
+        guard let d = await data(URL(string: "https://raw.githubusercontent.com/pret/pokeemerald/master/graphics/battle_anims/sprites/particles.png")!,
+                                 name: "particles.png"),
+              let p = await data(URL(string: "https://raw.githubusercontent.com/pret/pokeemerald/master/graphics/battle_anims/sprites/circle_impact.png")!,
+                                 name: "circle_impact.png"),
+              let img = IndexedPNG(d), let pal = IndexedPNG(p)?.palette else { return [] }
+        return img.render(palette: pal, transparentIndex: 0).framesOf(height: 8)
+    }
+
+    /// Crystal's "ball poof" smoke (3 pieces of 16×16) and the Master Ball sparkle (8×8).
+    static func gen2Poof(colour: Bool) async -> (smoke: [UIImage], sparkle: UIImage?) {
+        guard let d = await data(URL(string: "https://raw.githubusercontent.com/pret/pokecrystal/master/gfx/battle_anims/smoke.png")!,
+                                 name: "c_smoke.png"),
+              let smoke = IndexedPNG(d) else { return ([], nil) }
+        // Game Boy shades 0 (black) … 3 (white, see-through)
+        let grey: [UInt32] = [0x484848, 0x9A9A9A, 0xE0E0E0, 0]
+        let smokes = smoke.render(palette: grey.map(Self.rgb), transparentIndex: 3).framesOf(height: 16)
+        var sparkle: UIImage?
+        if let s = await data(URL(string: "https://raw.githubusercontent.com/pret/pokecrystal/master/gfx/battle_anims/speed.png")!,
+                              name: "c_speed.png"),
+           let sp = IndexedPNG(s) {
+            let pal: [UInt32] = colour ? [0x885000, 0xF8B800, 0xFFF0A0, 0] : [0x303030, 0x707070, 0xB8B8B8, 0]
+            sparkle = sp.render(palette: pal.map(Self.rgb), transparentIndex: 3).cropping(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+        return (smokes, sparkle)
+    }
+
+    fileprivate static func rgb(_ c: UInt32) -> (UInt8, UInt8, UInt8) {
+        (UInt8((c >> 16) & 0xFF), UInt8((c >> 8) & 0xFF), UInt8(c & 0xFF))
+    }
+
+    /// Game Boy trainers use their own ball sprite for these (Crystal's, or grey for Red/Blue/Yellow).
+    static func usesGameBoyBall(_ kind: BallKind, style: TrainerStyle) -> Bool {
+        guard style.isGameBoy else { return false }
+        if case .gb = style.sheet { return [.poke, .great, .ultra, .master, .safari].contains(kind) }
+        return [.poke, .great, .ultra, .master].contains(kind)
+    }
+}
+
+/// A tiny decoder for the decomp projects' indexed / greyscale PNGs, keeping the colour *indices*
+/// (needed to apply the game's own palettes). Handles 1/2/4/8-bit, colour type 0 or 3, not interlaced.
+private struct IndexedPNG {
+    let w: Int, h: Int
+    let indices: [UInt8]
+    let palette: [(UInt8, UInt8, UInt8)]?
+
+    init?(_ data: Data) {
+        let b = [UInt8](data)
+        guard b.count > 33, b[1] == 0x50, b[2] == 0x4E, b[3] == 0x47 else { return nil }
+        var i = 8, idat = [UInt8](), pal: [(UInt8, UInt8, UInt8)]?
+        var W = 0, H = 0, depth = 0, ctype = 0
+        func u32(_ o: Int) -> Int { Int(b[o]) << 24 | Int(b[o + 1]) << 16 | Int(b[o + 2]) << 8 | Int(b[o + 3]) }
+        while i + 8 <= b.count {
+            let len = u32(i)
+            let type = String(bytes: b[(i + 4)..<(i + 8)], encoding: .ascii) ?? ""
+            let body = i + 8
+            guard body + len <= b.count else { return nil }
+            switch type {
+            case "IHDR":
+                W = u32(body); H = u32(body + 4); depth = Int(b[body + 8]); ctype = Int(b[body + 9])
+                guard b[body + 12] == 0, ctype == 0 || ctype == 3 else { return nil }
+            case "PLTE":
+                pal = stride(from: body, to: body + len - 2, by: 3).map { (b[$0], b[$0 + 1], b[$0 + 2]) }
+            case "IDAT":
+                idat += b[body..<(body + len)]
+            default: break
+            }
+            i = body + len + 4
+        }
+        // zlib → raw deflate (drop the 2-byte header and 4-byte checksum)
+        guard W > 0, H > 0, idat.count > 6,
+              let raw = try? (Data(idat[2..<(idat.count - 4)]) as NSData).decompressed(using: .zlib) as Data
+        else { return nil }
+        let r = [UInt8](raw)
+        let rowBytes = (W * depth + 7) / 8
+        guard r.count >= H * (rowBytes + 1) else { return nil }
+        var prev = [UInt8](repeating: 0, count: rowBytes)
+        var out = [UInt8](repeating: 0, count: W * H)
+        let bpp = max(1, depth / 8)
+        for y in 0..<H {
+            let f = r[y * (rowBytes + 1)]
+            var line = Array(r[(y * (rowBytes + 1) + 1)..<((y + 1) * (rowBytes + 1))])
+            for x in 0..<rowBytes {
+                let a = x >= bpp ? Int(line[x - bpp]) : 0, up = Int(prev[x]), c = x >= bpp ? Int(prev[x - bpp]) : 0
+                let v = Int(line[x])
+                switch f {
+                case 1: line[x] = UInt8((v + a) & 0xFF)
+                case 2: line[x] = UInt8((v + up) & 0xFF)
+                case 3: line[x] = UInt8((v + (a + up) / 2) & 0xFF)
+                case 4:
+                    let p = a + up - c, pa = abs(p - a), pb = abs(p - up), pc = abs(p - c)
+                    line[x] = UInt8((v + (pa <= pb && pa <= pc ? a : pb <= pc ? up : c)) & 0xFF)
+                default: break
+                }
+            }
+            for x in 0..<W {
+                let bit = x * depth
+                let byte = line[bit / 8]
+                let shift = 8 - depth - (bit % 8)
+                out[y * W + x] = (byte >> UInt8(shift)) & UInt8((1 << depth) - 1)
+            }
+            prev = line
+        }
+        w = W; h = H; indices = out; palette = pal
+    }
+
+    struct Rendered {
+        let image: CGImage
+        func framesOf(height fh: Int) -> [UIImage] {
+            stride(from: 0, to: image.height - fh + 1, by: fh).compactMap {
+                image.cropping(to: CGRect(x: 0, y: $0, width: image.width, height: fh)).map { UIImage(cgImage: $0) }
+            }
+        }
+        func cropping(_ r: CGRect) -> UIImage? { image.cropping(to: r).map { UIImage(cgImage: $0) } }
+    }
+
+    func render(palette pal: [(UInt8, UInt8, UInt8)], transparentIndex: UInt8) -> Rendered {
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        for (n, ix) in indices.enumerated() where ix != transparentIndex && Int(ix) < pal.count {
+            let c = pal[Int(ix)]
+            px[n * 4] = c.0; px[n * 4 + 1] = c.1; px[n * 4 + 2] = c.2; px[n * 4 + 3] = 255
+        }
+        let provider = CGDataProvider(data: Data(px) as CFData)!
+        let img = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                          space: CGColorSpaceCreateDeviceRGB(),
+                          bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                          provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+        return Rendered(image: img)
+    }
+}
