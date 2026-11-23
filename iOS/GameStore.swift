@@ -19,7 +19,6 @@ final class GameStore: ObservableObject {
     /// Set when a pickup notification is tapped: the map opens the Party panel.
     @Published var openPartyAt: Date?
     @Published var evolutionCandidate: EvolutionCandidate?
-    private var rampTimer: Timer?
     @Published var healthError: String?
 
     struct EvolutionCandidate: Identifiable, Equatable {
@@ -197,11 +196,6 @@ final class GameStore: ObservableObject {
         tracker.onMovement = { [weak self] _ in self?.requestTick(minInterval: 20) }
         tracker.apply(mode: state.settings.trackingMode)
         engine.startLiveUpdates { [weak self] in self?.requestTick(minInterval: 15) }
-        // While Shortcut-synced steps are being fed in, keep the counters moving smoothly.
-        rampTimer?.invalidate()
-        rampTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
-            Task { @MainActor in if ShortcutSteps.isRamping { await self?.tick() } }
-        }
         startHealthObserver()
         requestTick(minInterval: 0)
         LiveActivityManager.shared.startIfNeeded(with: self)
@@ -231,6 +225,23 @@ final class GameStore: ObservableObject {
         }
         hk.store.execute(q)
         hk.store.enableBackgroundDelivery(for: hk.stepType, frequency: .hourly) { _, _ in }
+        // Workouts / active calories → money
+        let e = HKObserverQuery(sampleType: hk.energyType, predicate: nil) { _, completion, _ in
+            Task { @MainActor in
+                await GameStore.shared.syncHealthCalories()
+                completion()
+            }
+        }
+        hk.store.execute(e)
+        hk.store.enableBackgroundDelivery(for: hk.energyType, frequency: .hourly) { _, _ in }
+    }
+
+    /// Today's active calories from Apple Health (workouts included) → ₽1 per 10 kcal, only new ones pay.
+    func syncHealthCalories() async {
+        guard StepCounter.shared.isAvailable,
+              let kcal = try? await StepCounter.shared.activeEnergy(from: Calendar.current.startOfDay(for: .now)),
+              kcal > 0 else { return }
+        syncCalories(kcal)
     }
 
     // MARK: New game
@@ -266,6 +277,7 @@ final class GameStore: ObservableObject {
         guard hasGame, !ticking else { return }
         await checkLure()
         stampToday()                    // past midnight with the app still open: today's stamp
+        await syncHealthCalories()
         ticking = true
         defer { ticking = false; lastTick = .now }
 
@@ -498,7 +510,7 @@ final class GameStore: ObservableObject {
         }
     }
 
-    /// Active calories from Apple Health (via the Shortcut): ₽1 for every 10 kcal burned today.
+    /// Active calories from Apple Health: ₽1 for every 10 kcal burned today.
     /// The latest total for the day replaces the last one, so only new calories pay out.
     static let pokeDollarsPerKcal = 0.1
 
@@ -516,7 +528,8 @@ final class GameStore: ObservableObject {
             s.caloriesPaid = t
             s.money += earned
         }
-        if earned > 0 {
+        // a toast only for a real chunk (a workout), not every few calories through the day
+        if earned >= 10 {
             toast = "Burned \(Int(gained.rounded())) kcal — you earned ₽\(earned)!"
         }
         return earned

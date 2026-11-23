@@ -913,15 +913,18 @@ private struct StepSyncSection: View {
     @State private var health: Int?
     @State private var healthError: String?
     @State private var phone: Int?
+    @State private var kcal: Int?
+    @State private var workouts: [(name: String, minutes: Int, kcal: Int, end: Date)] = []
     @State private var checking = false
 
     var body: some View {
         Section {
             row("Apple Health (incl. Watch)", health.map { $0.formatted() } ?? (healthError == nil ? "…" : "Not connected"))
             row("iPhone motion chip", phone.map { $0.formatted() } ?? "…")
-            row("Shortcut (Health)", ShortcutSteps.lastSync.map { _ in
-                ShortcutSteps.steps(for: TrackStore.key(for: Calendar.current.startOfDay(for: .now))).formatted()
-            } ?? "Not set up")
+            row("Active calories today", kcal.map { "\($0.formatted()) kcal" } ?? "…")
+            ForEach(Array(workouts.enumerated()), id: \.offset) { _, w in
+                row("\(w.name) · \(w.minutes) min", "\(w.kcal) kcal")
+            }
             row("PokéWalk today", store.stepsToday.formatted())
             if let healthError {
                 Text(healthError).font(.rounded(12)).foregroundStyle(Theme.inkSoft).glassRow()
@@ -942,23 +945,10 @@ private struct StepSyncSection: View {
             }
             .glassRow()
         } header: { Text("Step sync") } footer: {
-            Text("PokéWalk uses whichever is higher. If Apple Health shows 0 here but more in the Health app, PokéWalk isn't allowed to read it: in the Health app tap your profile picture › Apps › PokéWalk and turn on Steps and Walking + Running Distance. (Settings › Privacy & Security › Health › PokéWalk works too.) Steps earned before the fix are added on the next sync — from today and yesterday.")
+            Text("PokéWalk uses whichever is higher. Calories you burn (workouts included) earn ₽1 per 10 kcal. If Apple Health shows 0 here but more in the Health app, PokéWalk isn't allowed to read it: in the Health app tap your profile picture › Apps › PokéWalk and turn everything on. (Settings › Privacy & Security › Health › PokéWalk works too.) Steps earned before the fix are added on the next sync — from today and yesterday.")
         }
         .task { await refresh() }
 
-        Section {
-            NavigationLink {
-                StepSyncSetupView()
-            } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Set up Apple Watch step sync").font(.rounded(16, .heavy))
-                    Text(ShortcutSteps.lastSync.map { "Last synced \($0.formatted(.relative(presentation: .named)))" }
-                         ?? "Step-by-step guide · about 3 minutes")
-                        .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
-                }
-            }
-            .glassRow()
-        } header: { Text("Shortcut sync") }
     }
 
     private func refresh() async {
@@ -971,6 +961,8 @@ private struct StepSyncSection: View {
             healthError = "Apple Health error: \(error.localizedDescription)"
         }
         phone = await StepEngine.shared.pedometerSteps(from: start, to: .now)
+        kcal = (try? await StepCounter.shared.activeEnergy(from: start)).map { Int($0) }
+        workouts = await StepCounter.shared.workoutsToday()
     }
 
     private func row(_ label: String, _ value: String) -> some View {
