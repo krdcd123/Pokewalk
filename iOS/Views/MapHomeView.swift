@@ -153,6 +153,18 @@ struct MapHomeView: View {
             }
         }
         .overlay { ConfettiRain(start: store.confettiAt) }
+        .overlay {
+            if let w = store.workoutPopup {
+                ZStack {
+                    Color.black.opacity(0.35).ignoresSafeArea()
+                        .onTapGesture { store.dismissWorkoutPopup() }
+                    WorkoutCompleteCard(record: w) { store.dismissWorkoutPopup() }
+                        .padding(24)
+                        .transition(.scale(scale: 0.85).combined(with: .opacity))
+                }
+            }
+        }
+        .animation(.spring(duration: 0.4), value: store.workoutPopup)
         // A pickup notification was tapped: show the Party
         .onChange(of: store.openPartyAt) { _, at in
             guard at != nil else { return }
@@ -792,4 +804,68 @@ struct WeatherPill: View {
 enum Haptics {
     static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
     static func hold() { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+}
+
+
+/// "Workout complete!" — what a workout earned.
+struct WorkoutCompleteCard: View {
+    @EnvironmentObject private var store: GameStore
+    let record: WorkoutRecord
+    var close: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: record.symbol)
+                .font(.system(size: 34, weight: .bold)).foregroundStyle(.white)
+                .frame(width: 70, height: 70).glassCircle(tint: Theme.teal, interactive: false)
+            VStack(spacing: 4) {
+                Text("Workout complete!").font(.rounded(22, .black))
+                Text("\(record.name) · \(WorkoutCompleteCard.length(record.duration))")
+                    .font(.rounded(14, .heavy)).foregroundStyle(Theme.inkSoft)
+            }
+            VStack(spacing: 8) {
+                rewardRow("flame.fill", "\(record.kcal.formatted()) kcal burned")
+                rewardRow("yensign.circle.fill", "₽\(record.money.formatted()) earned")
+                if record.exp > 0, let mon = store.state.mon(record.expMonID) {
+                    HStack(spacing: 10) {
+                        AnimatedSprite(speciesID: mon.speciesID, shiny: mon.isShiny, kind: .icons).frame(width: 34, height: 28)
+                        Text("\(mon.name) gained \(record.exp.formatted()) Exp").font(.rounded(15, .heavy))
+                        Spacer(minLength: 0)
+                    }
+                }
+                if let up = record.levelUp {
+                    rewardRow("arrow.up.circle.fill", up)
+                }
+                if record.meters > 50 { rewardRow("point.topleft.down.to.point.bottomright.curvepath", Distance.text(record.meters)) }
+                if !record.countsSteps && record.stepsNotCounted > 0 {
+                    Text("\(record.stepsNotCounted.formatted()) steps during the workout weren't counted as walking.")
+                        .font(.rounded(12)).foregroundStyle(Theme.inkSoft).multilineTextAlignment(.center)
+                }
+            }
+            .padding(14)
+            .glassCard(18)
+            Button(action: close) {
+                Text("Nice!").font(.rounded(17, .black)).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).frame(height: 48)
+                    .glassCapsule(tint: Theme.teal, interactive: true)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(20)
+        .frame(maxWidth: 360)
+        .glassCard(28)
+    }
+
+    private func rewardRow(_ icon: String, _ text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).font(.system(size: 18, weight: .bold)).foregroundStyle(Theme.teal).frame(width: 34)
+            Text(text).font(.rounded(15, .heavy))
+            Spacer(minLength: 0)
+        }
+    }
+
+    static func length(_ s: TimeInterval) -> String {
+        let mins = max(1, Int((s / 60).rounded()))
+        return mins >= 60 ? "\(mins / 60) h \(mins % 60) min" : "\(mins) min"
+    }
 }

@@ -56,6 +56,7 @@ struct PokeWalkApp: App {
                         Task {
                             await store.tick()
                             store.checkPendingEvolutions()
+                            store.showWorkoutPopupIfNeeded()
                             LiveActivityManager.shared.startIfNeeded(with: store)
                         }
                     case .background:

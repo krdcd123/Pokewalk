@@ -313,6 +313,8 @@ struct GameState: Codable {
     var caloriesPaid: Double = 0      // today's active calories already turned into money
     var lifetimeCalories: Double = 0
     var activeLure: ActiveLure?
+    var workouts: [WorkoutRecord] = []        // finished workouts and what they earned (Journal)
+    var unseenWorkouts: [String] = []         // workout ids whose "Workout complete!" popup hasn't shown yet
 
     static let maxParty = 6
 
@@ -441,7 +443,28 @@ extension GameState {
         caloriesPaid = c.value(.caloriesPaid, 0)
         lifetimeCalories = c.value(.lifetimeCalories, 0)
         activeLure = c.value(.activeLure, nil)
+        workouts = c.value(.workouts, [])
+        unseenWorkouts = c.value(.unseenWorkouts, [])
     }
+}
+
+/// A workout from Apple Health and what it earned.
+struct WorkoutRecord: Codable, Identifiable, Hashable {
+    var id: String
+    var name: String
+    var symbol: String
+    var start: Date
+    var end: Date
+    var kcal: Int
+    var meters: Double
+    var countsSteps: Bool          // walking / running / hiking: its steps counted as usual
+    var stepsNotCounted: Int       // steps during a non-walking workout, left out of step rewards
+    var money: Int                 // ₽ from its calories
+    var exp: Int                   // Exp given to your buddy (non-walking workouts)
+    var expMonID: UUID?
+    var levelUp: String?           // e.g. "Cori grew to Lv. 13!"
+
+    var duration: TimeInterval { end.timeIntervalSince(start) }
 }
 
 

@@ -8,6 +8,8 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
     private var session: WCSession? { WCSession.isSupported() ? WCSession.default : nil }
     private var pending: WatchSnapshot?
     private let sentSpritesKey = "sentIconsToWatch"
+    private var lastComplicationPush = Date.distantPast
+    private var lastComplicationLevels = ""
 
     // Watch status for the Settings screen
     var isWatchPaired: Bool { session?.isPaired ?? false }
@@ -29,9 +31,19 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
         let payload: [String: Any] = ["snapshot": data]
         try? session.updateApplicationContext(payload)
 
-        // Complication pushes get priority wake-ups on the watch (limited daily budget).
-        if session.isComplicationEnabled, session.remainingComplicationUserInfoTransfers > 0 {
+        // Watch app open (or reachable): send it straight away instead of waiting for iOS to deliver the context.
+        if session.isReachable {
+            session.sendMessage(payload, replyHandler: nil, errorHandler: nil)
+        }
+
+        // Complication pushes wake the watch with priority, but there are only ~50 a day:
+        // use them when a level changes, or at most every 15 minutes.
+        let levels = snapshot.party.map { "\($0.id):\($0.species.growth.level(forExp: $0.exp))" }.joined(separator: ",")
+        let due = Date().timeIntervalSince(lastComplicationPush) > 15 * 60 || levels != lastComplicationLevels
+        if due, session.isComplicationEnabled, session.remainingComplicationUserInfoTransfers > 0 {
             session.transferCurrentComplicationUserInfo(payload)
+            lastComplicationPush = .now
+            lastComplicationLevels = levels
         }
 
         sendIcons(for: snapshot.party.map { ($0.speciesID, $0.isShiny) } + snapshot.wild.map { ($0.speciesID, $0.isShiny) })

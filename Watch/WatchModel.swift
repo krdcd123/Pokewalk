@@ -2,6 +2,7 @@ import Foundation
 import WatchConnectivity
 import WidgetKit
 import WatchKit
+import HealthKit
 
 /// Watch-side state: the latest party snapshot from the phone plus live steps from the watch's own HealthKit.
 @MainActor
@@ -42,6 +43,51 @@ final class WatchModel: NSObject, ObservableObject {
     func requestHealth() async {
         try? await StepCounter.shared.requestAuthorization()
         await refreshSteps()
+        startStepObserver()
+    }
+
+    // MARK: Keeping up with the phone
+
+    private var liveTimer: Timer?
+    private var observerStarted = false
+    private var lastComplicationReload = Date.distantPast
+
+    /// While the watch app is on screen: re-read steps every few seconds and get a fresh snapshot from the phone.
+    func becameActive() {
+        Task { await refreshSteps() }
+        quietSync()
+        liveTimer?.invalidate()
+        liveTimer = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { _ in
+            Task { @MainActor in await WatchModel.shared.refreshSteps(reloadComplications: false) }
+        }
+    }
+
+    func resignedActive() {
+        liveTimer?.invalidate(); liveTimer = nil
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// Asks the phone for the latest snapshot without showing a status message.
+    func quietSync() {
+        guard WCSession.default.activationState == .activated, WCSession.default.isReachable else { return }
+        WCSession.default.sendMessage(["request": "sync"], replyHandler: { reply in
+            Task { @MainActor in self.ingest(reply["snapshot"] as? Data) }
+        }, errorHandler: nil)
+    }
+
+    /// New steps on the watch (even in the background) → update the numbers and the complications.
+    private func startStepObserver() {
+        guard !observerStarted, StepCounter.shared.isAvailable else { return }
+        observerStarted = true
+        let hk = StepCounter.shared
+        let q = HKObserverQuery(sampleType: hk.stepType, predicate: nil) { _, completion, _ in
+            Task { @MainActor in
+                await WatchModel.shared.refreshSteps()
+                completion()
+            }
+        }
+        hk.store.execute(q)
+        hk.store.enableBackgroundDelivery(for: hk.stepType, frequency: .immediate) { _, _ in }
     }
 
     /// Query HealthKit on the watch and cache the result for the complications.
@@ -52,7 +98,11 @@ final class WatchModel: NSObject, ObservableObject {
             SharedStore.saveLiveSteps(s, forSync: sync)
         }
         if let t = try? await StepCounter.shared.stepsToday() { stepsToday = t }
-        if reloadComplications { WidgetCenter.shared.reloadAllTimelines() }
+        // watchOS limits complication reloads, so don't spend them more than once a minute
+        if reloadComplications, Date().timeIntervalSince(lastComplicationReload) > 60 {
+            lastComplicationReload = .now
+            WidgetCenter.shared.reloadAllTimelines()
+        }
     }
 
     // MARK: Snapshot intake
@@ -180,6 +230,11 @@ extension WatchModel: WCSessionDelegate {
 
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         let data = applicationContext["snapshot"] as? Data
+        Task { @MainActor in self.ingest(data) }
+    }
+
+    nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        let data = message["snapshot"] as? Data
         Task { @MainActor in self.ingest(data) }
     }
 

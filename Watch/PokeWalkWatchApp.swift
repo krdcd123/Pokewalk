@@ -69,8 +69,9 @@ struct PokeWalkWatchApp: App {
                 .environmentObject(model)
                 .task { await model.requestHealth() }
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .active { Task { await model.refreshSteps() } }
+                    if phase == .active { model.becameActive() } else { model.resignedActive() }
                 }
+                .onAppear { model.becameActive() }
         }
     }
 }

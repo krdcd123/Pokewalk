@@ -15,6 +15,7 @@ final class GameStore: ObservableObject {
     @Published var toast: String?
     /// When to rain confetti (the daily stamp).
     @Published var confettiAt: Date?
+    @Published var workoutPopup: WorkoutRecord?      // "Workout complete!" card on the map
     @Published var activeEncounter: PendingEncounter?
     /// Set when a pickup notification is tapped: the map opens the Party panel.
     @Published var openPartyAt: Date?
@@ -234,6 +235,15 @@ final class GameStore: ObservableObject {
         }
         hk.store.execute(e)
         hk.store.enableBackgroundDelivery(for: hk.energyType, frequency: .hourly) { _, _ in }
+        // Finished workouts → reward + "Workout complete!"
+        let w = HKObserverQuery(sampleType: .workoutType(), predicate: nil) { _, completion, _ in
+            Task { @MainActor in
+                await GameStore.shared.tick()
+                completion()
+            }
+        }
+        hk.store.execute(w)
+        hk.store.enableBackgroundDelivery(for: .workoutType(), frequency: .immediate) { _, _ in }
     }
 
     /// Today's active calories from Apple Health (workouts included) → ₽1 per 10 kcal, only new ones pay.
@@ -278,6 +288,7 @@ final class GameStore: ObservableObject {
         await checkLure()
         stampToday()                    // past midnight with the app still open: today's stamp
         await syncHealthCalories()
+        await processWorkouts()
         ticking = true
         defer { ticking = false; lastTick = .now }
 
@@ -291,7 +302,9 @@ final class GameStore: ObservableObject {
         let startedDay = cal.startOfDay(for: state.trainer.startedOn)
         for day in [yesterday, today] {
             let key = TrackStore.key(for: day)
-            let total = await engine.steps(onDay: day)
+            // Steps from non-walking workouts (cycling, gym…) don't count: the watch counts arm movement as steps.
+            let raw = await engine.steps(onDay: day)
+            let total = max(0, raw - (await StepCounter.shared.nonWalkingWorkoutSteps(onDay: day)))
             if day == today { stepsToday = total }
             // Days we haven't seen yet count from midnight, unless they're before the game started.
             let processed = ledger[key] ?? ((gameExisted && day >= startedDay) ? 0 : total)
@@ -513,6 +526,92 @@ final class GameStore: ObservableObject {
     /// Active calories from Apple Health: ₽1 for every 10 kcal burned today.
     /// The latest total for the day replaces the last one, so only new calories pay out.
     static let pokeDollarsPerKcal = 0.1
+
+    // MARK: Workouts
+
+    /// Exp a non-walking workout gives your buddy: what walking would have given for the same calories
+    /// (walking burns roughly 1 kcal every 25 steps).
+    static let stepsPerKcal = 25.0
+
+    /// Looks for newly finished workouts in Apple Health and rewards them (once each).
+    func processWorkouts() async {
+        guard hasGame, StepCounter.shared.isAvailable else { return }
+        let key = "workoutsCountFrom"
+        if UserDefaults.standard.object(forKey: key) == nil {
+            // First time: today's workouts count, older ones don't.
+            UserDefaults.standard.set(Calendar.current.startOfDay(for: .now), forKey: key)
+        }
+        let from = max(UserDefaults.standard.object(forKey: key) as? Date ?? .now,
+                       Calendar.current.date(byAdding: .day, value: -2, to: .now) ?? .now)
+        let known = Set(state.workouts.map(\.id))
+        let fresh = await StepCounter.shared.workouts(from: from).filter { !known.contains($0.id) && $0.end <= .now }
+        guard !fresh.isEmpty else { return }
+
+        var records: [WorkoutRecord] = []
+        for w in fresh {
+            let stepsDuring = w.countsSteps ? 0 : ((try? await StepCounter.shared.steps(from: w.start, to: w.end)) ?? 0)
+            let exp = w.countsSteps ? 0 : Int(w.kcal * Self.stepsPerKcal * state.settings.expPerStep)
+            records.append(WorkoutRecord(id: w.id, name: w.name, symbol: w.symbol, start: w.start, end: w.end,
+                                         kcal: Int(w.kcal.rounded()), meters: w.meters, countsSteps: w.countsSteps,
+                                         stepsNotCounted: stepsDuring, money: Int(w.kcal * Self.pokeDollarsPerKcal),
+                                         exp: exp, expMonID: nil, levelUp: nil))
+        }
+        mutate { s in
+            for var r in records {
+                if r.exp > 0, let bi = s.buddyID.flatMap({ s.index(of: $0) }) {
+                    // Exp to the buddy, and the usual party share to everyone else in the party
+                    let before = s.pokemon[bi].level
+                    s.pokemon[bi].exp = min(s.pokemon[bi].exp + r.exp, s.pokemon[bi].species.growth.maxExp)
+                    let after = s.pokemon[bi].level
+                    r.expMonID = s.pokemon[bi].id
+                    if after > before { r.levelUp = "\(s.pokemon[bi].name) grew to Lv. \(after)!" }
+                    let share = Int(Double(r.exp) * s.settings.partyShare)
+                    if share > 0 {
+                        for pid in s.partyIDs where pid != s.buddyID {
+                            if let i = s.index(of: pid) {
+                                s.pokemon[i].exp = min(s.pokemon[i].exp + share, s.pokemon[i].species.growth.maxExp)
+                            }
+                        }
+                    }
+                }
+                s.workouts.append(r)
+                s.unseenWorkouts.append(r.id)
+            }
+            if s.workouts.count > 500 { s.workouts.removeFirst(s.workouts.count - 500) }
+        }
+        if UIApplication.State.current == .active {
+            showWorkoutPopupIfNeeded()
+        } else if let r = records.last {
+            notify(title: "\(r.name) workout done! 🎉", body: "Open PokéWalk to see what you earned.",
+                   id: "workout-\(r.id)", category: nil, icon: state.buddy.map { ($0.speciesID, $0.isShiny) })
+        }
+    }
+
+    /// Shows the next "Workout complete!" card, with confetti and the candy sound.
+    func showWorkoutPopupIfNeeded() {
+        guard workoutPopup == nil, let id = state.unseenWorkouts.first else { return }
+        guard let r = state.workouts.first(where: { $0.id == id }) else {
+            mutate { $0.unseenWorkouts.removeAll { $0 == id } }
+            return
+        }
+        workoutPopup = r
+        confettiAt = .now
+        SoundKit.shared.play(.useItem)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    func dismissWorkoutPopup() {
+        guard let r = workoutPopup else { return }
+        workoutPopup = nil
+        mutate { $0.unseenWorkouts.removeAll { $0 == r.id } }
+        // another one waiting? show it after a moment
+        if !state.unseenWorkouts.isEmpty {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(600))
+                showWorkoutPopupIfNeeded()
+            }
+        }
+    }
 
     /// Active calories burned today (from Apple Health), as last synced.
     var caloriesToday: Int { state.caloriesDay == DailyStamps.key(.now) ? Int(state.caloriesPaid.rounded()) : 0 }

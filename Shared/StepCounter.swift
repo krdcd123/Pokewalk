@@ -93,6 +93,52 @@ extension StepCounter {
         }
     }
 
+    /// A finished workout from Apple Health.
+    struct WorkoutInfo: Identifiable, Hashable {
+        let id: String              // HealthKit UUID
+        let type: HKWorkoutActivityType
+        let start: Date
+        let end: Date
+        let kcal: Double
+        let meters: Double
+        var name: String { type.displayName }
+        var symbol: String { type.symbol }
+        /// Walking, running and hiking steps are real steps; anything else (cycling, gym…) isn't walking.
+        var countsSteps: Bool { [.walking, .running, .hiking].contains(type) }
+    }
+
+    /// Workouts that ended in [start, end), oldest first.
+    func workouts(from start: Date, to end: Date = .now) async -> [WorkoutInfo] {
+        guard isAvailable, start < end else { return [] }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
+        return await withCheckedContinuation { cont in
+            let q = HKSampleQuery(sampleType: .workoutType(), predicate: predicate, limit: 100,
+                                  sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) { _, samples, _ in
+                let list = (samples as? [HKWorkout] ?? []).map { w in
+                    let kcal = w.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0
+                    let m = (w.statistics(for: HKQuantityType(.distanceWalkingRunning))
+                             ?? w.statistics(for: HKQuantityType(.distanceCycling)))?.sumQuantity()?.doubleValue(for: .meter()) ?? 0
+                    return WorkoutInfo(id: w.uuid.uuidString, type: w.workoutActivityType, start: w.startDate, end: w.endDate,
+                                       kcal: kcal, meters: m)
+                }
+                cont.resume(returning: list)
+            }
+            store.execute(q)
+        }
+    }
+
+    /// Steps counted during non-walking workouts on a day (cycling arms, gym reps…) — not real walking.
+    func nonWalkingWorkoutSteps(onDay day: Date) async -> Int {
+        let start = Calendar.current.startOfDay(for: day)
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start
+        var total = 0
+        for w in await workouts(from: start, to: end) where !w.countsSteps {
+            let a = max(w.start, start), b = min(w.end, end)
+            if a < b { total += (try? await steps(from: a, to: b)) ?? 0 }
+        }
+        return total
+    }
+
     /// Today's workouts (newest first): type, minutes and calories.
     func workoutsToday() async -> [(name: String, minutes: Int, kcal: Int, end: Date)] {
         guard isAvailable else { return [] }
@@ -156,6 +202,31 @@ extension HKWorkoutActivityType {
         case .crossTraining: return "Cross training"
         case .pilates: return "Pilates"
         default: return "Workout"
+        }
+    }
+}
+
+extension HKWorkoutActivityType {
+    var symbol: String {
+        switch self {
+        case .walking: return "figure.walk"
+        case .running: return "figure.run"
+        case .cycling: return "figure.outdoor.cycle"
+        case .hiking: return "figure.hiking"
+        case .swimming: return "figure.pool.swim"
+        case .traditionalStrengthTraining, .functionalStrengthTraining: return "dumbbell.fill"
+        case .highIntensityIntervalTraining: return "flame.fill"
+        case .yoga: return "figure.yoga"
+        case .elliptical: return "figure.elliptical"
+        case .rowing: return "figure.rower"
+        case .stairClimbing, .stairs: return "figure.stairs"
+        case .dance, .socialDance, .cardioDance: return "figure.dance"
+        case .soccer: return "figure.soccer"
+        case .basketball: return "figure.basketball"
+        case .boxing, .kickboxing: return "figure.boxing"
+        case .coreTraining: return "figure.core.training"
+        case .pilates: return "figure.pilates"
+        default: return "figure.mixed.cardio"
         }
     }
 }

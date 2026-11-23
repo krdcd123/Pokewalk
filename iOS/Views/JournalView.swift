@@ -17,6 +17,8 @@ struct JournalView: View {
     @State private var renamingGroup: [Stay] = []
     @State private var expanded: Set<UUID> = []
     @State private var newName = ""
+    @State private var dayWorkouts: [StepCounter.WorkoutInfo] = []
+    @AppStorage("journalEncountersOpen") private var encountersOpen = true
 
     private var days: [Date] {
         // Oldest on the left, today on the right
@@ -142,13 +144,28 @@ struct JournalView: View {
                 }
                 if !showAllTime {
                     placesSection
+                    workoutsSection
                     photosSection
                 }
-                Text("ENCOUNTERS").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
-                if encounters.isEmpty {
+                // Encounters: tap the header to fold the list away
+                Button {
+                    SoundKit.shared.play(.select)
+                    withAnimation(.snappy) { encountersOpen.toggle() }
+                } label: {
+                    HStack {
+                        Text("ENCOUNTERS · \(encounters.count)").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
+                        Spacer()
+                        Image(systemName: "chevron.down").font(.system(size: 13, weight: .heavy)).foregroundStyle(Theme.inkSoft)
+                            .rotationEffect(.degrees(encountersOpen ? 0 : -90))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if encountersOpen && encounters.isEmpty {
                     Text(showAllTime ? "No wild Pokémon yet — keep walking!" : "No wild Pokémon met this day.")
                         .font(.rounded(13)).foregroundStyle(Theme.inkSoft)
                 }
+                if encountersOpen {
                 ForEach(encounters) { e in
                     Button { select(e) } label: {
                         HStack(spacing: 12) {
@@ -169,6 +186,8 @@ struct JournalView: View {
                         .overlay(RoundedRectangle(cornerRadius: 20).stroke(Theme.teal, lineWidth: selected == e.id ? 2 : 0))
                     }
                     .buttonStyle(.plain)
+                    .transition(.opacity)
+                }
                 }
             }
             .padding()
@@ -176,7 +195,9 @@ struct JournalView: View {
         .navigationTitle("Journal")
         .glassScreen()
         .task(id: day) {
-            steps = await StepEngine.shared.steps(onDay: day)
+            steps = max(0, await StepEngine.shared.steps(onDay: day) - (await StepCounter.shared.nonWalkingWorkoutSteps(onDay: day)))
+            let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: day) ?? day
+            dayWorkouts = await StepCounter.shared.workouts(from: day, to: min(.now, dayEnd))
             let end = min(Date(), day.addingTimeInterval(86_400))
             healthMeters = (try? await StepCounter.shared.distance(from: day, to: end)) ?? 0
             camera = .automatic
@@ -273,6 +294,60 @@ struct JournalView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    /// Workouts this day (from Apple Health) and what each one earned.
+    @ViewBuilder private var workoutsSection: some View {
+        let recorded = store.state.workouts.filter { Calendar.current.isDate($0.start, inSameDayAs: day) }
+        let ids = Set(recorded.map(\.id))
+        let others = dayWorkouts.filter { !ids.contains($0.id) }
+        if !recorded.isEmpty || !others.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("WORKOUTS").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
+                ForEach(recorded) { r in
+                    workoutRow(symbol: r.symbol, name: r.name, start: r.start, end: r.end, kcal: r.kcal, meters: r.meters,
+                               earned: earnedText(r), note: (!r.countsSteps && r.stepsNotCounted > 0)
+                                   ? "\(r.stepsNotCounted.formatted()) steps not counted as walking" : (r.countsSteps ? "Steps counted as walking" : nil))
+                }
+                ForEach(others) { w in
+                    workoutRow(symbol: w.symbol, name: w.name, start: w.start, end: w.end, kcal: Int(w.kcal), meters: w.meters,
+                               earned: nil, note: "Before workout rewards were added")
+                }
+            }
+        }
+    }
+
+    private func earnedText(_ r: WorkoutRecord) -> String {
+        var parts = ["₽\(r.money.formatted())"]
+        if r.exp > 0 {
+            let who = store.state.mon(r.expMonID)?.name ?? "Buddy"
+            parts.append("+\(r.exp.formatted()) Exp for \(who)")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func workoutRow(symbol: String, name: String, start: Date, end: Date, kcal: Int, meters: Double,
+                            earned: String?, note: String?) -> some View {
+        let t = Date.FormatStyle(date: .omitted, time: .shortened)
+        return HStack(alignment: .top, spacing: 12) {
+            Image(systemName: symbol).font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
+                .frame(width: 44, height: 44).glassCircle(tint: Theme.teal, interactive: false)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text(name).font(.rounded(16, .heavy))
+                    Spacer()
+                    Text(WorkoutCompleteCard.length(end.timeIntervalSince(start))).font(.rounded(14, .heavy))
+                }
+                Text("\(start.formatted(t)) – \(end.formatted(t)) · \(kcal.formatted()) kcal\(meters > 50 ? " · \(Distance.text(meters))" : "")")
+                    .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                if let earned {
+                    Label(earned, systemImage: "gift.fill").font(.rounded(13, .heavy)).foregroundStyle(Theme.tealDark)
+                }
+                if let note { Text(note).font(.rounded(11)).foregroundStyle(Theme.inkSoft) }
+            }
+        }
+        .padding(12)
+        .glassCard(18)
     }
 
     /// Photos you took this day (from your photo library). Tap a place above to see just the ones from there.
