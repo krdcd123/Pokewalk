@@ -205,3 +205,47 @@ enum SharedStore {
         await fetch(remoteIconURL(speciesID, shiny: shiny), to: iconFile(speciesID, shiny: shiny))
     }
 }
+
+
+// MARK: - Tolerant decoding
+// The watch keeps the last snapshot it got. When a new version adds fields, an older saved snapshot
+// (or one from a phone that hasn't updated yet) must still load instead of failing and showing nothing.
+
+extension WatchSnapshot.Member {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        speciesID = try c.decode(Int.self, forKey: .speciesID)
+        name = try c.decode(String.self, forKey: .name)
+        exp = try c.decode(Int.self, forKey: .exp)
+        isBuddy = try c.decodeIfPresent(Bool.self, forKey: .isBuddy) ?? false
+        canEvolve = try c.decodeIfPresent(Bool.self, forKey: .canEvolve) ?? false
+        isShiny = try c.decodeIfPresent(Bool.self, forKey: .isShiny) ?? false
+        gender = (try? c.decodeIfPresent(Gender.self, forKey: .gender)) ?? .genderless
+        heldItem = try c.decodeIfPresent(String.self, forKey: .heldItem)
+        stepsWalked = try c.decodeIfPresent(Int.self, forKey: .stepsWalked) ?? 0
+    }
+}
+
+extension WatchSnapshot {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        syncDate = try c.decodeIfPresent(Date.self, forKey: .syncDate) ?? .now
+        expPerStep = try c.decodeIfPresent(Double.self, forKey: .expPerStep) ?? 0.25
+        partyShare = try c.decodeIfPresent(Double.self, forKey: .partyShare) ?? 0.2
+        lifetimeSteps = try c.decodeIfPresent(Int.self, forKey: .lifetimeSteps) ?? 0
+        balls = try c.decodeIfPresent(Int.self, forKey: .balls) ?? 0
+        stepsToEncounter = try c.decodeIfPresent(Int.self, forKey: .stepsToEncounter) ?? 0
+        stepsToBall = try c.decodeIfPresent(Int.self, forKey: .stepsToBall) ?? 0
+        ballSteps = try c.decodeIfPresent(Int.self, forKey: .ballSteps) ?? 1_000
+        pendingEncounters = try c.decodeIfPresent(Int.self, forKey: .pendingEncounters) ?? 0
+        distanceTodayKm = try c.decodeIfPresent(Double.self, forKey: .distanceTodayKm) ?? 0
+        trainerName = try c.decodeIfPresent(String.self, forKey: .trainerName) ?? ""
+        party = (try? c.decodeIfPresent([Member].self, forKey: .party)) ?? []
+        bag = (try? c.decodeIfPresent([BagLine].self, forKey: .bag)) ?? []
+        wild = (try? c.decodeIfPresent([Wild].self, forKey: .wild)) ?? []
+        latitude = try? c.decodeIfPresent(Double.self, forKey: .latitude)
+        longitude = try? c.decodeIfPresent(Double.self, forKey: .longitude)
+        money = (try? c.decodeIfPresent(Int.self, forKey: .money)) ?? 0
+    }
+}

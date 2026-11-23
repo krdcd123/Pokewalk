@@ -13,7 +13,7 @@ enum WatchRoute: Hashable {
 // MARK: - Root: the condensed menu
 
 struct WatchRootView: View {
-    @EnvironmentObject private var model: WatchModel
+    @ObservedObject private var model = WatchModel.shared
 
     var body: some View {
         NavigationStack(path: $model.path) {
@@ -46,7 +46,7 @@ struct WatchRootView: View {
 }
 
 struct MenuPage: View {
-    @EnvironmentObject private var model: WatchModel
+    @ObservedObject private var model = WatchModel.shared
 
     var body: some View {
         ScrollView {
@@ -78,7 +78,7 @@ struct MenuPage: View {
 
 /// Your walking buddy at the top of the menu.
 struct BuddyHeader: View {
-    @EnvironmentObject private var model: WatchModel
+    @ObservedObject private var model = WatchModel.shared
     let member: WatchSnapshot.Member
 
     var body: some View {
@@ -137,7 +137,7 @@ struct MenuTile: View {
 // MARK: - Party
 
 struct PartyPage: View {
-    @EnvironmentObject private var model: WatchModel
+    @ObservedObject private var model = WatchModel.shared
 
     var body: some View {
         ScrollView {
@@ -153,7 +153,7 @@ struct PartyPage: View {
 }
 
 struct PartyRow: View {
-    @EnvironmentObject private var model: WatchModel
+    @ObservedObject private var model = WatchModel.shared
     let member: WatchSnapshot.Member
 
     var body: some View {
@@ -176,7 +176,7 @@ struct PartyRow: View {
 }
 
 struct SummaryPage: View {
-    @EnvironmentObject private var model: WatchModel
+    @ObservedObject private var model = WatchModel.shared
     let memberID: String
     @State private var note: String?
     @State private var busy = false
@@ -252,7 +252,7 @@ struct SummaryPage: View {
 // MARK: - Bag
 
 struct BagPage: View {
-    @EnvironmentObject private var model: WatchModel
+    @ObservedObject private var model = WatchModel.shared
 
     var body: some View {
         let pockets = ["Balls", "Berries", "Items", "Key items"].filter { p in model.snapshot.bag.contains { $0.pocket == p } }
@@ -287,7 +287,7 @@ struct BagPage: View {
 // MARK: - Wild Pokémon
 
 struct WildPage: View {
-    @EnvironmentObject private var model: WatchModel
+    @ObservedObject private var model = WatchModel.shared
 
     var body: some View {
         ScrollView {
@@ -326,7 +326,7 @@ struct WildPage: View {
 }
 
 struct BattlePage: View {
-    @EnvironmentObject private var model: WatchModel
+    @ObservedObject private var model = WatchModel.shared
     @Environment(\.dismiss) private var dismiss
     let wildID: String
 
@@ -485,7 +485,7 @@ struct BattlePage: View {
 
 /// Box icon that hops while you're looking at it (stays still in always-on mode).
 struct HoppingIcon: View {
-    @EnvironmentObject private var model: WatchModel
+    @ObservedObject private var model = WatchModel.shared
     @Environment(\.isLuminanceReduced) private var dimmed
     let member: WatchSnapshot.Member
     var size: CGFloat
@@ -504,7 +504,7 @@ struct HoppingIcon: View {
 }
 
 struct WildIcon: View {
-    @EnvironmentObject private var model: WatchModel
+    @ObservedObject private var model = WatchModel.shared
     @Environment(\.isLuminanceReduced) private var dimmed
     let wild: WatchSnapshot.Wild
     var size: CGFloat
@@ -621,7 +621,7 @@ struct HeldDot: View {
 
 /// A blurred map of where you are, behind every screen (from your iPhone's last location).
 struct WatchBackdrop: View {
-    @EnvironmentObject private var model: WatchModel
+    @ObservedObject private var model = WatchModel.shared
 
     var body: some View {
         ZStack {
