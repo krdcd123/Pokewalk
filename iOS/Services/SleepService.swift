@@ -167,13 +167,19 @@ final class SleepService: ObservableObject {
             if let t = await night(for: today), t.wake < .now { n = t }   // an earlier sleep tonight (nap / early night)
         }
         lastNight = n
+        if let n, !SleepRecorder.shared.isRecording {
+            SleepRecorder.trim(day: n.day, asleepFrom: n.bedtime, to: n.wake)
+        }
         guard showPopup, let n, popup == nil else { return }
         let key = "sleepShown-\(Int(n.day.timeIntervalSince1970))"
         // Only once you're up: woke 10+ minutes ago, within the last 14 hours
         let since = Date().timeIntervalSince(n.wake)
         guard since > 10 * 60, since < 14 * 3600, !UserDefaults.standard.bool(forKey: key) else { return }
         UserDefaults.standard.set(true, forKey: key)
-        if SleepRecorder.shared.isRecording { SleepRecorder.shared.stop() }
+        if SleepRecorder.shared.isRecording {
+            SleepRecorder.shared.stop()
+            SleepRecorder.trim(day: n.day, asleepFrom: n.bedtime, to: n.wake)
+        }
         popup = n
     }
 
@@ -219,6 +225,31 @@ final class SleepRecorder: ObservableObject {
     private var listener: Listener?
 
     nonisolated static let keep = 5
+    /// While listening, keep plenty: in the morning only the ones from while you were asleep are kept.
+    nonisolated static let keepWhileListening = 40
+
+    /// Morning tidy-up: drop clips from before you fell asleep or after you woke (TV, chatting…),
+    /// then keep the loudest few.
+    nonisolated static func trim(day: Date, asleepFrom: Date?, to: Date?) {
+        let all = clipFiles(for: day)
+        var keepList = all
+        if let from = asleepFrom, let to {
+            keepList = all.filter { url in
+                guard let t = time(url) else { return true }
+                return t >= from.addingTimeInterval(-60) && t <= to.addingTimeInterval(60)
+            }
+        }
+        keepList = Array(keepList.sorted { score($0) > score($1) }.prefix(keep))
+        for url in all where !keepList.contains(url) { try? FileManager.default.removeItem(at: url) }
+    }
+
+    nonisolated static func clipFiles(for day: Date) -> [URL] {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        let d = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("SleepTalk/\(f.string(from: day))", isDirectory: true)
+        let files = (try? FileManager.default.contentsOfDirectory(at: d, includingPropertiesForKeys: nil)) ?? []
+        return files.filter { $0.pathExtension == "caf" && $0.lastPathComponent.hasPrefix("clip-") }
+    }
 
     static var root: URL {
         let d = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("SleepTalk", isDirectory: true)
@@ -368,7 +399,7 @@ final class SleepRecorder: ObservableObject {
             let all = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
                 .filter { $0.lastPathComponent.hasPrefix("clip-") }
                 .sorted { SleepRecorder.score($0) > SleepRecorder.score($1) }
-            for extra in all.dropFirst(SleepRecorder.keep) { try? FileManager.default.removeItem(at: extra) }
+            for extra in all.dropFirst(SleepRecorder.keepWhileListening) { try? FileManager.default.removeItem(at: extra) }
         }
     }
 }

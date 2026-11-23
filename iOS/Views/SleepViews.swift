@@ -82,7 +82,7 @@ struct SleepClipsList: View {
     @ObservedObject private var player = ClipPlayer.shared
 
     var body: some View {
-        let clips = SleepRecorder.clips(for: day)
+        let clips = Array(SleepRecorder.clips(for: day).prefix(SleepRecorder.keep))
         if !clips.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Label("Sleep talking", systemImage: "waveform").font(.rounded(14, .heavy))
@@ -297,8 +297,8 @@ struct SleepSection: View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Sleep talking", systemImage: "waveform.badge.mic").font(.rounded(15, .heavy))
             Text(recorder.isRecording
-                 ? "Listening since \(recorder.startedAt.map(SleepFormat.time) ?? "now"). Leave PokéWalk open in the background — it stops when you open it in the morning and keeps the \(SleepRecorder.keep) loudest moments."
-                 : "Start this when you go to bed. PokéWalk listens through the night and keeps the \(SleepRecorder.keep) loudest moments (sleep talking, snoring…). Keep your phone charging. Clips stay on your phone.")
+                 ? "Listening since \(recorder.startedAt.map(SleepFormat.time) ?? "now"). Leave PokéWalk open in the background — it stops when you open it in the morning and keeps the \(SleepRecorder.keep) loudest moments from while you were asleep."
+                 : "Start this when you go to bed. PokéWalk listens through the night and keeps the \(SleepRecorder.keep) loudest moments from while you were actually asleep (sleep talking, snoring…). Keep your phone charging. Clips stay on your phone.")
                 .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
             Button {
                 if recorder.isRecording { recorder.stop() }
