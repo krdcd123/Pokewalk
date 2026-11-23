@@ -98,7 +98,11 @@ final class SleepService: ObservableObject {
         }
         let sleeping = blocks.filter { $0.stage != .awake }
         guard let first = sleeping.map(\.start).min(), let last = sleeping.map(\.end).max() else { return nil }
-        let asleep = (t[.rem] ?? 0) + (t[.core] ?? 0) + (t[.deep] ?? 0) + (t[.asleep] ?? 0)
+        let remT: TimeInterval = t[.rem] ?? 0
+        let coreT: TimeInterval = t[.core] ?? 0
+        let deepT: TimeInterval = t[.deep] ?? 0
+        let plainT: TimeInterval = t[.asleep] ?? 0
+        let asleep: TimeInterval = remT + coreT + deepT + plainT
         let awakenings = blocks.filter { b -> Bool in
             guard b.stage == .awake, b.start > first, b.end < last else { return false }
             return b.end.timeIntervalSince(b.start) >= 60
