@@ -149,17 +149,30 @@ struct ComplicationView: View {
         }
     }
 
+    /// Small round slot: the Pokémon inside a blue Exp ring, with its level underneath.
     private func circular(_ m: WatchSnapshot.Member, _ live: LiveMember) -> some View {
-        Gauge(value: live.progress) {
-            Text("Lv")
-        } currentValueLabel: {
-            VStack(spacing: -2) {
-                sprite(m.speciesID).frame(width: 30, height: 23)
-                Text("\(live.level)").font(.system(size: 11, weight: .bold, design: .rounded))
+        ZStack {
+            Circle().stroke(Color.white.opacity(0.18), lineWidth: 4)
+            Circle()
+                .trim(from: 0, to: max(0.02, live.progress))
+                .stroke(Color(hex: 0x4FA3F7), style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .widgetAccentable()
+            VStack(spacing: -1) {
+                bigSprite(m.speciesID).frame(width: 30, height: 24)
+                Text("Lv\(live.level)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .minimumScaleFactor(0.6).lineLimit(1)
+            }
+            .padding(.top, 2)
+            if m.heldItem != nil {
+                Circle().fill(Color.red).overlay(Circle().stroke(.black, lineWidth: 1))
+                    .frame(width: 8, height: 8)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(5)
             }
         }
-        .gaugeStyle(.accessoryCircularCapacity)
-        .widgetAccentable()
+        .padding(1)
     }
 
     /// Large middle slot: party box icon, name, level and an Exp bar, like the party screen in the games.
