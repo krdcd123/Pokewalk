@@ -524,6 +524,7 @@ struct SafariView: View {
             // 4. Shakes, each with the shake sound
             for _ in 0..<result.shakes {
                 SoundKit.shared.play(.ballShake)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()     // each wobble
                 withAnimation(.easeInOut(duration: 0.15)) { wobble = -22 }
                 try? await Task.sleep(for: .milliseconds(160))
                 withAnimation(.easeInOut(duration: 0.15)) { wobble = 22 }
@@ -535,6 +536,7 @@ struct SafariView: View {
             if result.caught {
                 // 5. Click! Stars pop out, the ball dims, then the catch fanfare
                 SoundKit.shared.play(.ballClick)
+                UIImpactFeedbackGenerator(style: .rigid).impactOccurred()      // click: caught
                 ballDim = true
                 withAnimation(.easeOut(duration: 0.7)) { stars = true }
                 try? await Task.sleep(for: .milliseconds(650))
@@ -543,6 +545,7 @@ struct SafariView: View {
                 } else {
                     SoundKit.shared.play(.ballCatch)
                 }
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
                 await type("Gotcha! \(foeName) was caught!", hold: 1.2)
                 if test {
                     await type("(Test battle: nothing was saved.)", hold: 1.2)
@@ -554,6 +557,7 @@ struct SafariView: View {
             }
             // Broke free: the ball bursts open and the Pokémon comes back out
             SoundKit.shared.play(.ballOpen)
+            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()      // it broke free
             ballOpen = true
             openFX = (Date(), ballPos)
             withAnimation(.easeOut(duration: 0.1)) { flash = 0.7 }
