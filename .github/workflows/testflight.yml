@@ -17,6 +17,11 @@ on:
 permissions:
   contents: read
 
+# One upload at a time (each run makes and revokes its own certificate).
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
 jobs:
   testflight:
     runs-on: macos-15-intel

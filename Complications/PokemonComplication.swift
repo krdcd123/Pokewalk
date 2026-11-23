@@ -165,7 +165,6 @@ struct ComplicationView: View {
                         Circle().fill(Color.red)
                             .overlay(Circle().stroke(.black, lineWidth: 1.5))
                             .frame(width: 11, height: 11)
-                            .widgetAccentedRenderingMode(.fullColor)
                             .offset(x: 1, y: -1)
                     }
                 }
