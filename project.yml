@@ -45,6 +45,7 @@ targets:
         AppGroupID: group.$(BUNDLE_ID_PREFIX).pokewalk
         NSHealthShareUsageDescription: PokéWalk reads your steps, walking distance, active calories and workouts (iPhone and Apple Watch) to level up your Pokémon and earn Poké Dollars.
         NSHealthUpdateUsageDescription: PokéWalk doesn't write to Apple Health; it only reads your activity.
+        ITSAppUsesNonExemptEncryption: false
         NSMotionUsageDescription: PokéWalk counts your steps live so wild Pokémon can appear while you walk.
         NSLocationWhenInUseUsageDescription: PokéWalk draws where you walk on the map and records where you catch each Pokémon.
         NSLocationAlwaysAndWhenInUseUsageDescription: Lets PokéWalk record your walks and trigger encounters with your phone in your pocket.
