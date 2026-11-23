@@ -289,7 +289,18 @@ final class SleepRecorder: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: "sleepAutoListen") }
     }
 
-    /// Called whenever PokéWalk opens: starts at night (11pm–3am, charging), stops in the morning.
+    /// From what hour it may start by itself (Settings), until 4am. 23 = 11pm.
+    static var listenFromHour: Int {
+        get { UserDefaults.standard.object(forKey: "sleepListenFrom") as? Int ?? 23 }
+        set { UserDefaults.standard.set(newValue, forKey: "sleepListenFrom") }
+    }
+
+    static func hourText(_ h: Int) -> String {
+        Calendar.current.date(bySettingHour: h, minute: 0, second: 0, of: .now)?
+            .formatted(date: .omitted, time: .shortened) ?? "\(h):00"
+    }
+
+    /// Called whenever PokéWalk opens: starts at night (from your chosen time until 4am, charging), stops in the morning.
     @discardableResult
     func autoStartOrStop() async -> String? {
         let hour = Calendar.current.component(.hour, from: .now)
@@ -297,7 +308,9 @@ final class SleepRecorder: ObservableObject {
             stop()
             return nil
         }
-        guard Self.autoListen, !isRecording, hour >= 23 || hour < 3,
+        let from = Self.listenFromHour
+        let inWindow = from >= 12 ? (hour >= from || hour < 4) : (hour >= from && hour < 4)
+        guard Self.autoListen, !isRecording, inWindow,
               AVAudioApplication.shared.recordPermission == .granted else { return nil }
         UIDevice.current.isBatteryMonitoringEnabled = true
         let charging = UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full

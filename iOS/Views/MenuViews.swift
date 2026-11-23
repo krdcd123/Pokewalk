@@ -652,6 +652,8 @@ struct SettingsView: View {
     @State private var testBattle: PendingEncounter?
     @AppStorage("homeSet") private var homeSet = false
     @AppStorage("workSet") private var workSet = false
+    @State private var sleepAuto = SleepRecorder.autoListen
+    @State private var sleepFrom = SleepRecorder.listenFromHour
     @State private var importingSave = false
     @State private var confirmImport: URL?
     @State private var exportURL: URL?
@@ -663,6 +665,18 @@ struct SettingsView: View {
         Form {
             SavedSpotSection(spot: HomeLocation, title: "Home", icon: "house", isSet: $homeSet)
             SavedSpotSection(spot: WorkLocation, title: "Work", icon: "briefcase", isSet: $workSet)
+
+            Section {
+                Toggle("Listen for sleep talking by itself", isOn: Binding(get: { sleepAuto }, set: { sleepAuto = $0; SleepRecorder.autoListen = $0 }))
+                    .glassRow()
+                Picker("Start from", selection: Binding(get: { sleepFrom }, set: { sleepFrom = $0; SleepRecorder.listenFromHour = $0 })) {
+                    ForEach([20, 21, 22, 23, 0, 1, 2], id: \.self) { h in Text(SleepRecorder.hourText(h)).tag(h) }
+                }
+                .glassRow()
+                .disabled(!sleepAuto)
+            } header: { Text("Sleep") } footer: {
+                Text("When you open PokéWalk after this time (until 4am) with your phone charging, it starts listening for sleep talking. It stops when you open it in the morning and keeps the 5 loudest moments from while you were asleep. Allow the microphone once from Journal › moon › Start listening.")
+            }
 
             Section("Trainer") {
                 TextField("Trainer name", text: $name).onSubmit { store.setTrainerName(name) }.glassRow()
