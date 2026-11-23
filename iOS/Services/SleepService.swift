@@ -79,6 +79,7 @@ final class SleepService: ObservableObject {
         var blocks: [SleepNight.Block] = []
         var t: [SleepNight.Stage: TimeInterval] = [:]
         var inBedFrom: Date?
+        var inBedBlocks: [SleepNight.Block] = []
         for s in chosen.sorted(by: { $0.startDate < $1.startDate }) {
             guard let value = HKCategoryValueSleepAnalysis(rawValue: s.value) else { continue }
             let stage: SleepNight.Stage
@@ -90,11 +91,21 @@ final class SleepService: ObservableObject {
             case .asleepUnspecified: stage = .asleep
             case .inBed:
                 inBedFrom = min(inBedFrom ?? s.startDate, s.startDate)
+                inBedBlocks.append(.init(stage: .inBed, start: s.startDate, end: s.endDate))
                 continue
             default: continue
             }
             blocks.append(.init(stage: stage, start: s.startDate, end: s.endDate))
             t[stage, default: 0] += s.endDate.timeIntervalSince(s.startDate)
+        }
+        // iPhone only (no watch): Health just has "in bed" time from your Sleep Schedule — use it as the night.
+        var phoneOnly = false
+        if !blocks.contains(where: { $0.stage != .awake }), !inBedBlocks.isEmpty {
+            phoneOnly = true
+            for b in inBedBlocks {
+                blocks.append(.init(stage: .asleep, start: b.start, end: b.end))
+                t[.asleep, default: 0] += b.end.timeIntervalSince(b.start)
+            }
         }
         let sleeping = blocks.filter { $0.stage != .awake }
         guard let first = sleeping.map(\.start).min(), let last = sleeping.map(\.end).max() else { return nil }
@@ -117,7 +128,7 @@ final class SleepService: ObservableObject {
                           asleep: asleep, awake: t[.awake] ?? 0, rem: t[.rem] ?? 0, core: t[.core] ?? 0, deep: t[.deep] ?? 0,
                           awakenings: awakenings, blocks: blocks, hasStages: !watchSources.isEmpty,
                           avgHeartRate: h.avg, minHeartRate: h.min, respiratoryRate: r.avg, bloodOxygen: o.avg,
-                          source: watchSources.isEmpty ? "iPhone" : "Apple Watch")
+                          source: phoneOnly ? "iPhone (time in bed)" : (watchSources.isEmpty ? "iPhone" : "Apple Watch"))
     }
 
     /// Average sleep over the nights before `day` (up to 7), for "compared with usual".
