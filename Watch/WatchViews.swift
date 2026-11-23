@@ -5,7 +5,7 @@ import WatchKit
 
 /// Screens in the watch app (also where a tapped notification can jump to).
 enum WatchRoute: Hashable {
-    case party, bag, wild
+    case party, bag, wild, map
     case summary(String)    // party member id
     case battle(String)     // wild Pokémon id
 }
@@ -35,6 +35,7 @@ struct WatchRootView: View {
                     case .party: PartyPage()
                     case .bag: BagPage()
                     case .wild: WildPage()
+                    case .map: WatchMapPage()
                     case .summary(let id): SummaryPage(memberID: id)
                     case .battle(let id): BattlePage(wildID: id)
                     }
@@ -62,6 +63,8 @@ struct MenuPage: View {
                          tint: Color(hex: 0xE8A23A), badge: 0, route: .bag)
                 MenuTile(title: "Wild", subtitle: model.snapshot.wild.isEmpty ? "\(model.liveStepsToEncounter) steps to go" : "Waiting to be caught",
                          system: "leaf.fill", tint: Color(hex: 0x4CC76E), badge: model.snapshot.wild.count, route: .wild)
+                MenuTile(title: "Map", subtitle: "Where you are", system: "map.fill",
+                         tint: Color(hex: 0x3FB8AF), badge: 0, route: .map)
                 if let status = model.syncStatus {
                     Text(status).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }
@@ -479,6 +482,105 @@ struct BattlePage: View {
             busy = false
         }
     }
+}
+
+// MARK: - Map
+
+/// Where you are, with your buddy in a circle — a small version of the phone's map, with today's route.
+struct WatchMapPage: View {
+    @ObservedObject private var model = WatchModel.shared
+    @StateObject private var locator = WatchLocator()
+    @State private var position: MapCameraPosition = .userLocation(fallback: .automatic)
+
+    var body: some View {
+        Map(position: $position) {
+            ForEach(Array(model.snapshot.trail.enumerated()), id: \.offset) { _, seg in
+                MapPolyline(coordinates: Self.coords(seg.coords))
+                    .stroke(seg.drive ? Color(hex: 0xE05A4F) : Color(hex: 0x3FB8AF),
+                            style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+            }
+            if let here = locator.location?.coordinate ?? phoneCoordinate {
+                Annotation("", coordinate: here, anchor: .center) { BuddyMarker() }
+            }
+        }
+        .mapStyle(.standard(pointsOfInterest: .excludingAll))
+        .navigationTitle("Map")
+        .onAppear {
+            locator.start()
+            if let c = phoneCoordinate, locator.location == nil {
+                position = .camera(MapCamera(centerCoordinate: c, distance: 600))
+            }
+        }
+        .onDisappear { locator.stop() }
+        .onChange(of: locator.location) { _, loc in
+            guard let loc else { return }
+            withAnimation { position = .camera(MapCamera(centerCoordinate: loc.coordinate, distance: 600)) }
+        }
+    }
+
+    private var phoneCoordinate: CLLocationCoordinate2D? {
+        guard let lat = model.snapshot.latitude, let lon = model.snapshot.longitude else { return nil }
+        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+    }
+
+    static func coords(_ flat: [Double]) -> [CLLocationCoordinate2D] {
+        stride(from: 0, to: flat.count - 1, by: 2).map { CLLocationCoordinate2D(latitude: flat[$0], longitude: flat[$0 + 1]) }
+    }
+}
+
+/// Your buddy's box icon in a glassy circle, like on the phone's map.
+struct BuddyMarker: View {
+    @ObservedObject private var model = WatchModel.shared
+
+    var body: some View {
+        ZStack {
+            Circle().fill(.ultraThinMaterial)
+            Circle().strokeBorder(.white, lineWidth: 2)
+            if let buddy = model.snapshot.buddy {
+                BoxIcon(speciesID: buddy.speciesID, shiny: buddy.isShiny)
+                    .id("\(buddy.speciesID)-\(buddy.isShiny)-\(model.spriteVersion)")
+                    .padding(5)
+            } else {
+                Image(systemName: "figure.walk").foregroundStyle(.white)
+            }
+        }
+        .frame(width: 38, height: 38)
+        .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
+    }
+}
+
+/// The watch's own location while the map is open (falls back to the phone's last position).
+@MainActor
+final class WatchLocator: NSObject, ObservableObject, CLLocationManagerDelegate {
+    @Published var location: CLLocation?
+    private let manager = CLLocationManager()
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        manager.distanceFilter = 10
+    }
+
+    func start() {
+        if manager.authorizationStatus == .notDetermined { manager.requestWhenInUseAuthorization() }
+        manager.startUpdatingLocation()
+    }
+
+    func stop() { manager.stopUpdatingLocation() }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let loc = locations.last, loc.horizontalAccuracy > 0, loc.horizontalAccuracy < 100 else { return }
+        Task { @MainActor in self.location = loc }
+    }
+
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
+            manager.startUpdatingLocation()
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
 }
 
 // MARK: - Sprites

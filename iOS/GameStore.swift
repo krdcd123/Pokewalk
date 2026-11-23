@@ -754,8 +754,29 @@ final class GameStore: ObservableObject {
             },
             latitude: tracker.currentLocation()?.coordinate.latitude,
             longitude: tracker.currentLocation()?.coordinate.longitude,
-            money: state.money)
+            money: state.money,
+            trail: watchTrail)
     }
+
+    /// Today's route for the watch map, thinned to about 300 points in total.
+    private var watchTrail: [WatchSnapshot.TrailSegment] {
+        // split each recorded segment where it switches between walking and driving
+        var parts: [(drive: Bool, pts: [TrackPoint])] = []
+        for seg in TrackStore.shared.today {
+            for p in seg {
+                if let last = parts.last, last.drive == p.isDrive, !last.pts.isEmpty { parts[parts.count - 1].pts.append(p) }
+                else { parts.append((p.isDrive, [p])) }
+            }
+            parts.append((false, []))     // segment break
+        }
+        parts.removeAll { $0.pts.count < 2 }
+        let total = parts.reduce(0) { $0 + $1.pts.count }
+        let stride = max(1, total / 300)
+        return parts.map { part in
+            var kept: [TrackPoint] = []
+            for (i, p) in part.pts.enumerated() where i % stride == 0 || i == part.pts.count - 1 { kept.append(p) }
+            return .init(drive: part.drive, coords: kept.flatMap { [$0.lat, $0.lon] })
+        }
 
     /// The Bag, condensed for the watch: balls, then berries, then everything else.
     private var watchBag: [WatchSnapshot.BagLine] {

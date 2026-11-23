@@ -26,6 +26,12 @@ struct WatchSnapshot: Codable, Equatable {
         var id: String { key }
     }
 
+    /// Part of today's route: coordinates flattened as [lat, lon, lat, lon, …].
+    struct TrailSegment: Codable, Equatable {
+        var drive: Bool
+        var coords: [Double]
+    }
+
     /// A wild Pokémon waiting to be caught.
     struct Wild: Codable, Equatable, Identifiable {
         var id: String
@@ -53,6 +59,7 @@ struct WatchSnapshot: Codable, Equatable {
     var latitude: Double? = nil     // where you are (for the watch app's blurred map background)
     var longitude: Double? = nil
     var money: Int = 0
+    var trail: [TrailSegment] = []  // today's walks (and drives), thinned out for the watch map
 
     var buddy: Member? { party.first { $0.isBuddy } }
 
@@ -247,5 +254,6 @@ extension WatchSnapshot {
         latitude = try? c.decodeIfPresent(Double.self, forKey: .latitude)
         longitude = try? c.decodeIfPresent(Double.self, forKey: .longitude)
         money = (try? c.decodeIfPresent(Int.self, forKey: .money)) ?? 0
+        trail = (try? c.decodeIfPresent([TrailSegment].self, forKey: .trail)) ?? []
     }
 }
