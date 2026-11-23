@@ -492,7 +492,7 @@ struct HoppingIcon: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { ctx in
-            let up = !dimmed && Int(ctx.date.timeIntervalSinceReferenceDate / 0.25) % 2 == 0
+            let up = !dimmed && Self.hopUp(ctx.date)
             BoxIcon(speciesID: member.speciesID, shiny: member.isShiny)
                 .id("\(member.speciesID)-\(member.isShiny)-\(model.spriteVersion)")
                 .frame(width: size, height: size)
@@ -500,6 +500,12 @@ struct HoppingIcon: View {
         }
         .frame(width: size, height: size)
         .overlay(alignment: .topTrailing) { if member.heldItem != nil { HeldDot(size: max(7, size * 0.22)) } }
+    }
+
+    /// Up for a quarter second, down for a quarter second. Worked out in Double on purpose:
+    /// the watch is 32-bit, so turning "seconds since 2001 ÷ 0.25" into an Int overflows and crashes.
+    static func hopUp(_ date: Date) -> Bool {
+        date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.5) < 0.25
     }
 }
 
@@ -512,7 +518,7 @@ struct WildIcon: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { ctx in
-            let up = hop && !dimmed && Int(ctx.date.timeIntervalSinceReferenceDate / 0.25) % 2 == 0
+            let up = hop && !dimmed && HoppingIcon.hopUp(ctx.date)
             BoxIcon(speciesID: wild.speciesID, shiny: wild.isShiny)
                 .id("\(wild.speciesID)-\(wild.isShiny)-\(model.spriteVersion)")
                 .frame(width: size, height: size)

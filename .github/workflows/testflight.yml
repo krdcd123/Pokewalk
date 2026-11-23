@@ -141,3 +141,4 @@ jobs:
           path: |
             archive.log
             upload.log
+            build/PokeWalk.xcarchive/dSYMs
