@@ -546,9 +546,9 @@ enum GameRules {
     }
 
     enum Pickup {
-        static let every = 1_500          // steps between pickups
-        static let retryAfterMiss = 1_000 // found nothing: try again after this many steps
-        static let missChance = 0.3
+        static let every = 2_500          // steps between pickups
+        static let retryAfterMiss = 2_000 // found nothing: try again after this many steps
+        static let missChance = 0.5       // half the time it finds nothing
     }
 
     static func setBuddy(_ id: UUID, in s: inout GameState) {

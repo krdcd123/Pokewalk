@@ -15,35 +15,45 @@ struct Stay: Codable, Identifiable, Hashable {
     var location: CLLocation { CLLocation(latitude: lat, longitude: lon) }
     func duration(now: Date = .now) -> TimeInterval { (left ?? now).timeIntervalSince(arrived) }
 
-    /// What the Journal calls it: "Home" if it's at your home location (Settings), otherwise its place name.
-    var shownName: String? { HomeLocation.contains(location) ? "Home" : name }
+    /// What the Journal calls it: "Home" / "Work" if it's at a place set in Settings, otherwise its place name.
+    var shownName: String? {
+        if HomeLocation.contains(location) { return "Home" }
+        if WorkLocation.contains(location) { return "Work" }
+        return name
+    }
 }
 
-/// Your home, set in Settings. Stays within ~120 m of it show as "Home" in the Journal.
-enum HomeLocation {
-    static let radius: CLLocationDistance = 120
-    private static var d: UserDefaults { .standard }
+/// A place you set in Settings (home, work). Stays within ~120 m of it show under its name in the Journal.
+struct SavedSpot {
+    let key: String
+    let radius: CLLocationDistance = 120
+    private var d: UserDefaults { .standard }
 
-    static var location: CLLocation? {
-        guard d.bool(forKey: "homeSet") else { return nil }
-        return CLLocation(latitude: d.double(forKey: "homeLat"), longitude: d.double(forKey: "homeLon"))
+    var isSet: Bool { d.bool(forKey: "\(key)Set") }
+
+    var location: CLLocation? {
+        guard isSet else { return nil }
+        return CLLocation(latitude: d.double(forKey: "\(key)Lat"), longitude: d.double(forKey: "\(key)Lon"))
     }
 
-    static func set(_ loc: CLLocation?) {
+    func set(_ loc: CLLocation?) {
         if let loc {
-            d.set(loc.coordinate.latitude, forKey: "homeLat")
-            d.set(loc.coordinate.longitude, forKey: "homeLon")
-            d.set(true, forKey: "homeSet")
+            d.set(loc.coordinate.latitude, forKey: "\(key)Lat")
+            d.set(loc.coordinate.longitude, forKey: "\(key)Lon")
+            d.set(true, forKey: "\(key)Set")
         } else {
-            d.set(false, forKey: "homeSet")
+            d.set(false, forKey: "\(key)Set")
         }
     }
 
-    static func contains(_ loc: CLLocation) -> Bool {
-        guard let home = location else { return false }
-        return home.distance(from: loc) <= radius
+    func contains(_ loc: CLLocation) -> Bool {
+        guard let spot = location else { return false }
+        return spot.distance(from: loc) <= radius
     }
 }
+
+let HomeLocation = SavedSpot(key: "home")
+let WorkLocation = SavedSpot(key: "work")
 
 /// Notices when you stop somewhere for a while and names the place (shop, park, street…).
 /// Works from the location updates PokéWalk already gets; with "Always" location it also uses iOS's

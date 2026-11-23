@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import Photos
 
 struct JournalView: View {
     @EnvironmentObject private var store: GameStore
@@ -11,6 +12,7 @@ struct JournalView: View {
     @State private var showAllTime = false
     @State private var selected: UUID?
     @ObservedObject private var places = PlaceLog.shared
+    @ObservedObject private var photos = JournalPhotos.shared
     @State private var renaming: Stay?
     @State private var renamingGroup: [Stay] = []
     @State private var expanded: Set<UUID> = []
@@ -140,6 +142,7 @@ struct JournalView: View {
                 }
                 if !showAllTime {
                     placesSection
+                    photosSection
                 }
                 Text("ENCOUNTERS").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
                 if encounters.isEmpty {
@@ -213,6 +216,10 @@ struct JournalView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(g.name ?? "Finding the name…").font(.rounded(15, .heavy))
                                 Text(groupTimes(g)).font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                                if selected == g.id && photos.allowed {
+                                    PlacePhotos(group: g).padding(.top, 6)
+                                        .transition(.opacity.combined(with: .move(edge: .top)))
+                                }
                                 // Tap to see each time you were there
                                 if expanded.contains(g.id) && g.visits.count > 1 {
                                     VStack(alignment: .leading, spacing: 4) {
@@ -265,6 +272,36 @@ struct JournalView: View {
                 renamingGroup = []
             }
             Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    /// Photos you took this day (from your photo library). Tap a place above to see just the ones from there.
+    @ViewBuilder private var photosSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("PHOTOS").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
+            if photos.allowed {
+                let list = photos.assets(onDay: day)
+                if list.isEmpty {
+                    Text("No photos taken this day.").font(.rounded(13)).foregroundStyle(Theme.inkSoft)
+                } else {
+                    PhotoStrip(assets: list)
+                    Text("\(list.count) from this day · tap a place to see the ones taken there")
+                        .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                }
+            } else {
+                Button {
+                    if photos.undecided { Task { await photos.requestAccess() } }
+                    else if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                } label: {
+                    Label(photos.undecided ? "Show photos from your library" : "Allow photo access in Settings",
+                          systemImage: "photo.on.rectangle.angled")
+                        .font(.rounded(14, .heavy)).frame(maxWidth: .infinity).padding(12)
+                }
+                .buttonStyle(.plain)
+                .glassCard(16)
+                Text("PokéWalk only reads your photos to show them here — it never changes or uploads them.")
+                    .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+            }
         }
     }
 
@@ -377,5 +414,25 @@ private extension Array where Element == String {
     /// "Home → Home → Park" becomes "Home → Park".
     func removingDuplicatesInARow() -> [String] {
         reduce(into: []) { out, x in if out.last != x { out.append(x) } }
+    }
+}
+
+
+/// Photos taken at one place (shown under it when you tap it).
+private struct PlacePhotos: View {
+    let group: PlaceGroup
+    @State private var assets: [PHAsset]?
+
+    var body: some View {
+        Group {
+            if let assets {
+                if assets.isEmpty {
+                    Text("No photos taken here").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                } else {
+                    PhotoStrip(assets: assets, size: 60)
+                }
+            }
+        }
+        .task(id: group.id) { assets = JournalPhotos.shared.assets(for: group) }
     }
 }

@@ -15,6 +15,7 @@ final class WatchModel: NSObject, ObservableObject {
     @Published var spriteVersion = 0
     @Published var path: [WatchRoute] = []      // navigation (notifications can jump straight to a screen)
 
+    private var recommendationsRefreshed = false
     private var pendingConnectivityTasks: [WKWatchConnectivityRefreshBackgroundTask] = []
     private var contentPendingObservation: NSKeyValueObservation?
 
@@ -62,7 +63,11 @@ final class WatchModel: NSObject, ObservableObject {
             || snap.party.map(\.speciesID) != snapshot.party.map(\.speciesID)
         snapshot = snap
         SharedStore.saveSnapshot(snap)
-        if partyChanged { WidgetCenter.shared.invalidateConfigurationRecommendations() }
+        if partyChanged || !recommendationsRefreshed {
+            recommendationsRefreshed = true
+            WidgetCenter.shared.invalidateConfigurationRecommendations()
+            WidgetCenter.shared.reloadAllTimelines()
+        }
         Task {
             await refreshSteps()
             completeConnectivityTasksIfDone()

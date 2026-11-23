@@ -650,6 +650,7 @@ struct SettingsView: View {
     @State private var confirmReset = false
     @State private var testBattle: PendingEncounter?
     @AppStorage("homeSet") private var homeSet = false
+    @AppStorage("workSet") private var workSet = false
     @State private var importingSave = false
     @State private var confirmImport: URL?
     @State private var exportURL: URL?
@@ -659,42 +660,8 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section {
-                HStack(spacing: 12) {
-                    Image(systemName: homeSet ? "house.fill" : "house").font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(Theme.teal)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Home").font(.rounded(16, .heavy))
-                        Text(homeSet ? "Set — places there show as Home in your Journal" : "Not set")
-                            .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
-                    }
-                    Spacer()
-                }
-                .glassRow()
-                Button {
-                    if let here = LocationTracker.shared.currentLocation() {
-                        HomeLocation.set(here)
-                        homeSet = true
-                        store.toast = "Home set! Stays here will show as Home in your Journal."
-                    } else {
-                        store.toast = "Couldn't find your location yet — try again in a moment."
-                    }
-                } label: {
-                    Label(homeSet ? "Move home to where I am now" : "Set home to where I am now", systemImage: "location.fill")
-                }
-                .glassRow()
-                if homeSet {
-                    Button(role: .destructive) {
-                        HomeLocation.set(nil)
-                        homeSet = false
-                    } label: {
-                        Label("Remove home", systemImage: "trash")
-                    }
-                    .glassRow()
-                }
-            } header: { Text("Home") } footer: {
-                Text("Stand at home and tap Set. Anywhere within about 120 m counts as home.")
-            }
+            SavedSpotSection(spot: HomeLocation, title: "Home", icon: "house", isSet: $homeSet)
+            SavedSpotSection(spot: WorkLocation, title: "Work", icon: "briefcase", isSet: $workSet)
 
             Section("Trainer") {
                 TextField("Trainer name", text: $name).onSubmit { store.setTrainerName(name) }.glassRow()
@@ -740,9 +707,8 @@ struct SettingsView: View {
                     Text("Off").tag(0.0); Text("10%").tag(0.1); Text("20%").tag(0.2); Text("50%").tag(0.5)
                 }
                 .glassRow()
-                Stepper("Encounter every ~\(store.state.settings.encounterSteps) steps",
-                        value: binding(\.encounterSteps), in: 100...10_000, step: 100).glassRow()
-                Stepper("Ball every \(store.state.settings.ballSteps) steps", value: binding(\.ballSteps), in: 50...2_000, step: 50).glassRow()
+                bigStepper("Encounter every ~", \.encounterSteps, min: 100, max: 10_000)
+                bigStepper("Ball every ", \.ballSteps, min: 50, max: 10_000)
                 Stepper("Item every \(store.state.settings.itemSteps.formatted()) steps", value: binding(\.itemSteps), in: 250...5_000, step: 250).glassRow()
                 Stepper("Berry every \(store.state.settings.berrySteps.formatted()) steps", value: binding(\.berrySteps), in: 100...2_000, step: 50).glassRow()
                 Picker("Wild shiny chance", selection: binding(\.shinyOdds)) {
@@ -889,6 +855,17 @@ struct SettingsView: View {
         case .items: return "item"
         case .trainers: return "trainer"
         }
+    }
+
+    /// Steps of 50 below 1,000, then 250 at a time so big numbers don't take forever.
+    private func bigStepper(_ label: String, _ kp: WritableKeyPath<GameSettings, Int>, min lo: Int, max hi: Int) -> some View {
+        let v = store.state.settings[keyPath: kp]
+        return Stepper("\(label)\(v.formatted()) steps") {
+            store.updateSettings { $0[keyPath: kp] = Swift.min(hi, v >= 1_000 ? v + 250 : v + 50) }
+        } onDecrement: {
+            store.updateSettings { $0[keyPath: kp] = Swift.max(lo, v > 1_000 ? v - 250 : v - 50) }
+        }
+        .glassRow()
     }
 
     private func binding<T>(_ kp: WritableKeyPath<GameSettings, T>) -> Binding<T> {
@@ -1561,5 +1538,55 @@ struct ShopView: View {
         .scrollContentBackground(.hidden)
         .navigationTitle("Poké Mart")
         .glassScreen()
+    }
+}
+
+
+/// Settings section to set (or clear) Home / Work at where you're standing.
+struct SavedSpotSection: View {
+    @EnvironmentObject private var store: GameStore
+    let spot: SavedSpot
+    let title: String
+    let icon: String
+    @Binding var isSet: Bool
+
+    var body: some View {
+        Section {
+            HStack(spacing: 12) {
+                Image(systemName: isSet ? "\(icon).fill" : icon).font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Theme.teal)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.rounded(16, .heavy))
+                    Text(isSet ? "Set — places there show as \(title) in your Journal" : "Not set")
+                        .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                }
+                Spacer()
+            }
+            .glassRow()
+            Button {
+                if let here = LocationTracker.shared.currentLocation() {
+                    spot.set(here)
+                    isSet = true
+                    store.toast = "\(title) set! Stays here will show as \(title) in your Journal."
+                } else {
+                    store.toast = "Couldn't find your location yet — try again in a moment."
+                }
+            } label: {
+                Label(isSet ? "Move \(title.lowercased()) to where I am now" : "Set \(title.lowercased()) to where I am now",
+                      systemImage: "location.fill")
+            }
+            .glassRow()
+            if isSet {
+                Button(role: .destructive) {
+                    spot.set(nil)
+                    isSet = false
+                } label: {
+                    Label("Remove \(title.lowercased())", systemImage: "trash")
+                }
+                .glassRow()
+            }
+        } header: { Text(title) } footer: {
+            Text("Stand at \(title.lowercased()) and tap Set. Anywhere within about 120 m counts.")
+        }
     }
 }

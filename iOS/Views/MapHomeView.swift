@@ -263,6 +263,9 @@ struct MapHomeView: View {
                         }
                         Text("\(Distance.text(store.metersToday)) walked")
                             .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                        Label("\(store.caloriesToday.formatted()) kcal burned", systemImage: "flame.fill")
+                            .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                            .labelStyle(.titleAndIcon)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }

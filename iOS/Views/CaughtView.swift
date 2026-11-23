@@ -70,6 +70,7 @@ struct CaughtView: View {
 /// Mini map + "Met at …" line, used on the caught screen and the summary.
 struct MetCard: View {
     let mon: OwnedPokemon
+    @State private var expanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -83,6 +84,14 @@ struct MetCard: View {
                 .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
                         .allowsHitTesting(false)
                 .frame(height: 140)
+                .overlay(alignment: .topTrailing) {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 13, weight: .bold)).padding(7)
+                        .background(.ultraThinMaterial, in: Circle()).padding(8)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { expanded = true }
+                .fullScreenCover(isPresented: $expanded) { MetMapFull(mon: mon, coord: coord) }
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(mon.metLocation.map { "Met at \($0.displayName)" } ?? (mon.metNote ?? "Met on your travels"))
@@ -94,5 +103,53 @@ struct MetCard: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .glassCard(20)
+    }
+}
+
+
+/// The place you met a Pokémon, full screen: pinch to zoom, drag around, switch to satellite.
+struct MetMapFull: View {
+    let mon: OwnedPokemon
+    let coord: CLLocationCoordinate2D
+    @Environment(\.dismiss) private var dismiss
+    @State private var position: MapCameraPosition
+    @State private var satellite = false
+
+    init(mon: OwnedPokemon, coord: CLLocationCoordinate2D) {
+        self.mon = mon
+        self.coord = coord
+        _position = State(initialValue: .camera(MapCamera(centerCoordinate: coord, distance: 500)))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Map(position: $position) {
+                Annotation(mon.name, coordinate: coord) {
+                    MapPin(speciesID: mon.speciesID, ring: Theme.orange, shiny: mon.isShiny)
+                }.annotationTitles(.hidden)
+            }
+            .mapStyle(satellite ? .hybrid(elevation: .realistic) : .standard(elevation: .realistic))
+            .mapControls { MapCompass(); MapScaleView(); MapPitchToggle() }
+            .ignoresSafeArea(edges: .bottom)
+            .navigationTitle(mon.metLocation?.displayName ?? "Where you met")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { dismiss() } label: { Image(systemName: "xmark") }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        withAnimation { position = .camera(MapCamera(centerCoordinate: coord, distance: 500)) }
+                    } label: { Image(systemName: "scope") }
+                }
+                ToolbarItem(placement: .bottomBar) {
+                    Picker("Map", selection: $satellite) {
+                        Text("Map").tag(false); Text("Satellite").tag(true)
+                    }
+                    .pickerStyle(.segmented).frame(width: 220)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
     }
 }

@@ -515,6 +515,9 @@ final class GameStore: ObservableObject {
     static let pokeDollarsPerKcal = 0.1
 
     @discardableResult
+    /// Active calories burned today (from Apple Health), as last synced.
+    var caloriesToday: Int { state.caloriesDay == DailyStamps.key(.now) ? Int(state.caloriesPaid.rounded()) : 0 }
+
     func syncCalories(_ total: Double) -> Int {
         var earned = 0, gained = 0.0
         mutate { s in

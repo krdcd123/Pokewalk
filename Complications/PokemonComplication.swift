@@ -18,12 +18,14 @@ struct PokemonEntity: AppEntity {
     static let walkingBuddy = PokemonEntity(id: buddyID, name: "Walking Buddy")
     static let partyID = "party"
     static let wholeParty = PokemonEntity(id: partyID, name: "Whole Party")
+    static let partyNoBuddyID = "party-nobuddy"
+    static let partyNoBuddy = PokemonEntity(id: partyNoBuddyID, name: "Party (not buddy)")
 }
 
 struct PokemonQuery: EntityQuery {
     private var all: [PokemonEntity] {
         let party = SharedStore.loadSnapshot()?.party ?? []
-        return [.walkingBuddy, .wholeParty] + party.map { PokemonEntity(id: $0.id, name: $0.name) }
+        return [.walkingBuddy, .wholeParty, .partyNoBuddy] + party.map { PokemonEntity(id: $0.id, name: $0.name) }
     }
 
     func entities(for identifiers: [String]) async throws -> [PokemonEntity] {
@@ -77,18 +79,27 @@ struct Provider: AppIntentTimelineProvider {
 
     func timeline(for configuration: TrackPokemonIntent, in context: Context) async -> Timeline<PokemonEntry> {
         let e = await entry(for: configuration)
-        guard configuration.pokemon?.id == PokemonEntity.partyID, let snap = SharedStore.loadSnapshot(),
-              snap.party.count > 1 else {
+        let mode = configuration.pokemon?.id
+        guard mode == PokemonEntity.partyID || mode == PokemonEntity.partyNoBuddyID,
+              let snap = SharedStore.loadSnapshot() else {
             return Timeline(entries: [e], policy: .after(.now.addingTimeInterval(15 * 60)))
+        }
+        var members = snap.party
+        if mode == PokemonEntity.partyNoBuddyID, members.count > 1 { members.removeAll { $0.isBuddy } }
+        guard members.count > 1 else {
+            let m = members.first
+            return Timeline(entries: [PokemonEntry(date: .now, member: m, live: m.map { LiveMember($0, in: snap, stepsSinceSync: e.stepsSinceSync) },
+                                                   stepsSinceSync: e.stepsSinceSync, stepsToEncounter: e.stepsToEncounter)],
+                            policy: .after(.now.addingTimeInterval(15 * 60)))
         }
         // Whole Party: plan the next 15 minutes, a new member every minute (fades between them).
         // Lined up to the clock so every face showing it changes together.
         let start = Date(timeIntervalSinceReferenceDate:
                             (Date.now.timeIntervalSinceReferenceDate / Self.partyCycle).rounded(.down) * Self.partyCycle)
         let first = Int(((start.timeIntervalSinceReferenceDate / Self.partyCycle)
-                            .truncatingRemainder(dividingBy: Double(snap.party.count))).rounded(.down))
+                            .truncatingRemainder(dividingBy: Double(members.count))).rounded(.down))
         let entries = (0..<15).map { i -> PokemonEntry in
-            let m = snap.party[(first + i) % snap.party.count]
+            let m = members[(first + i) % members.count]
             return PokemonEntry(date: start.addingTimeInterval(Double(i) * Self.partyCycle), member: m,
                                 live: LiveMember(m, in: snap, stepsSinceSync: e.stepsSinceSync),
                                 stepsSinceSync: e.stepsSinceSync, stepsToEncounter: e.stepsToEncounter)
@@ -101,10 +112,11 @@ struct Provider: AppIntentTimelineProvider {
         let party = SharedStore.loadSnapshot()?.party ?? []
         var recs = [AppIntentRecommendation(intent: TrackPokemonIntent(pokemon: .walkingBuddy),
                                             description: Text("Walking Buddy"))]
-        if party.count > 1 {
-            recs.append(AppIntentRecommendation(intent: TrackPokemonIntent(pokemon: .wholeParty),
-                                                description: Text("Whole Party")))
-        }
+        // Always offered (even before the watch has your party), so they show up in the face editor.
+        recs.append(AppIntentRecommendation(intent: TrackPokemonIntent(pokemon: .wholeParty),
+                                            description: Text("Whole Party")))
+        recs.append(AppIntentRecommendation(intent: TrackPokemonIntent(pokemon: .partyNoBuddy),
+                                            description: Text("Party (not buddy)")))
         recs += party.map {
             AppIntentRecommendation(intent: TrackPokemonIntent(pokemon: PokemonEntity(id: $0.id, name: $0.name)),
                                     description: Text($0.name))
