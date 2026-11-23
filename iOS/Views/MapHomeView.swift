@@ -8,8 +8,8 @@ struct MapHomeView: View {
     @StateObject private var walking = WalkingDetector.shared
     @ObservedObject private var sleepSvc = SleepService.shared
     @ObservedObject private var recorder = SleepRecorder.shared
-    /// Steps by default; "Sleeping" once you've gone to bed (sleep listening has started).
-    private var sleeping: Bool { recorder.isRecording }
+    /// Steps by default; "Sleeping" only once the phone has sat still for 20 minutes while listening.
+    private var sleeping: Bool { recorder.asleepSince != nil }
     @AppStorage("journalSleepView") private var sleepView = false
 
     @State private var camera: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
@@ -300,7 +300,7 @@ struct MapHomeView: View {
                                         .symbolEffect(.pulse, options: .repeating)
                                     Text("SLEEPING").font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft)
                                 }
-                                Text(recorder.startedAt.map { "Since \(SleepFormat.time($0))" } ?? "Goodnight")
+                                Text(recorder.asleepSince.map { "Since \(SleepFormat.time($0))" } ?? "Goodnight")
                                     .font(.rounded(22, .black))
                                 Text("Listening for sleep talking").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                                 Text("\(store.stepsToday.formatted()) steps today").font(.rounded(12)).foregroundStyle(Theme.inkSoft)

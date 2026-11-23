@@ -221,6 +221,12 @@ final class SleepRecorder: ObservableObject {
 
     @Published private(set) var isRecording = false
     @Published private(set) var startedAt: Date?
+    /// Set once the phone has been completely still for a while during listening (you've dropped off).
+    @Published private(set) var asleepSince: Date?
+    private let motion = CMMotionActivityManager()
+    private var stillSince: Date?
+    private var stillTimer: Timer?
+    static let stillToCountAsAsleep: TimeInterval = 20 * 60
     private var engine: AVAudioEngine?
     private var listener: Listener?
     private var interruptionObserver: NSObjectProtocol?
@@ -352,10 +358,43 @@ final class SleepRecorder: ObservableObject {
         Self.active = true
         isRecording = true
         startedAt = .now
+        startSleepDetection()
         return nil
     }
 
+    /// While listening the app is awake in the background, so it can watch the motion chip live:
+    /// still for 20 minutes → asleep; walking around → awake again.
+    private func startSleepDetection() {
+        asleepSince = nil
+        stillSince = .now
+        guard CMMotionActivityManager.isActivityAvailable() else { return }
+        motion.startActivityUpdates(to: .main) { [weak self] a in
+            guard let self, let a else { return }
+            Task { @MainActor in
+                if a.walking || a.running || a.cycling || a.automotive {
+                    self.stillSince = nil
+                    self.asleepSince = nil
+                } else if a.stationary, self.stillSince == nil {
+                    self.stillSince = a.startDate
+                }
+                self.checkAsleep()
+            }
+        }
+        stillTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.checkAsleep() }
+        }
+    }
+
+    private func checkAsleep() {
+        guard isRecording, asleepSince == nil, let still = stillSince,
+              Date().timeIntervalSince(still) >= Self.stillToCountAsAsleep else { return }
+        asleepSince = still
+    }
+
     func stop() {
+        motion.stopActivityUpdates()
+        stillTimer?.invalidate(); stillTimer = nil
+        asleepSince = nil; stillSince = nil
         if let o = interruptionObserver { NotificationCenter.default.removeObserver(o); interruptionObserver = nil }
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
