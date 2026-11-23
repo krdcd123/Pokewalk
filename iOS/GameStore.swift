@@ -746,8 +746,29 @@ final class GameStore: ObservableObject {
             party: state.party.map {
                 .init(id: $0.id.uuidString, speciesID: $0.speciesID, name: $0.name, exp: $0.exp,
                       isBuddy: $0.id == state.buddyID, canEvolve: GameRules.pendingEvolution(for: $0) != nil,
-                      isShiny: $0.isShiny, gender: $0.gender, heldItem: $0.heldItems.first)
-            })
+                      isShiny: $0.isShiny, gender: $0.gender, heldItem: $0.heldItems.first, stepsWalked: $0.stepsWalked)
+            },
+            bag: watchBag,
+            wild: state.pending.filter { $0.expiresAt > .now }.map {
+                .init(id: $0.id.uuidString, speciesID: $0.speciesID, level: $0.level, isShiny: $0.isShiny, expiresAt: $0.expiresAt)
+            },
+            latitude: tracker.currentLocation()?.coordinate.latitude,
+            longitude: tracker.currentLocation()?.coordinate.longitude,
+            money: state.money)
+    }
+
+    /// The Bag, condensed for the watch: balls, then berries, then everything else.
+    private var watchBag: [WatchSnapshot.BagLine] {
+        let balls = BallKind.allCases.compactMap { k -> WatchSnapshot.BagLine? in
+            let n = state.balls[k, default: 0]
+            return n > 0 ? .init(key: k.itemKey, name: k.name, count: n, pocket: "Balls") : nil
+        }
+        let rest = state.bag.filter { $0.value > 0 }.map { k, n in
+            WatchSnapshot.BagLine(key: k, name: Dex.itemName(k), count: n,
+                                  pocket: ItemCatalog.isBerry(k) ? "Berries" : k == Fishing.rodKey ? "Key items" : "Items")
+        }
+        let order = ["Berries": 0, "Items": 1, "Key items": 2]
+        return balls + rest.sorted { (order[$0.pocket] ?? 9, $0.name) < (order[$1.pocket] ?? 9, $1.name) }
     }
 
     func pushOutward() {

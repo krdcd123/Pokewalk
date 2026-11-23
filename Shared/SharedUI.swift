@@ -34,9 +34,10 @@ extension Font {
 /// Small party/box icon from the shared App Group (synchronous, so it's safe in widgets).
 struct LocalIcon: View {
     let speciesID: Int
+    var shiny = false
 
     var body: some View {
-        if let image = Self.image(for: speciesID) {
+        if let image = Self.image(for: speciesID, shiny: shiny) {
             image.resizable().interpolation(.none).scaledToFit()
         } else {
             Image(systemName: "circle.dashed").resizable().scaledToFit().padding(4).foregroundStyle(.secondary)
@@ -44,9 +45,9 @@ struct LocalIcon: View {
     }
 
     /// The icon cropped to the Pokémon itself (box icons have lots of empty space around them).
-    static func trimmedImage(for speciesID: Int) -> Image? {
+    static func trimmedImage(for speciesID: Int, shiny: Bool = false) -> Image? {
         #if canImport(UIKit)
-        guard let ui = UIImage(contentsOfFile: SharedStore.iconFile(speciesID).path), let cg = ui.cgImage else { return nil }
+        guard let ui = iconUIImage(speciesID, shiny: shiny), let cg = ui.cgImage else { return nil }
         let w = cg.width, h = cg.height
         var px = [UInt8](repeating: 0, count: w * h * 4)
         let drew: Bool = px.withUnsafeMutableBytes { buf in
@@ -69,9 +70,17 @@ struct LocalIcon: View {
         #endif
     }
 
-    static func image(for speciesID: Int) -> Image? {
+    #if canImport(UIKit)
+    /// The shiny icon when there is one, else the regular one.
+    static func iconUIImage(_ speciesID: Int, shiny: Bool) -> UIImage? {
+        if shiny, let s = UIImage(contentsOfFile: SharedStore.iconFile(speciesID, shiny: true).path) { return s }
+        return UIImage(contentsOfFile: SharedStore.iconFile(speciesID).path)
+    }
+    #endif
+
+    static func image(for speciesID: Int, shiny: Bool = false) -> Image? {
         #if canImport(UIKit)
-        guard let ui = UIImage(contentsOfFile: SharedStore.iconFile(speciesID).path) else { return nil }
+        guard let ui = iconUIImage(speciesID, shiny: shiny) else { return nil }
         return Image(uiImage: ui)
         #else
         return nil

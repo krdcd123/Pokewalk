@@ -12,7 +12,27 @@ struct WatchSnapshot: Codable, Equatable {
         var isShiny: Bool = false
         var gender: Gender = .genderless
         var heldItem: String? = nil      // shows a red dot, like the trainer button on the phone
+        var stepsWalked: Int = 0
 
+        var species: Species { Dex.species(speciesID) }
+    }
+
+    /// One row of the Bag (balls, berries, items) for the watch's condensed list.
+    struct BagLine: Codable, Equatable, Identifiable {
+        var key: String
+        var name: String
+        var count: Int
+        var pocket: String
+        var id: String { key }
+    }
+
+    /// A wild Pokémon waiting to be caught.
+    struct Wild: Codable, Equatable, Identifiable {
+        var id: String
+        var speciesID: Int
+        var level: Int
+        var isShiny: Bool
+        var expiresAt: Date
         var species: Species { Dex.species(speciesID) }
     }
 
@@ -28,6 +48,11 @@ struct WatchSnapshot: Codable, Equatable {
     var distanceTodayKm: Double
     var trainerName: String
     var party: [Member]
+    var bag: [BagLine] = []
+    var wild: [Wild] = []
+    var latitude: Double? = nil     // where you are (for the watch app's blurred map background)
+    var longitude: Double? = nil
+    var money: Int = 0
 
     var buddy: Member? { party.first { $0.isBuddy } }
 
@@ -129,21 +154,54 @@ enum SharedStore {
         return dir
     }
 
-    static func iconFile(_ speciesID: Int) -> URL { iconsDir.appendingPathComponent("\(speciesID).png") }
-    static func hasIcon(_ speciesID: Int) -> Bool { FileManager.default.fileExists(atPath: iconFile(speciesID).path) }
-
-    /// PokeAPI's Gen 7 box icons cover every species up to #807.
-    static func remoteIconURL(_ speciesID: Int) -> URL {
-        URL(string: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-vii/icons/\(speciesID).png")!
+    static func iconFile(_ speciesID: Int, shiny: Bool = false) -> URL {
+        iconsDir.appendingPathComponent(shiny ? "\(speciesID)s.png" : "\(speciesID).png")
+    }
+    static func hasIcon(_ speciesID: Int, shiny: Bool = false) -> Bool {
+        FileManager.default.fileExists(atPath: iconFile(speciesID, shiny: shiny).path)
     }
 
+    /// The same PokeSprite box icons the phone uses (regular and shiny).
+    static func remoteIconURL(_ speciesID: Int, shiny: Bool = false) -> URL {
+        let key = Dex.species(speciesID).key
+        return URL(string: "https://raw.githubusercontent.com/msikma/pokesprite/master/pokemon-gen8/\(shiny ? "shiny" : "regular")/\(key).png")!
+    }
+
+    /// Animated Gen 5 sprite (up to #649) for the watch's summary screen.
+    static func remoteFrontURL(_ speciesID: Int, shiny: Bool) -> URL? {
+        guard speciesID <= 649 else { return nil }
+        let base = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated"
+        return URL(string: shiny ? "\(base)/shiny/\(speciesID).gif" : "\(base)/\(speciesID).gif")
+    }
+
+    static func remoteItemURL(_ key: String) -> URL {
+        let k = Fishing.isBait(key) ? "honey" : Fishing.isLure(key) ? "lax-incense" : key
+        return URL(string: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/\(k).png")!
+    }
+
+    static var spritesDir: URL {
+        let dir = containerURL.appendingPathComponent("sprites", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    static func itemFile(_ key: String) -> URL { spritesDir.appendingPathComponent("item-\(key).png") }
+    static func frontFile(_ speciesID: Int, shiny: Bool) -> URL {
+        spritesDir.appendingPathComponent("front-\(speciesID)\(shiny ? "s" : "").gif")
+    }
+
+    /// Downloads `remote` to `file` once.
     @discardableResult
-    static func fetchIcon(_ speciesID: Int) async -> URL? {
-        let file = iconFile(speciesID)
-        if hasIcon(speciesID) { return file }
-        guard let (data, resp) = try? await URLSession.shared.data(from: remoteIconURL(speciesID)),
+    static func fetch(_ remote: URL, to file: URL) async -> URL? {
+        if FileManager.default.fileExists(atPath: file.path) { return file }
+        guard let (data, resp) = try? await URLSession.shared.data(from: remote),
               (resp as? HTTPURLResponse)?.statusCode == 200, !data.isEmpty else { return nil }
         try? data.write(to: file, options: .atomic)
         return file
+    }
+
+    @discardableResult
+    static func fetchIcon(_ speciesID: Int, shiny: Bool = false) async -> URL? {
+        await fetch(remoteIconURL(speciesID, shiny: shiny), to: iconFile(speciesID, shiny: shiny))
     }
 }

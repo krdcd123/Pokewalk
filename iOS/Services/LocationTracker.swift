@@ -196,9 +196,21 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
             self.authorization = status
             if status == .authorizedWhenInUse { manager.requestAlwaysAuthorization() }
             // iOS visit detection for the Journal's Places (needs "Always")
-            if status == .authorizedAlways { manager.startMonitoringVisits() }
+            if status == .authorizedAlways {
+                manager.startMonitoringVisits()
+                // If iOS closes PokéWalk to free memory, a significant move (a few hundred metres)
+                // relaunches it in the background, which restarts step and walk tracking.
+                manager.startMonitoringSignificantLocationChanges()
+            }
         }
     }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let loc = locations.last else { return }
+        Task { @MainActor in if self.lastLocation == nil || loc.timestamp > self.lastLocation!.timestamp { self.lastLocation = loc } }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
 
     nonisolated func locationManager(_ manager: CLLocationManager, didVisit visit: CLVisit) {
         Task { @MainActor in PlaceLog.shared.addVisit(visit) }

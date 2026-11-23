@@ -133,7 +133,7 @@ struct ComplicationView: View {
     }
 
     @ViewBuilder private func sprite(_ id: Int) -> some View {
-        if let image = LocalIcon.image(for: id) {
+        if let image = LocalIcon.image(for: id, shiny: entry.member?.isShiny ?? false) {
             image.resizable().interpolation(.none).widgetAccentedRenderingMode(.fullColor).scaledToFit()
         } else {
             Image(systemName: "circle.circle.fill").resizable().scaledToFit().padding(3)
@@ -142,7 +142,7 @@ struct ComplicationView: View {
 
     /// Cropped to the Pokémon so it fills the slot.
     @ViewBuilder private func bigSprite(_ id: Int) -> some View {
-        if let image = LocalIcon.trimmedImage(for: id) {
+        if let image = LocalIcon.trimmedImage(for: id, shiny: entry.member?.isShiny ?? false) {
             image.resizable().interpolation(.none).widgetAccentedRenderingMode(.fullColor).scaledToFit()
         } else {
             sprite(id)

@@ -13,6 +13,7 @@ final class WatchModel: NSObject, ObservableObject {
     @Published var stepsToday = 0
     @Published var syncStatus: String?
     @Published var spriteVersion = 0
+    @Published var path: [WatchRoute] = []      // navigation (notifications can jump straight to a screen)
 
     private var pendingConnectivityTasks: [WKWatchConnectivityRefreshBackgroundTask] = []
     private var contentPendingObservation: NSKeyValueObservation?
@@ -63,14 +64,68 @@ final class WatchModel: NSObject, ObservableObject {
         SharedStore.saveSnapshot(snap)
         if partyChanged { WidgetCenter.shared.invalidateConfigurationRecommendations() }
         Task {
-            for id in Set(snap.party.map(\.speciesID)) where !SharedStore.hasIcon(id) {
-                await SharedStore.fetchIcon(id)       // fallback if the phone's transfer hasn't arrived
-                spriteVersion += 1
-            }
             await refreshSteps()
             completeConnectivityTasksIfDone()
+            await fetchSprites(for: snap)
         }
     }
+
+    /// Fallback downloads (the phone also sends icons): box icons, shiny ones too, and item icons.
+    private func fetchSprites(for snap: WatchSnapshot) async {
+        var got = false
+        let mons = snap.party.map { ($0.speciesID, $0.isShiny) } + snap.wild.map { ($0.speciesID, $0.isShiny) }
+        for (id, shiny) in mons where !SharedStore.hasIcon(id, shiny: shiny) {
+            if await SharedStore.fetchIcon(id, shiny: shiny) != nil { got = true }
+        }
+        for line in snap.bag where !FileManager.default.fileExists(atPath: SharedStore.itemFile(line.key).path) {
+            if await SharedStore.fetch(SharedStore.remoteItemURL(line.key), to: SharedStore.itemFile(line.key)) != nil { got = true }
+        }
+        if got {
+            spriteVersion += 1
+            WidgetCenter.shared.reloadAllTimelines()
+        }
+    }
+
+    // MARK: Actions on the phone (it wakes up in the background to answer)
+
+    private func ask(_ message: [String: Any]) async -> [String: Any]? {
+        guard WCSession.default.activationState == .activated, WCSession.default.isReachable else { return nil }
+        return await withCheckedContinuation { cont in
+            WCSession.default.sendMessage(message, replyHandler: { reply in cont.resume(returning: reply) },
+                                          errorHandler: { _ in cont.resume(returning: nil) })
+        }
+    }
+
+    /// Moves a party Pokémon's held items into the Bag. Returns a message to show.
+    func takeItem(from member: WatchSnapshot.Member) async -> String {
+        guard let reply = await ask(["request": "take", "id": member.id]) else { return "Couldn't reach your iPhone." }
+        ingest(reply["snapshot"] as? Data)
+        WKInterfaceDevice.current().play(.success)
+        return reply["message"] as? String ?? ""
+    }
+
+    struct BattleReply {
+        var message: String
+        var shakes = 0
+        var caught = false
+        var ended = false
+        var unreachable = false
+    }
+
+    /// One battle action ("start", "ball", "berry", "run") against a wild Pokémon.
+    func battle(_ wildID: String, action: String, ball: BallKind? = nil) async -> BattleReply {
+        var msg: [String: Any] = ["request": "battle", "wild": wildID, "action": action]
+        if let ball { msg["ball"] = ball.rawValue }
+        guard let r = await ask(msg) else {
+            return BattleReply(message: "Couldn't reach your iPhone. Keep it nearby.", ended: false, unreachable: true)
+        }
+        ingest(r["snapshot"] as? Data)
+        return BattleReply(message: r["message"] as? String ?? "", shakes: r["shakes"] as? Int ?? 0,
+                           caught: r["caught"] as? Bool ?? false, ended: r["ended"] as? Bool ?? false)
+    }
+
+    func ballCount(_ kind: BallKind) -> Int { snapshot.bag.first { $0.key == kind.itemKey }?.count ?? 0 }
+    var berryCount: Int { snapshot.bag.filter { $0.pocket == "Berries" }.reduce(0) { $0 + $1.count } }
 
     /// "Sync" button on the watch: asks the iPhone app (woken in background) to sync now.
     func requestPhoneSync() {
@@ -130,7 +185,7 @@ extension WatchModel: WCSessionDelegate {
 
     nonisolated func session(_ session: WCSession, didReceive file: WCSessionFile) {
         guard let id = file.metadata?["iconID"] as? Int else { return }
-        let dest = SharedStore.iconFile(id)
+        let dest = SharedStore.iconFile(id, shiny: file.metadata?["shiny"] as? Bool ?? false)
         try? FileManager.default.removeItem(at: dest)
         try? FileManager.default.copyItem(at: file.fileURL, to: dest) // must copy before returning
         Task { @MainActor in

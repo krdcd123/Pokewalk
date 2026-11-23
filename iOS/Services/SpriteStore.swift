@@ -239,10 +239,10 @@ final class SpriteStore {
 
     /// Copies the party icon into the App Group so the Watch transfer and widgets can use it.
     @discardableResult
-    func ensureSharedIcon(_ id: Int) async -> URL? {
-        let dest = SharedStore.iconFile(id)
+    func ensureSharedIcon(_ id: Int, shiny: Bool = false) async -> URL? {
+        let dest = SharedStore.iconFile(id, shiny: shiny)
         if FileManager.default.fileExists(atPath: dest.path) { return dest }
-        guard let src = await url(.icons, speciesID: id) else { return nil }
+        guard let src = await url(shiny ? .iconsShiny : .icons, speciesID: id) else { return nil }
         try? FileManager.default.copyItem(at: src, to: dest)
         return dest
     }

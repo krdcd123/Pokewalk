@@ -1,10 +1,36 @@
 import SwiftUI
 import WatchKit
+import UserNotifications
 
-final class WatchAppDelegate: NSObject, WKApplicationDelegate {
+final class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching() {
+        UNUserNotificationCenter.current().delegate = self
         Task { @MainActor in WatchModel.shared.activate() }
         Self.scheduleRefresh()
+    }
+
+    /// Tapping a PokéWalk notification on the watch opens the watch app on the right screen.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        let info = response.notification.request.content.userInfo
+        let encounter = info["encounterID"] as? String
+        let open = info["open"] as? String
+        Task { @MainActor in
+            let model = WatchModel.shared
+            if let encounter {
+                model.path = [.wild, .battle(encounter)]
+            } else if open == "pickup" {
+                model.path = [.party]
+            } else {
+                model.path = []
+            }
+        }
+        completionHandler()
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
     }
 
     /// Ask watchOS to wake us about every 15 minutes so complications keep up with your steps.
