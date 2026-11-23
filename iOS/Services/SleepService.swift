@@ -99,8 +99,10 @@ final class SleepService: ObservableObject {
         let sleeping = blocks.filter { $0.stage != .awake }
         guard let first = sleeping.map(\.start).min(), let last = sleeping.map(\.end).max() else { return nil }
         let asleep = (t[.rem] ?? 0) + (t[.core] ?? 0) + (t[.deep] ?? 0) + (t[.asleep] ?? 0)
-        let awakenings = blocks.filter { $0.stage == .awake && $0.start > first && $0.end < last
-            && $0.end.timeIntervalSince($0.start) >= 60 }.count
+        let awakenings = blocks.filter { b -> Bool in
+            guard b.stage == .awake, b.start > first, b.end < last else { return false }
+            return b.end.timeIntervalSince(b.start) >= 60
+        }.count
 
         async let hr = stat(.heartRate, unit: HKUnit.count().unitDivided(by: .minute()), first, last, [.discreteAverage, .discreteMin])
         async let rr = stat(.respiratoryRate, unit: HKUnit.count().unitDivided(by: .minute()), first, last, [.discreteAverage])
@@ -192,7 +194,7 @@ final class SleepRecorder: ObservableObject {
     private var engine: AVAudioEngine?
     private var listener: Listener?
 
-    static let keep = 5
+    nonisolated static let keep = 5
 
     static var root: URL {
         let d = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("SleepTalk", isDirectory: true)
@@ -215,11 +217,11 @@ final class SleepRecorder: ObservableObject {
     }
 
     /// File names hold the clip's loudness: clip-<time>-<score>.caf
-    static func score(_ url: URL) -> Double {
+    nonisolated static func score(_ url: URL) -> Double {
         Double(url.deletingPathExtension().lastPathComponent.split(separator: "-").last ?? "0") ?? 0
     }
 
-    static func time(_ url: URL) -> Date? {
+    nonisolated static func time(_ url: URL) -> Date? {
         let parts = url.deletingPathExtension().lastPathComponent.split(separator: "-")
         guard parts.count >= 3, let t = Double(parts[1]) else { return nil }
         return Date(timeIntervalSince1970: t)
