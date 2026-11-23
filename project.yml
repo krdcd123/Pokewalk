@@ -43,7 +43,8 @@ targets:
         CFBundleDisplayName: PokéWalk
         ITSAppUsesNonExemptEncryption: false
         AppGroupID: group.$(BUNDLE_ID_PREFIX).pokewalk
-        NSHealthShareUsageDescription: PokéWalk reads your steps and walking distance (iPhone and Apple Watch) to level up your Pokémon.
+        NSHealthShareUsageDescription: PokéWalk reads your steps, walking distance, active calories and workouts (iPhone and Apple Watch) to level up your Pokémon and earn Poké Dollars.
+        NSHealthUpdateUsageDescription: PokéWalk doesn't write to Apple Health; it only reads your activity.
         NSMotionUsageDescription: PokéWalk counts your steps live so wild Pokémon can appear while you walk.
         NSLocationWhenInUseUsageDescription: PokéWalk draws where you walk on the map and records where you catch each Pokémon.
         NSLocationAlwaysAndWhenInUseUsageDescription: Lets PokéWalk record your walks and trigger encounters with your phone in your pocket.
@@ -114,6 +115,7 @@ targets:
         WKRunsIndependentlyOfCompanionApp: false
         AppGroupID: group.$(BUNDLE_ID_PREFIX).pokewalk
         NSHealthShareUsageDescription: PokéWalk reads your steps so your buddy's level stays live on your wrist.
+        NSHealthUpdateUsageDescription: PokéWalk doesn't write to Apple Health; it only reads your activity.
     entitlements:
       path: Watch/PokeWalkWatch.entitlements
       properties:
@@ -140,6 +142,7 @@ targets:
         CFBundleDisplayName: PokéWalk Complications
         AppGroupID: group.$(BUNDLE_ID_PREFIX).pokewalk
         NSHealthShareUsageDescription: PokéWalk reads your steps to update complications.
+        NSHealthUpdateUsageDescription: PokéWalk doesn't write to Apple Health; it only reads your activity.
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     entitlements:
