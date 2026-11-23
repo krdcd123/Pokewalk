@@ -16,12 +16,14 @@ struct PokemonEntity: AppEntity {
     var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)") }
 
     static let walkingBuddy = PokemonEntity(id: buddyID, name: "Walking Buddy")
+    static let partyID = "party"
+    static let wholeParty = PokemonEntity(id: partyID, name: "Whole Party")
 }
 
 struct PokemonQuery: EntityQuery {
     private var all: [PokemonEntity] {
         let party = SharedStore.loadSnapshot()?.party ?? []
-        return [.walkingBuddy] + party.map { PokemonEntity(id: $0.id, name: $0.name) }
+        return [.walkingBuddy, .wholeParty] + party.map { PokemonEntity(id: $0.id, name: $0.name) }
     }
 
     func entities(for identifiers: [String]) async throws -> [PokemonEntity] {
@@ -70,9 +72,28 @@ struct Provider: AppIntentTimelineProvider {
         return await entry(for: configuration)
     }
 
+    /// Seconds each party member stays on screen in "Whole Party" mode.
+    static let partyCycle: TimeInterval = 60
+
     func timeline(for configuration: TrackPokemonIntent, in context: Context) async -> Timeline<PokemonEntry> {
         let e = await entry(for: configuration)
-        return Timeline(entries: [e], policy: .after(.now.addingTimeInterval(15 * 60)))
+        guard configuration.pokemon?.id == PokemonEntity.partyID, let snap = SharedStore.loadSnapshot(),
+              snap.party.count > 1 else {
+            return Timeline(entries: [e], policy: .after(.now.addingTimeInterval(15 * 60)))
+        }
+        // Whole Party: plan the next 15 minutes, a new member every minute (fades between them).
+        // Lined up to the clock so every face showing it changes together.
+        let start = Date(timeIntervalSinceReferenceDate:
+                            (Date.now.timeIntervalSinceReferenceDate / Self.partyCycle).rounded(.down) * Self.partyCycle)
+        let first = Int(((start.timeIntervalSinceReferenceDate / Self.partyCycle)
+                            .truncatingRemainder(dividingBy: Double(snap.party.count))).rounded(.down))
+        let entries = (0..<15).map { i -> PokemonEntry in
+            let m = snap.party[(first + i) % snap.party.count]
+            return PokemonEntry(date: start.addingTimeInterval(Double(i) * Self.partyCycle), member: m,
+                                live: LiveMember(m, in: snap, stepsSinceSync: e.stepsSinceSync),
+                                stepsSinceSync: e.stepsSinceSync, stepsToEncounter: e.stepsToEncounter)
+        }
+        return Timeline(entries: entries, policy: .atEnd)
     }
 
     /// watchOS has no complication config UI: each recommendation appears as its own option in the face editor.
@@ -80,6 +101,10 @@ struct Provider: AppIntentTimelineProvider {
         let party = SharedStore.loadSnapshot()?.party ?? []
         var recs = [AppIntentRecommendation(intent: TrackPokemonIntent(pokemon: .walkingBuddy),
                                             description: Text("Walking Buddy"))]
+        if party.count > 1 {
+            recs.append(AppIntentRecommendation(intent: TrackPokemonIntent(pokemon: .wholeParty),
+                                                description: Text("Whole Party")))
+        }
         recs += party.map {
             AppIntentRecommendation(intent: TrackPokemonIntent(pokemon: PokemonEntity(id: $0.id, name: $0.name)),
                                     description: Text($0.name))
@@ -116,13 +141,17 @@ struct ComplicationView: View {
     var body: some View {
         Group {
             if let member = entry.member, let live = entry.live {
-                switch family {
-                case .accessoryCircular: circular(member, live)
-                case .accessoryRectangular: rectangular(member, live)
-                case .accessoryCorner: corner(member, live)
-                case .accessoryInline: inline(member, live)
-                default: circular(member, live)
+                Group {
+                    switch family {
+                    case .accessoryCircular: circular(member, live)
+                    case .accessoryRectangular: rectangular(member, live)
+                    case .accessoryCorner: corner(member, live)
+                    case .accessoryInline: inline(member, live)
+                    default: circular(member, live)
+                    }
                 }
+                .id(member.id)                       // a different member → cross-fade
+                .transition(.opacity)
             } else {
                 Image(systemName: "figure.walk.circle")
                     .font(.title2)
