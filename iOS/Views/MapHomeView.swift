@@ -7,6 +7,9 @@ struct MapHomeView: View {
     @EnvironmentObject private var tracks: TrackStore
     @StateObject private var walking = WalkingDetector.shared
     @ObservedObject private var sleepSvc = SleepService.shared
+    @ObservedObject private var recorder = SleepRecorder.shared
+    /// Steps by default; "Sleeping" once you've gone to bed (sleep listening has started).
+    private var sleeping: Bool { recorder.isRecording }
     @AppStorage("journalSleepView") private var sleepView = false
 
     @State private var camera: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
@@ -283,25 +286,24 @@ struct MapHomeView: View {
     private var topCards: some View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
-                Button { withAnimation(.spring(duration: 0.4)) { sheet = .journal } } label: {
+                Button {
+                    sleepView = sleeping            // the Journal opens on the night while you're asleep
+                    withAnimation(.spring(duration: 0.4)) { sheet = .journal }
+                } label: {
                 card {
-                    ZStack(alignment: .topTrailing) {
-                        if sleepView {
+                    ZStack {
+                        if sleeping {
+                            // Gone to bed (sleep listening is on): the card turns into "Sleeping"
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("LAST NIGHT").font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft)
-                                if let n = sleepSvc.lastNight {
-                                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                        Text(SleepFormat.hm(n.asleep)).font(.rounded(22, .black))
-                                        Text("asleep").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
-                                    }
-                                    Text("\(SleepFormat.time(n.bedtime)) – \(SleepFormat.time(n.wake))")
-                                        .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
-                                    Label(n.awakenings == 0 ? "Slept straight through" : "Woke \(n.awakenings)×", systemImage: "moon.zzz.fill")
-                                        .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
-                                } else {
-                                    Text("No sleep yet").font(.rounded(18, .black))
-                                    Text("Wear your watch to bed").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                                HStack(spacing: 5) {
+                                    Image(systemName: "moon.zzz.fill").foregroundStyle(Color(hex: 0x9AA7FF))
+                                        .symbolEffect(.pulse, options: .repeating)
+                                    Text("SLEEPING").font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft)
                                 }
+                                Text(recorder.startedAt.map { "Since \(SleepFormat.time($0))" } ?? "Goodnight")
+                                    .font(.rounded(22, .black))
+                                Text("Listening for sleep talking").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                                Text("\(store.stepsToday.formatted()) steps today").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .transition(.blurReplace(.downUp))
@@ -321,22 +323,8 @@ struct MapHomeView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .transition(.blurReplace(.downUp))
                         }
-                        // Sun / moon: day stats or last night's sleep (the Journal opens on the same one)
-                        Button {
-                            SoundKit.shared.play(.select)
-                            Haptics.tap()
-                            withAnimation(.smooth(duration: 0.55)) { sleepView.toggle() }
-                        } label: {
-                            Image(systemName: sleepView ? "moon.fill" : "sun.max.fill")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(sleepView ? Color(hex: 0x9AA7FF) : Theme.orange)
-                                .contentTransition(.symbolEffect(.replace.downUp))
-                                .rotationEffect(.degrees(sleepView ? 360 : 0))
-                                .frame(width: 30, height: 30)
-                                .glassCircle(tint: sleepView ? Color(hex: 0x5B4BD8) : Theme.orange.opacity(0.6), interactive: false)
-                        }
-                        .buttonStyle(.plain)
                     }
+                    .animation(.smooth(duration: 0.6), value: sleeping)
                 }
                 .contentShape(RoundedRectangle(cornerRadius: 20))
                 }
