@@ -43,6 +43,32 @@ struct LocalIcon: View {
         }
     }
 
+    /// The icon cropped to the Pokémon itself (box icons have lots of empty space around them).
+    static func trimmedImage(for speciesID: Int) -> Image? {
+        #if canImport(UIKit)
+        guard let ui = UIImage(contentsOfFile: SharedStore.iconFile(speciesID).path), let cg = ui.cgImage else { return nil }
+        let w = cg.width, h = cg.height
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        let drew: Bool = px.withUnsafeMutableBytes { buf in
+            guard let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard drew else { return Image(uiImage: ui) }
+        var minX = w, minY = h, maxX = -1, maxY = -1
+        for y in 0..<h { for x in 0..<w where px[(y * w + x) * 4 + 3] > 0 {
+            minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
+        } }
+        guard maxX >= minX, let cropped = cg.cropping(to: CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1))
+        else { return Image(uiImage: ui) }
+        return Image(uiImage: UIImage(cgImage: cropped))
+        #else
+        return nil
+        #endif
+    }
+
     static func image(for speciesID: Int) -> Image? {
         #if canImport(UIKit)
         guard let ui = UIImage(contentsOfFile: SharedStore.iconFile(speciesID).path) else { return nil }

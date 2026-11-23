@@ -46,7 +46,7 @@ struct BuddyPage: View {
                     Text("Lv \(live.level)").font(.caption.monospacedDigit()).foregroundStyle(tint)
                 }
                 ExpBar(progress: live.progress, tint: tint, height: 6)
-                Text("\(live.expToNext.formatted()) Exp to next").font(.caption2).foregroundStyle(.secondary)
+                Text("\(live.stepsToNext.formatted()) steps to next").font(.caption2).foregroundStyle(.secondary)
 
                 if live.level > live.syncedLevel {
                     Label("Level up! Sync to claim", systemImage: "arrow.up.circle.fill").font(.caption2).foregroundStyle(.yellow)

@@ -41,11 +41,13 @@ struct LiveMember {
     let member: WatchSnapshot.Member
     let liveExp: Int
     let pendingSteps: Int
+    let expPerStep: Double
 
     init(_ member: WatchSnapshot.Member, stepsSinceSync: Int, expPerStep: Double, partyShare: Double) {
         self.member = member
         self.pendingSteps = stepsSinceSync
         let rate = member.isBuddy ? expPerStep : expPerStep * partyShare
+        self.expPerStep = rate
         self.liveExp = min(member.exp + Int(Double(stepsSinceSync) * rate), member.species.growth.maxExp)
     }
 
@@ -58,6 +60,8 @@ struct LiveMember {
     var syncedLevel: Int { growth.level(forExp: member.exp) }
     var progress: Double { growth.progress(exp: liveExp) }
     var expToNext: Int { growth.expToNext(exp: liveExp) }
+    /// Steps still to walk before the next level (at this Pokémon's Exp per step).
+    var stepsToNext: Int { expPerStep > 0 ? Int((Double(expToNext) / expPerStep).rounded(.up)) : 0 }
 
     var readyToEvolve: Bool {
         if member.canEvolve { return true }

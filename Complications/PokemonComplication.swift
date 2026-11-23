@@ -140,6 +140,15 @@ struct ComplicationView: View {
         }
     }
 
+    /// Cropped to the Pokémon so it fills the slot.
+    @ViewBuilder private func bigSprite(_ id: Int) -> some View {
+        if let image = LocalIcon.trimmedImage(for: id) {
+            image.resizable().interpolation(.none).widgetAccentedRenderingMode(.fullColor).scaledToFit()
+        } else {
+            sprite(id)
+        }
+    }
+
     private func circular(_ m: WatchSnapshot.Member, _ live: LiveMember) -> some View {
         Gauge(value: live.progress) {
             Text("Lv")
@@ -157,9 +166,8 @@ struct ComplicationView: View {
     /// A red dot on the icon means it's holding something to take on the phone.
     private func rectangular(_ m: WatchSnapshot.Member, _ live: LiveMember) -> some View {
         HStack(spacing: 8) {
-            sprite(m.speciesID)
-                .frame(width: 52, height: 40)
-                .background(Circle().fill(.white.opacity(0.12)).frame(width: 46, height: 46))
+            bigSprite(m.speciesID)
+                .frame(width: 50, height: 50)
                 .overlay(alignment: .topTrailing) {
                     if m.heldItem != nil {
                         Circle().fill(Color.red)
@@ -175,7 +183,7 @@ struct ComplicationView: View {
                     Text("Lv\(live.level)").font(.system(size: 15, weight: .semibold, design: .rounded))
                 }
                 ExpBar(progress: live.progress, tint: Color(hex: 0x4FD1C5), height: 6)
-                Text(live.readyToEvolve ? "Ready to evolve!" : "\(live.expToNext.formatted()) Exp to next")
+                Text(live.readyToEvolve ? "Ready to evolve!" : "\(live.stepsToNext.formatted()) steps to next")
                     .font(.system(size: 12, weight: .medium, design: .rounded)).foregroundStyle(.secondary).lineLimit(1)
             }
         }
