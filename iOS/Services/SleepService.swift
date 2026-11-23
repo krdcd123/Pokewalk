@@ -223,6 +223,7 @@ final class SleepRecorder: ObservableObject {
     @Published private(set) var startedAt: Date?
     private var engine: AVAudioEngine?
     private var listener: Listener?
+    private var interruptionObserver: NSObjectProtocol?
 
     nonisolated static let keep = 5
     /// While listening, keep plenty: in the morning only the ones from while you were asleep are kept.
@@ -337,6 +338,17 @@ final class SleepRecorder: ObservableObject {
         do { try engine.start() } catch { return "Couldn't start the microphone." }
         self.engine = engine
         self.listener = listener
+        // A call, Siri or an alarm pauses the microphone; pick back up when it's over.
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
+            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  AVAudioSession.InterruptionType(rawValue: raw) == .ended else { return }
+            Task { @MainActor in
+                guard let self, self.isRecording else { return }
+                try? AVAudioSession.sharedInstance().setActive(true)
+                if self.engine?.isRunning == false { try? self.engine?.start() }
+            }
+        }
         Self.active = true
         isRecording = true
         startedAt = .now
@@ -344,6 +356,7 @@ final class SleepRecorder: ObservableObject {
     }
 
     func stop() {
+        if let o = interruptionObserver { NotificationCenter.default.removeObserver(o); interruptionObserver = nil }
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         listener?.finish()
