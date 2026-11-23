@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import HealthKit
 import AVFoundation
 import CoreMotion
@@ -248,6 +249,30 @@ final class SleepRecorder: ObservableObject {
         let parts = url.deletingPathExtension().lastPathComponent.split(separator: "-")
         guard parts.count >= 3, let t = Double(parts[1]) else { return nil }
         return Date(timeIntervalSince1970: t)
+    }
+
+    /// Start listening by itself when you open PokéWalk at night with your phone charging
+    /// (iOS only allows the microphone to start while the app is open).
+    static var autoListen: Bool {
+        get { UserDefaults.standard.object(forKey: "sleepAutoListen") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "sleepAutoListen") }
+    }
+
+    /// Called whenever PokéWalk opens: starts at night (9pm–3am, charging), stops in the morning.
+    @discardableResult
+    func autoStartOrStop() async -> String? {
+        let hour = Calendar.current.component(.hour, from: .now)
+        if isRecording, (5..<15).contains(hour), let s = startedAt, Date().timeIntervalSince(s) > 2 * 3600 {
+            stop()
+            return nil
+        }
+        guard Self.autoListen, !isRecording, hour >= 21 || hour < 3,
+              AVAudioApplication.shared.recordPermission == .granted else { return nil }
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        let charging = UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full
+        guard charging else { return nil }
+        guard await start() == nil else { return nil }
+        return "🌙 Listening for sleep talking tonight — it stops when you open PokéWalk in the morning."
     }
 
     func start() async -> String? {

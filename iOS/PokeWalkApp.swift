@@ -58,6 +58,7 @@ struct PokeWalkApp: App {
                             store.checkPendingEvolutions()
                             store.showWorkoutPopupIfNeeded()
                             await SleepService.shared.refresh(showPopup: store.workoutPopup == nil)
+                            if let note = await SleepRecorder.shared.autoStartOrStop() { store.toast = note }
                             LiveActivityManager.shared.startIfNeeded(with: store)
                         }
                     case .background:

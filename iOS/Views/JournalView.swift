@@ -112,7 +112,9 @@ struct JournalView: View {
 
                 if sleepView && !showAllTime {
                     SleepSection(day: day)
+                        .transition(.blurReplace.combined(with: .opacity))
                 } else {
+                VStack(alignment: .leading, spacing: 14) {
                 Map(position: $camera) {
                     ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
                         if seg.count > 1 {
@@ -227,8 +229,11 @@ struct JournalView: View {
                 }
                 }
                 }
+                .transition(.blurReplace.combined(with: .opacity))
+                }
             }
             .padding()
+            .animation(.smooth(duration: 0.5), value: sleepView)
         }
         .navigationTitle("Journal")
         .glassScreen()

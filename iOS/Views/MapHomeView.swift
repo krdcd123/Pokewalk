@@ -304,7 +304,9 @@ struct MapHomeView: View {
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .transition(.opacity)
+                            .transition(.asymmetric(insertion: .offset(y: 10).combined(with: .opacity),
+                                                    removal: .offset(y: -10).combined(with: .opacity))
+                                        .combined(with: .blurReplace))
                         } else {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("TODAY").font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft)
@@ -319,20 +321,23 @@ struct MapHomeView: View {
                                     .labelStyle(.titleAndIcon)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .transition(.opacity)
+                            .transition(.asymmetric(insertion: .offset(y: 10).combined(with: .opacity),
+                                                    removal: .offset(y: -10).combined(with: .opacity))
+                                        .combined(with: .blurReplace))
                         }
                         // Sun / moon: day stats or last night's sleep (the Journal opens on the same one)
                         Button {
                             SoundKit.shared.play(.select)
                             Haptics.tap()
-                            withAnimation(.snappy) { sleepView.toggle() }
+                            withAnimation(.smooth(duration: 0.55)) { sleepView.toggle() }
                         } label: {
                             Image(systemName: sleepView ? "moon.fill" : "sun.max.fill")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(sleepView ? Color(hex: 0x9AA7FF) : Theme.orange)
+                                .contentTransition(.symbolEffect(.replace.downUp))
+                                .rotationEffect(.degrees(sleepView ? 360 : 0))
                                 .frame(width: 30, height: 30)
-                                .glassCircle()
-                                .contentTransition(.symbolEffect(.replace))
+                                .glassCircle(tint: sleepView ? Color(hex: 0x5B4BD8) : Theme.orange.opacity(0.6), interactive: false)
                         }
                         .buttonStyle(.plain)
                     }

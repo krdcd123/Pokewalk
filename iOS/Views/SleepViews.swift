@@ -262,6 +262,7 @@ struct SleepSection: View {
     @State private var usual: (asleep: TimeInterval, bedtimeMinutes: Double)?
     @State private var loaded = false
     @State private var message: String?
+    @State private var autoListen = SleepRecorder.autoListen
 
     private var isTonight: Bool { Calendar.current.isDate(day, inSameDayAs: SleepService.nightDay(for: .now)) }
 
@@ -311,6 +312,14 @@ struct SleepSection: View {
             }
             .buttonStyle(.plain)
             if let message { Text(message).font(.rounded(12)).foregroundStyle(Theme.orange) }
+            Toggle(isOn: Binding(get: { autoListen }, set: { autoListen = $0; SleepRecorder.autoListen = $0 })) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Start by itself at night").font(.rounded(14, .heavy))
+                    Text("When you open PokéWalk after 9pm with your phone charging (allow the microphone once first).")
+                        .font(.rounded(11)).foregroundStyle(Theme.inkSoft)
+                }
+            }
+            .tint(Color(hex: 0x5B4BD8))
         }
         .padding(16)
         .glassCard(22)
@@ -320,19 +329,26 @@ struct SleepSection: View {
 /// Sun / moon switch: day stats or that night's sleep.
 struct DayNightToggle: View {
     @Binding var sleep: Bool
+    @Namespace private var ns
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach([false, true], id: \.self) { s in
                 Button {
                     SoundKit.shared.play(.select)
-                    withAnimation(.snappy) { sleep = s }
+                    withAnimation(.smooth(duration: 0.5)) { sleep = s }
                 } label: {
                     Image(systemName: s ? "moon.fill" : "sun.max.fill")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(sleep == s ? .white : Theme.inkSoft)
+                        .symbolEffect(.bounce, value: sleep == s)
                         .frame(width: 34, height: 30)
-                        .background(sleep == s ? (s ? Color(hex: 0x5B4BD8) : Theme.orange).opacity(0.8) : .clear, in: Capsule())
+                        .background {
+                            if sleep == s {
+                                Capsule().fill((s ? Color(hex: 0x5B4BD8) : Theme.orange).opacity(0.8))
+                                    .matchedGeometryEffect(id: "pill", in: ns)     // the highlight slides across
+                            }
+                        }
                 }
                 .buttonStyle(.plain)
             }
