@@ -18,7 +18,7 @@ struct JournalView: View {
     @State private var expanded: Set<UUID> = []
     @State private var newName = ""
     @State private var dayWorkouts: [StepCounter.WorkoutInfo] = []
-    @AppStorage("journalEncountersOpen") private var encountersOpen = true
+    @AppStorage("journalEncountersOpen2") private var encountersOpen = false
 
     private var days: [Date] {
         // Oldest on the left, today on the right
@@ -161,13 +161,21 @@ struct JournalView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                if encountersOpen && encounters.isEmpty {
+                if encounters.isEmpty {
                     Text(showAllTime ? "No wild Pokémon yet — keep walking!" : "No wild Pokémon met this day.")
                         .font(.rounded(13)).foregroundStyle(Theme.inkSoft)
                 }
-                if encountersOpen {
-                ForEach(encounters) { e in
-                    Button { select(e) } label: {
+                // Folded: just the latest one (tap it to see them all). Open: every encounter.
+                if true {
+                ForEach(encountersOpen ? encounters : Array(encounters.prefix(1))) { e in
+                    Button {
+                        if !encountersOpen && encounters.count > 1 {
+                            SoundKit.shared.play(.select)
+                            withAnimation(.snappy) { encountersOpen = true }
+                        } else {
+                            select(e)
+                        }
+                    } label: {
                         HStack(spacing: 12) {
                             AnimatedSprite(speciesID: e.speciesID, shiny: e.isShiny, kind: .icons)
                                 .frame(width: 44, height: 40)
@@ -178,8 +186,12 @@ struct JournalView: View {
                                     .font(.rounded(12)).foregroundStyle(Theme.inkSoft).lineLimit(1)
                             }
                             Spacer()
-                            Text(e.status).font(.rounded(12, .black))
-                                .foregroundStyle(e.caught ? Theme.orange : Theme.inkSoft)
+                            if !encountersOpen && encounters.count > 1 {
+                                Text("+\(encounters.count - 1) more").font(.rounded(12, .black)).foregroundStyle(Theme.tealDark)
+                            } else {
+                                Text(e.status).font(.rounded(12, .black))
+                                    .foregroundStyle(e.caught ? Theme.orange : Theme.inkSoft)
+                            }
                             if e.location != nil { Image(systemName: "mappin.circle.fill").foregroundStyle(Theme.teal) }
                         }
                         .cardStyle()
