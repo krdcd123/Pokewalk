@@ -52,6 +52,7 @@ struct PokeWalkApp: App {
                         SoundKit.shared.appBecameActive()
                         store.pruneExpiredEncounters()
                         store.stampToday()
+                        TrackStore.shared.refreshDay()
                         Task {
                             await store.tick()
                             store.checkPendingEvolutions()

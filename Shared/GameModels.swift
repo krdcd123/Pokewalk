@@ -308,6 +308,7 @@ struct GameState: Codable {
     var lastSyncDate = Date()
     var lastFishedAt: Date?          // fishing cooldown (20 minutes)
     var stampDays: [String] = []     // "yyyy-MM-dd" days stamped on the trainer card
+    var stampGot: [String: String] = [:]  // day → what its present held ("iconKey|badge")
     var caloriesDay = ""              // day the calorie total below is for
     var caloriesPaid: Double = 0      // today's active calories already turned into money
     var lifetimeCalories: Double = 0
@@ -435,6 +436,7 @@ extension GameState {
         lastSyncDate = c.value(.lastSyncDate, Date())
         lastFishedAt = c.value(.lastFishedAt, nil)
         stampDays = c.value(.stampDays, [])
+        stampGot = c.value(.stampGot, [:])
         caloriesDay = c.value(.caloriesDay, "")
         caloriesPaid = c.value(.caloriesPaid, 0)
         lifetimeCalories = c.value(.lifetimeCalories, 0)

@@ -47,7 +47,24 @@ final class TrackStore: ObservableObject {
         return f.string(from: date)
     }
 
-    init() { today = load(todayKey) }
+    private var dayTimer: Timer?
+
+    init() {
+        today = load(todayKey)
+        // Midnight: start a fresh trail even if you haven't moved (the app may stay open overnight)
+        dayTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshDay() }
+        }
+    }
+
+    /// Switches to a new day's (empty) trail once the date changes.
+    func refreshDay() {
+        let k = TrackStore.key(for: .now)
+        guard k != todayKey else { return }
+        flush()
+        todayKey = k
+        today = load(k)
+    }
 
     private func file(_ key: String) -> URL { dir.appendingPathComponent("\(key).json") }
 

@@ -491,11 +491,20 @@ struct TrainerCardView: View {
         return rs[0].kind.isMoney ? "₽\(rs[0].count)" : "×\(rs[0].count)"
     }
 
+    /// Each day is a mystery present; once stamped it shows what was inside.
     private func stampSlot(_ i: Int, done: Int) -> some View {
-        let rewards = DailyStamps.rewards(day: i)
         let stamped = i < done
         let big = i == DailyStamps.days - 1
         let ink = Color(hex: 0xFF4A4A)
+        // what that day's present held (days stamped this week, in order)
+        let got: [String]? = {
+            guard stamped else { return nil }
+            let start = DailyStamps.weekStart(.now)
+            let keys = (0..<7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: start) }
+                .map(DailyStamps.key).filter { store.state.stampDays.contains($0) }
+            guard i < keys.count, let rec = store.state.stampGot[keys[i]] else { return nil }
+            return rec.components(separatedBy: "|")
+        }()
         return VStack(spacing: 4) {
             Text("Day \(i + 1)")
                 .font(.system(size: 10, weight: .black, design: .monospaced))
@@ -506,16 +515,19 @@ struct TrainerCardView: View {
                 Circle().fill(.white.opacity(0.08))
                 Circle().stroke(big ? gold.opacity(0.8) : .white.opacity(0.25), lineWidth: big ? 2 : 1.2)
                 Group {
-                    if big {
-                        // Day 7: a present — what's inside changes every week
+                    if let got, let icon = got.first, icon != "present" {
+                        if icon == "money" {
+                            Image(systemName: "yensign.circle.fill").resizable().scaledToFit().foregroundStyle(gold)
+                                .frame(width: 26, height: 26)
+                        } else {
+                            ItemSprite(key: icon).frame(width: 30, height: 30)
+                        }
+                    } else {
                         Image(systemName: "gift.fill")
-                            .font(.system(size: 30, weight: .bold))
-                            .foregroundStyle(Color(hex: 0xFF5A5A), gold)
+                            .font(.system(size: big ? 30 : 24, weight: .bold))
+                            .foregroundStyle(big ? Color(hex: 0xFF5A5A) : Theme.teal, big ? gold : .white)
                             .symbolRenderingMode(.palette)
-                            .shadow(color: gold.opacity(0.6), radius: 6)
-                    } else if let r = rewards.first {
-                        if let k = r.iconKey { ItemSprite(key: k).frame(width: 30, height: 30) }
-                        else { Image(systemName: "yensign.circle.fill").resizable().scaledToFit().foregroundStyle(gold).frame(width: 26, height: 26) }
+                            .shadow(color: (big ? gold : Theme.teal).opacity(0.5), radius: 5)
                     }
                 }
                 .opacity(stamped ? 0.35 : 1)
@@ -531,7 +543,7 @@ struct TrainerCardView: View {
             }
             .frame(width: 58, height: 58)
             .overlay(alignment: .bottomTrailing) {
-                Text(slotBadge(rewards))
+                Text(got.flatMap { $0.count > 1 ? $0[1] : nil } ?? "?")
                     .font(.system(size: 9, weight: .black, design: .monospaced))
                     .padding(.horizontal, 4).padding(.vertical, 1)
                     .background(.black.opacity(0.55), in: Capsule())

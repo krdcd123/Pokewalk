@@ -265,6 +265,7 @@ final class GameStore: ObservableObject {
     func tick() async {
         guard hasGame, !ticking else { return }
         await checkLure()
+        stampToday()                    // past midnight with the app still open: today's stamp
         ticking = true
         defer { ticking = false; lastTick = .now }
 
@@ -493,7 +494,7 @@ final class GameStore: ObservableObject {
             toast = "Stamp card complete! The present had \(DailyStamps.text(result.rewards))."
         } else {
             SoundKit.shared.play(.useItem)
-            toast = "Day \(result.day) stamp! You got \(DailyStamps.text(result.rewards)). Tap your trainer card to see it."
+            toast = "Day \(result.day) stamp! Your present had \(DailyStamps.text(result.rewards))."
         }
     }
 

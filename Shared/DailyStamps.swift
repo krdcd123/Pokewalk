@@ -65,6 +65,32 @@ enum DailyStamps {
 
     static func rewards(day i: Int, now: Date = .now) -> [Reward] { i == days - 1 ? present(for: now) : rewards[i] }
 
+    /// Days 1–6 are mystery presents too: each stamp rolls one of these small rewards (all worth about the same).
+    static func rollDaily() -> [Reward] {
+        let berry = ItemCatalog.berries.randomElement() ?? "pomeg-berry"
+        let pool: [[Reward]] = [
+            [Reward(kind: .ball(.poke), count: 5)],
+            [Reward(kind: .ball(.great), count: 3)],
+            [Reward(kind: .ball(.ultra), count: 2)],
+            [Reward(kind: .item(berry), count: 3)],
+            [Reward(kind: .item("exp-candy-m"), count: 1)],
+            [Reward(kind: .item("exp-candy-s"), count: 3)],
+            [Reward(kind: .money, count: 200)],
+            [Reward(kind: .item(Fishing.baitKey(berries: 4)), count: 1)],
+            [Reward(kind: .item(Fishing.lureKey(berries: 2)), count: 1)],
+        ]
+        return pool.randomElement()!
+    }
+
+    /// "iconKey|badge" of what a stamped day gave you, to show on the card ("money" for ₽).
+    static func record(_ rs: [Reward]) -> String {
+        guard rs.count == 1, let r = rs.first else { return "present|\(rs.count)" }
+        switch r.kind {
+        case .money: return "money|₽\(r.count)"
+        default: return "\(r.iconKey ?? "present")|×\(r.count)"
+        }
+    }
+
     static func text(_ rs: [Reward]) -> String {
         let parts = rs.map(\.text)
         return parts.count > 1 ? parts.dropLast().joined(separator: ", ") + " and " + parts.last! : parts.first ?? ""
@@ -100,7 +126,8 @@ enum DailyStamps {
         guard !s.stampDays.contains(k), done < days else { return nil }
         s.stampDays.append(k)
         if s.stampDays.count > 400 { s.stampDays.removeFirst(s.stampDays.count - 400) }
-        let rs = rewards(day: done, now: now)
+        let rs = done == days - 1 ? present(for: now) : rollDaily()
+        s.stampGot[k] = record(rs)
         for r in rs {
             switch r.kind {
             case .ball(let b): s.balls[b, default: 0] += r.count
