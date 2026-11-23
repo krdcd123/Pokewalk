@@ -529,9 +529,6 @@ final class GameStore: ObservableObject {
 
     // MARK: Workouts
 
-    /// Exp a non-walking workout gives your buddy: what walking would have given for the same calories
-    /// (walking burns roughly 1 kcal every 25 steps).
-    static let stepsPerKcal = 25.0
 
     private var processingWorkouts = false
 
@@ -541,6 +538,7 @@ final class GameStore: ObservableObject {
         processingWorkouts = true          // several triggers can fire at once; only one check at a time
         defer { processingWorkouts = false }
         removeDuplicateWorkouts()
+        removeWorkoutExp()
         let key = "workoutsCountFrom"
         if UserDefaults.standard.object(forKey: key) == nil {
             // First time: today's workouts count, older ones don't.
@@ -555,7 +553,7 @@ final class GameStore: ObservableObject {
         var records: [WorkoutRecord] = []
         for w in fresh {
             let stepsDuring = w.countsSteps ? 0 : ((try? await StepCounter.shared.steps(from: w.start, to: w.end)) ?? 0)
-            let exp = w.countsSteps ? 0 : Int(w.kcal * Self.stepsPerKcal * state.settings.expPerStep)
+            let exp = 0     // workouts never give Exp themselves; walking/running/hiking earn it through their steps
             records.append(WorkoutRecord(id: w.id, name: w.name, symbol: w.symbol, start: w.start, end: w.end,
                                          kcal: Int(w.kcal.rounded()), meters: w.meters, countsSteps: w.countsSteps,
                                          stepsNotCounted: stepsDuring, money: Int(w.kcal * Self.pokeDollarsPerKcal),
@@ -617,6 +615,27 @@ final class GameStore: ObservableObject {
             s.unseenWorkouts = s.unseenWorkouts.filter { keepUnseen.insert($0).inserted }
         }
         if let p = workoutPopup, !state.unseenWorkouts.contains(p.id) { workoutPopup = nil }
+    }
+
+    /// An earlier build gave Exp for non-walking workouts. Take it back (once).
+    private func removeWorkoutExp() {
+        guard state.workouts.contains(where: { $0.exp > 0 }) else { return }
+        mutate { s in
+            for k in s.workouts.indices where s.workouts[k].exp > 0 {
+                let r = s.workouts[k]
+                if let id = r.expMonID, let i = s.index(of: id) {
+                    s.pokemon[i].exp = max(0, s.pokemon[i].exp - r.exp)
+                }
+                let share = Int(Double(r.exp) * s.settings.partyShare)
+                if share > 0 {
+                    for pid in s.partyIDs where pid != r.expMonID {
+                        if let i = s.index(of: pid) { s.pokemon[i].exp = max(0, s.pokemon[i].exp - share) }
+                    }
+                }
+                s.workouts[k].exp = 0
+                s.workouts[k].levelUp = nil
+            }
+        }
     }
 
     /// Shows the next "Workout complete!" card, with confetti and the candy sound.
