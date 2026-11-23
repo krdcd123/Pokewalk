@@ -11,6 +11,7 @@ struct WatchSnapshot: Codable, Equatable {
         var canEvolve: Bool
         var isShiny: Bool = false
         var gender: Gender = .genderless
+        var heldItem: String? = nil      // shows a red dot, like the trainer button on the phone
 
         var species: Species { Dex.species(speciesID) }
     }

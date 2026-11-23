@@ -37,6 +37,7 @@ struct BuddyPage: View {
                     LocalIcon(speciesID: member.speciesID)
                         .id("\(member.speciesID)-\(model.spriteVersion)")
                         .frame(width: 80, height: 60)
+                        .overlay(alignment: .topTrailing) { if member.heldItem != nil { HeldDot() } }
                         .offset(y: up ? -5 : 0)
                 }
 
@@ -103,6 +104,7 @@ struct PartyPage: View {
             HStack {
                 LocalIcon(speciesID: member.speciesID).id("\(member.speciesID)-\(model.spriteVersion)")
                     .frame(width: 36, height: 28)
+                    .overlay(alignment: .topTrailing) { if member.heldItem != nil { HeldDot(size: 8) } }
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
                         Text(member.name).font(.footnote.weight(.semibold)).lineLimit(1)
@@ -116,5 +118,13 @@ struct PartyPage: View {
             }
         }
         .navigationTitle("Party")
+    }
+}
+
+/// Red "holding an item" dot.
+struct HeldDot: View {
+    var size: CGFloat = 11
+    var body: some View {
+        Circle().fill(Color.red).overlay(Circle().stroke(.black, lineWidth: 1.5)).frame(width: size, height: size)
     }
 }

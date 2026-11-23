@@ -746,7 +746,7 @@ final class GameStore: ObservableObject {
             party: state.party.map {
                 .init(id: $0.id.uuidString, speciesID: $0.speciesID, name: $0.name, exp: $0.exp,
                       isBuddy: $0.id == state.buddyID, canEvolve: GameRules.pendingEvolution(for: $0) != nil,
-                      isShiny: $0.isShiny, gender: $0.gender)
+                      isShiny: $0.isShiny, gender: $0.gender, heldItem: $0.heldItems.first)
             })
     }
 

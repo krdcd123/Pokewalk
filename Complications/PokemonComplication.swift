@@ -55,7 +55,8 @@ struct PokemonEntry: TimelineEntry {
 
     static let placeholder: PokemonEntry = {
         let m = WatchSnapshot.Member(id: "preview", speciesID: 25, name: "Pikachu",
-                                     exp: GrowthRate.mediumFast.exp(forLevel: 12) + 600, isBuddy: true, canEvolve: false)
+                                     exp: GrowthRate.mediumFast.exp(forLevel: 12) + 600, isBuddy: true, canEvolve: false,
+                                     heldItem: "candy-s")
         return PokemonEntry(date: .now, member: m, live: LiveMember(m, stepsSinceSync: 420, expPerStep: 0.25, partyShare: 0.2),
                             stepsSinceSync: 420, stepsToEncounter: 188)
     }()
@@ -152,12 +153,22 @@ struct ComplicationView: View {
         .widgetAccentable()
     }
 
-    /// Large middle slot: party ("bag") icon, name, level and an Exp bar, like the party screen in the games.
+    /// Large middle slot: party box icon, name, level and an Exp bar, like the party screen in the games.
+    /// A red dot on the icon means it's holding something to take on the phone.
     private func rectangular(_ m: WatchSnapshot.Member, _ live: LiveMember) -> some View {
         HStack(spacing: 8) {
             sprite(m.speciesID)
                 .frame(width: 52, height: 40)
                 .background(Circle().fill(.white.opacity(0.12)).frame(width: 46, height: 46))
+                .overlay(alignment: .topTrailing) {
+                    if m.heldItem != nil {
+                        Circle().fill(Color.red)
+                            .overlay(Circle().stroke(.black, lineWidth: 1.5))
+                            .frame(width: 11, height: 11)
+                            .widgetAccentedRenderingMode(.fullColor)
+                            .offset(x: 1, y: -1)
+                    }
+                }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text(m.name).font(.system(size: 17, weight: .bold, design: .rounded)).lineLimit(1).widgetAccentable()
