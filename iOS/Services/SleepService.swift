@@ -226,7 +226,7 @@ final class SleepRecorder: ObservableObject {
     private let motion = CMMotionActivityManager()
     private var stillSince: Date?
     private var stillTimer: Timer?
-    static let stillToCountAsAsleep: TimeInterval = 20 * 60
+    static let stillToCountAsAsleep: TimeInterval = 15 * 60
     private var engine: AVAudioEngine?
     private var listener: Listener?
     private var interruptionObserver: NSObjectProtocol?
@@ -374,6 +374,7 @@ final class SleepRecorder: ObservableObject {
                 if a.walking || a.running || a.cycling || a.automotive {
                     self.stillSince = nil
                     self.asleepSince = nil
+                    self.listener?.setArmed(false)        // up and about: stop saving
                 } else if a.stationary, self.stillSince == nil {
                     self.stillSince = a.startDate
                 }
@@ -389,6 +390,7 @@ final class SleepRecorder: ObservableObject {
         guard isRecording, asleepSince == nil, let still = stillSince,
               Date().timeIntervalSince(still) >= Self.stillToCountAsAsleep else { return }
         asleepSince = still
+        listener?.setArmed(true)                          // asleep: noises from now on are saved
     }
 
     func stop() {
@@ -417,6 +419,14 @@ final class SleepRecorder: ObservableObject {
         private var peak: Float = -160
         private var loudSum: Float = 0
         private let lock = NSLock()
+        /// Only saves while you're asleep (the phone's been still); listening before that saves nothing.
+        private var armed = false
+
+        func setArmed(_ on: Bool) {
+            lock.lock(); defer { lock.unlock() }
+            armed = on
+            if !on { close() }
+        }
 
         init(folder: URL, format: AVAudioFormat) { self.folder = folder; self.format = format }
 
@@ -429,7 +439,7 @@ final class SleepRecorder: ObservableObject {
             let db = 20 * log10(max(rms, 1e-7))
             // the quiet level drifts slowly; loud moments don't drag it up much
             floorDB = db < floorDB ? floorDB * 0.9 + db * 0.1 : floorDB * 0.999 + db * 0.001
-            let loud = db > max(floorDB + 18, -48)
+            let loud = armed && db > max(floorDB + 18, -48)
             let now = Date()
             if loud {
                 lastLoud = now

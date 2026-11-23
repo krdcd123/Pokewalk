@@ -297,7 +297,7 @@ struct SleepSection: View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Sleep talking", systemImage: "waveform.badge.mic").font(.rounded(15, .heavy))
             Text(recorder.isRecording
-                 ? "Listening since \(recorder.startedAt.map(SleepFormat.time) ?? "now"). Leave PokéWalk open in the background — it stops when you open it in the morning and keeps the \(SleepRecorder.keep) loudest moments from while you were asleep."
+                 ? "Listening since \(recorder.startedAt.map(SleepFormat.time) ?? "now"). It only starts saving once your phone has been still for 15 minutes (you've dropped off), and in the morning it matches the clips to when your watch or iPhone says you were asleep. It stops when you open PokéWalk."
                  : "Start this when you go to bed. PokéWalk listens through the night and keeps the \(SleepRecorder.keep) loudest moments from while you were actually asleep (sleep talking, snoring…). Keep your phone charging. Clips stay on your phone.")
                 .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
             Button {
