@@ -533,9 +533,14 @@ final class GameStore: ObservableObject {
     /// (walking burns roughly 1 kcal every 25 steps).
     static let stepsPerKcal = 25.0
 
+    private var processingWorkouts = false
+
     /// Looks for newly finished workouts in Apple Health and rewards them (once each).
     func processWorkouts() async {
-        guard hasGame, StepCounter.shared.isAvailable else { return }
+        guard hasGame, StepCounter.shared.isAvailable, !processingWorkouts else { return }
+        processingWorkouts = true          // several triggers can fire at once; only one check at a time
+        defer { processingWorkouts = false }
+        removeDuplicateWorkouts()
         let key = "workoutsCountFrom"
         if UserDefaults.standard.object(forKey: key) == nil {
             // First time: today's workouts count, older ones don't.
@@ -557,7 +562,7 @@ final class GameStore: ObservableObject {
                                          exp: exp, expMonID: nil, levelUp: nil))
         }
         mutate { s in
-            for var r in records {
+            for var r in records where !s.workouts.contains(where: { $0.id == r.id }) {
                 if r.exp > 0, let bi = s.buddyID.flatMap({ s.index(of: $0) }) {
                     // Exp to the buddy, and the usual party share to everyone else in the party
                     let before = s.pokemon[bi].level
@@ -585,6 +590,33 @@ final class GameStore: ObservableObject {
             notify(title: "\(r.name) workout done! 🎉", body: "Open PokéWalk to see what you earned.",
                    id: "workout-\(r.id)", category: nil, icon: state.buddy.map { ($0.speciesID, $0.isShiny) })
         }
+    }
+
+    /// Earlier build bug: the same workout could be recorded (and rewarded) more than once.
+    /// Keep one of each and take back the extra Exp the copies gave.
+    private func removeDuplicateWorkouts() {
+        var seen = Set<String>()
+        let dupes = state.workouts.filter { !seen.insert($0.id).inserted }
+        let unseenDupes = state.unseenWorkouts.count != Set(state.unseenWorkouts).count
+        guard !dupes.isEmpty || unseenDupes else { return }
+        mutate { s in
+            for d in dupes where d.exp > 0 {
+                if let id = d.expMonID, let i = s.index(of: id) {
+                    s.pokemon[i].exp = max(0, s.pokemon[i].exp - d.exp)
+                }
+                let share = Int(Double(d.exp) * s.settings.partyShare)
+                if share > 0 {
+                    for pid in s.partyIDs where pid != d.expMonID {
+                        if let i = s.index(of: pid) { s.pokemon[i].exp = max(0, s.pokemon[i].exp - share) }
+                    }
+                }
+            }
+            var keep = Set<String>()
+            s.workouts = s.workouts.filter { keep.insert($0.id).inserted }
+            var keepUnseen = Set<String>()
+            s.unseenWorkouts = s.unseenWorkouts.filter { keepUnseen.insert($0).inserted }
+        }
+        if let p = workoutPopup, !state.unseenWorkouts.contains(p.id) { workoutPopup = nil }
     }
 
     /// Shows the next "Workout complete!" card, with confetti and the candy sound.

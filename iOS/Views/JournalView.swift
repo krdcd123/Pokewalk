@@ -298,7 +298,8 @@ struct JournalView: View {
 
     /// Workouts this day (from Apple Health) and what each one earned.
     @ViewBuilder private var workoutsSection: some View {
-        let recorded = store.state.workouts.filter { Calendar.current.isDate($0.start, inSameDayAs: day) }
+        var seenIDs = Set<String>()
+        let recorded = store.state.workouts.filter { Calendar.current.isDate($0.start, inSameDayAs: day) && seenIDs.insert($0.id).inserted }
         let ids = Set(recorded.map(\.id))
         let others = dayWorkouts.filter { !ids.contains($0.id) }
         if !recorded.isEmpty || !others.isEmpty {
