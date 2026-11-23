@@ -315,7 +315,7 @@ struct SleepSection: View {
             Toggle(isOn: Binding(get: { autoListen }, set: { autoListen = $0; SleepRecorder.autoListen = $0 })) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Start by itself at night").font(.rounded(14, .heavy))
-                    Text("When you open PokéWalk after 9pm with your phone charging (allow the microphone once first).")
+                    Text("When you open PokéWalk after 11pm with your phone charging (allow the microphone once first).")
                         .font(.rounded(11)).foregroundStyle(Theme.inkSoft)
                 }
             }
