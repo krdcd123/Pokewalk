@@ -409,7 +409,7 @@ struct MapHomeView: View {
                         .foregroundStyle(.white)
                         .frame(width: 64, height: 64)
                         .contentShape(Circle())
-                        .glassCircle(tint: Theme.orange)
+                        .glassCircle(tint: Color(hex: 0x3FAE5A))
                         .overlay(alignment: .topTrailing) {
                             if !store.state.pending.isEmpty {
                                 Text("\(store.state.pending.count)")
@@ -598,6 +598,7 @@ struct EncounterListView: View {
             }
             .navigationTitle("Wild Pokémon")
             .navigationBarTitleDisplayMode(.inline)
+            .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { now = $0 }
             .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
                 if let lure = store.state.activeLure, Date() >= lure.endsAt { Task { await store.checkLure() } }
             }

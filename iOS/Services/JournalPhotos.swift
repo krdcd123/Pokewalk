@@ -108,19 +108,30 @@ struct PhotoViewer: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            Color.black.ignoresSafeArea()
-            TabView(selection: $index) {
-                ForEach(Array(assets.enumerated()), id: \.element.localIdentifier) { i, a in
-                    FullPhoto(asset: a).tag(i)
-                }
+        TabView(selection: $index) {
+            ForEach(Array(assets.enumerated()), id: \.element.localIdentifier) { i, a in
+                FullPhoto(asset: a).tag(i)
             }
-            .tabViewStyle(.page(indexDisplayMode: assets.count > 1 ? .automatic : .never))
-            .ignoresSafeArea()
+        }
+        .tabViewStyle(.page(indexDisplayMode: assets.count > 1 ? .automatic : .never))
+        .background(Color.black.ignoresSafeArea())
+        .offset(y: max(0, dragY))
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 20)
+                .onChanged { v in if abs(v.translation.height) > abs(v.translation.width) { dragY = v.translation.height } }
+                .onEnded { v in
+                    if v.translation.height > 120 { dismiss() } else { withAnimation(.snappy) { dragY = 0 } }
+                }
+        )
+        // Controls sit in the safe area above the pager, so taps never go to the photo underneath.
+        .safeAreaInset(edge: .top) {
             HStack {
                 Button { dismiss() } label: {
-                    Image(systemName: "xmark").font(.system(size: 16, weight: .bold)).foregroundStyle(.white)
-                        .frame(width: 44, height: 44).glassCircle()
+                    Image(systemName: "xmark").font(.system(size: 17, weight: .bold)).foregroundStyle(.white)
+                        .frame(width: 46, height: 46)
+                        .glassCircle()
+                        .frame(width: 60, height: 60)      // bigger invisible tap area
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 Spacer()
@@ -130,10 +141,12 @@ struct PhotoViewer: View {
                         .glassCapsule()
                 }
             }
-            .padding()
+            .padding(.horizontal, 10)
         }
         .preferredColorScheme(.dark)
     }
+
+    @State private var dragY: CGFloat = 0
 }
 
 private struct FullPhoto: View {

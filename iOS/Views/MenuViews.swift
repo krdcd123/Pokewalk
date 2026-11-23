@@ -330,6 +330,7 @@ struct BagView: View {
             }
         }
         .animation(.snappy, value: pocket)
+        .onChange(of: pocket) { _, _ in SoundKit.shared.play(.select) }
         // Swipe left / right to flip between pockets
         .simultaneousGesture(
             DragGesture(minimumDistance: 30).onEnded { v in
@@ -1415,12 +1416,25 @@ private struct FishingRodRow: View {
 
 /// Spend Pokédollars from selling valuables on balls (pricier than the games — balls also come free every 100 steps).
 struct ShopView: View {
+    enum Section: String, CaseIterable, Identifiable {
+        case balls = "Balls", bait = "Bait & lures", key = "Key items"
+        var id: String { rawValue }
+        var icon: String {
+            switch self {
+            case .balls: return "circle.circle.fill"
+            case .bait: return "fish.fill"
+            case .key: return "key.fill"
+            }
+        }
+    }
+
     @EnvironmentObject private var store: GameStore
     @State private var amounts: [BallKind: Int] = [:]
+    @State private var section: Section = .balls
 
     var body: some View {
         List {
-            Section {
+            SwiftUI.Section {
                 HStack {
                     Image(systemName: "yensign.circle.fill").font(.system(size: 28)).foregroundStyle(Theme.teal)
                     VStack(alignment: .leading) {
@@ -1435,7 +1449,17 @@ struct ShopView: View {
                 Text("You earn ₽1 for every 100 steps (₽0.01 a step), plus whatever you get selling valuables (Pearls, Stardust, Nuggets…) from your Bag. Buy 10 Poké Balls at once for a free Premier Ball.")
             }
 
-            Section {
+            SwiftUI.Section {
+                Picker("Section", selection: $section) {
+                    ForEach(Section.allCases) { s in Label(s.rawValue, systemImage: s.icon).tag(s) }
+                }
+                .pickerStyle(.segmented)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+            }
+
+            if section == .balls {
+            SwiftUI.Section {
                 ForEach(ItemCatalog.shop, id: \.ball) { entry in
                     let n = amounts[entry.ball, default: 1]
                     let total = entry.price * n
@@ -1476,8 +1500,10 @@ struct ShopView: View {
                     .glassRow()
                 }
             } header: { Text("Balls") }
+            }
 
-            Section {
+            if section == .key {
+            SwiftUI.Section {
                 let owned = (store.state.bag[Fishing.rodKey] ?? 0) > 0
                 let afford = store.state.money >= Fishing.rodPrice
                 HStack(spacing: 12) {
@@ -1504,8 +1530,10 @@ struct ShopView: View {
                 }
                 .glassRow()
             } header: { Text("Key items") }
+            }
 
-            Section {
+            if section == .bait {
+            SwiftUI.Section {
                 ForEach([false, true], id: \.self) { isLure in
                     ForEach(Fishing.shopSizes, id: \.self) { n in
                         let key = isLure ? Fishing.lureKey(berries: n) : Fishing.baitKey(berries: n)
@@ -1534,8 +1562,26 @@ struct ShopView: View {
             } header: { Text("Bait & lures") } footer: {
                 Text("Or make your own from berries in the Bag (Berries pocket) — it's cheaper.")
             }
+            }
         }
         .scrollContentBackground(.hidden)
+        .animation(.snappy, value: section)
+        .onChange(of: section) { _, _ in
+            SoundKit.shared.play(.select)
+            UISelectionFeedbackGenerator().selectionChanged()
+        }
+        // Swipe left / right to flip between sections, like the Bag
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 30).onEnded { v in
+                let dx = v.translation.width, dy = v.translation.height
+                guard abs(dx) > 70, abs(dx) > abs(dy) * 1.8 else { return }
+                let all = Section.allCases
+                guard let i = all.firstIndex(of: section) else { return }
+                let next = dx < 0 ? min(all.count - 1, i + 1) : max(0, i - 1)
+                guard next != i else { return }
+                withAnimation(.snappy) { section = all[next] }
+            }
+        )
         .navigationTitle("Poké Mart")
         .glassScreen()
     }
