@@ -304,9 +304,7 @@ struct MapHomeView: View {
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .transition(.asymmetric(insertion: .offset(y: 10).combined(with: .opacity),
-                                                    removal: .offset(y: -10).combined(with: .opacity))
-                                        .combined(with: .blurReplace))
+                            .transition(.blurReplace(.downUp))
                         } else {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("TODAY").font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft)
@@ -321,9 +319,7 @@ struct MapHomeView: View {
                                     .labelStyle(.titleAndIcon)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .transition(.asymmetric(insertion: .offset(y: 10).combined(with: .opacity),
-                                                    removal: .offset(y: -10).combined(with: .opacity))
-                                        .combined(with: .blurReplace))
+                            .transition(.blurReplace(.downUp))
                         }
                         // Sun / moon: day stats or last night's sleep (the Journal opens on the same one)
                         Button {
