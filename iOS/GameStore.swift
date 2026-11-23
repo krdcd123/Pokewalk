@@ -777,6 +777,7 @@ final class GameStore: ObservableObject {
             for (i, p) in part.pts.enumerated() where i % stride == 0 || i == part.pts.count - 1 { kept.append(p) }
             return .init(drive: part.drive, coords: kept.flatMap { [$0.lat, $0.lon] })
         }
+    }
 
     /// The Bag, condensed for the watch: balls, then berries, then everything else.
     private var watchBag: [WatchSnapshot.BagLine] {
