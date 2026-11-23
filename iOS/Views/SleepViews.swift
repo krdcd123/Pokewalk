@@ -276,7 +276,7 @@ struct SleepSection: View {
                     Image(systemName: "moon.stars.fill").font(.system(size: 28)).foregroundStyle(Color(hex: 0x9AA7FF))
                     Text(isTonight ? "Tonight's sleep will show here in the morning." : "No sleep recorded for this night.")
                         .font(.rounded(15, .heavy))
-                    Text("Sleep comes from Apple Health: wear your Apple Watch to bed (with Sleep tracking on), or set a Sleep Schedule in the Health app.")
+                    Text("PokéWalk works out your sleep from when your iPhone sits still overnight — just leave it down when you go to sleep. Wearing your Apple Watch to bed adds sleep stages and heart rate. (The iPhone only keeps 7 days of motion, so older nights need watch data.)")
                         .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                 }
                 .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard(22)

@@ -1,6 +1,7 @@
 import Foundation
 import HealthKit
 import AVFoundation
+import CoreMotion
 
 // MARK: - Sleep from Apple Health
 
@@ -63,8 +64,15 @@ final class SleepService: ObservableObject {
         Calendar.current.startOfDay(for: date.addingTimeInterval(-15 * 3600))
     }
 
-    /// The night of `day` (going to bed that day, waking the next), or nil if Health has no sleep for it.
+    /// The night of `day`: Apple Health's sleep if there is any, otherwise PokéWalk's own estimate
+    /// from when your iPhone sat still overnight.
     func night(for day: Date) async -> SleepNight? {
+        if let n = await healthNight(for: day) { return n }
+        return await MotionSleep.shared.night(for: day)
+    }
+
+    /// The night of `day` from Apple Health (watch, sleep schedule or a sleep app), or nil.
+    func healthNight(for day: Date) async -> SleepNight? {
         let start = Calendar.current.startOfDay(for: day).addingTimeInterval(15 * 3600)
         let end = start.addingTimeInterval(24 * 3600)
         let samples = await sleepSamples(from: start, to: end)
@@ -337,5 +345,108 @@ final class SleepRecorder: ObservableObject {
                 .sorted { SleepRecorder.score($0) > SleepRecorder.score($1) }
             for extra in all.dropFirst(SleepRecorder.keep) { try? FileManager.default.removeItem(at: extra) }
         }
+    }
+}
+
+
+// MARK: - Sleep without a watch or bedtime
+
+/// Works out sleep from the iPhone alone: the motion chip keeps a 7-day log of when the phone was
+/// still or moving, even while PokéWalk is closed. The longest still stretch overnight (short pickups
+/// to check the time are joined up and counted as waking) is taken as your sleep.
+/// Nights are saved, so they stay in the Journal after the phone's 7 days are up.
+@MainActor
+final class MotionSleep {
+    static let shared = MotionSleep()
+    private let manager = CMMotionActivityManager()
+
+    private struct Saved: Codable { var bedtime: Date; var wake: Date; var wakes: [Date] }
+    private var cache: [String: Saved] = [:]
+    private let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("sleep-estimates.json")
+
+    init() {
+        if let d = try? Data(contentsOf: url), let c = try? JSONDecoder().decode([String: Saved].self, from: d) { cache = c }
+    }
+
+    private func key(_ day: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: day)
+    }
+
+    func night(for day: Date) async -> SleepNight? {
+        let day = Calendar.current.startOfDay(for: day)
+        let k = key(day)
+        let from = day.addingTimeInterval(18 * 3600)               // 6pm…
+        let to = min(Date(), day.addingTimeInterval((24 + 14) * 3600))  // …to 2pm the next day
+        // Recompute while the phone still has the data (and the night might still be going), else use the saved one.
+        if from.timeIntervalSinceNow > -6.5 * 86_400, CMMotionActivityManager.isActivityAvailable(),
+           let est = await estimate(from: from, to: to) {
+            if est.wake < Date().addingTimeInterval(-15 * 60) {     // finished: keep it
+                cache[k] = est
+                if let d = try? JSONEncoder().encode(cache) { try? d.write(to: url, options: .atomic) }
+            }
+            return make(day, est)
+        }
+        return cache[k].map { make(day, $0) }
+    }
+
+    private func make(_ day: Date, _ e: Saved) -> SleepNight {
+        // Blocks: asleep, with short "awake" marks where the phone was picked up
+        var blocks: [SleepNight.Block] = []
+        var cursor = e.bedtime
+        for w in e.wakes.sorted() where w > cursor && w < e.wake {
+            blocks.append(.init(stage: .asleep, start: cursor, end: w))
+            let back = min(e.wake, w.addingTimeInterval(4 * 60))
+            blocks.append(.init(stage: .awake, start: w, end: back))
+            cursor = back
+        }
+        blocks.append(.init(stage: .asleep, start: cursor, end: e.wake))
+        let awake = blocks.filter { $0.stage == .awake }.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) }
+        let total = e.wake.timeIntervalSince(e.bedtime)
+        return SleepNight(day: day, bedtime: e.bedtime, wake: e.wake, inBedFrom: nil, asleep: total - awake, awake: awake,
+                          rem: 0, core: 0, deep: 0, awakenings: e.wakes.count, blocks: blocks, hasStages: false,
+                          avgHeartRate: nil, minHeartRate: nil, respiratoryRate: nil, bloodOxygen: nil,
+                          source: "your iPhone sitting still (estimate)")
+    }
+
+    private func activities(from: Date, to: Date) async -> [CMMotionActivity] {
+        await withCheckedContinuation { cont in
+            manager.queryActivityStarting(from: from, to: to, to: .main) { list, _ in cont.resume(returning: list ?? []) }
+        }
+    }
+
+    private func estimate(from: Date, to: Date) async -> Saved? {
+        guard from < to else { return nil }
+        let list = await activities(from: from, to: to)
+        guard !list.isEmpty else { return nil }
+        // Still stretches: each activity lasts until the next one starts
+        var still: [(start: Date, end: Date)] = []
+        for (i, a) in list.enumerated() {
+            let end = i + 1 < list.count ? list[i + 1].startDate : to
+            let isStill = a.stationary && !a.walking && !a.running && !a.automotive && !a.cycling
+            guard isStill, end > a.startDate else { continue }
+            if let last = still.last, a.startDate.timeIntervalSince(last.end) < 1 { still[still.count - 1].end = end }
+            else { still.append((a.startDate, end)) }
+        }
+        // Join stretches split by a quick pickup (under 15 minutes); remember the pickups as wake-ups
+        var merged: [(start: Date, end: Date, wakes: [Date])] = []
+        for st in still {
+            if let last = merged.last, st.start.timeIntervalSince(last.end) <= 15 * 60 {
+                merged[merged.count - 1].end = st.end
+                merged[merged.count - 1].wakes.append(last.end)
+            } else {
+                merged.append((st.start, st.end, []))
+            }
+        }
+        // Your sleep: the longest one that starts in the evening / night and lasts 3+ hours
+        let cal = Calendar.current
+        let candidates = merged.filter { m in
+            let h = cal.component(.hour, from: m.start)
+            return (h >= 19 || h < 6) && m.end.timeIntervalSince(m.start) >= 3 * 3600
+        }
+        guard let best = candidates.max(by: { $0.end.timeIntervalSince($0.start) < $1.end.timeIntervalSince($1.start) }) else { return nil }
+        // Settling down takes a little while: count sleep from ~10 minutes after the phone went still
+        let bed = best.start.addingTimeInterval(10 * 60)
+        return Saved(bedtime: bed, wake: best.end, wakes: best.wakes.filter { $0 > bed })
     }
 }
