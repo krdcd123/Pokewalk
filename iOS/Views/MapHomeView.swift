@@ -6,6 +6,8 @@ struct MapHomeView: View {
     @EnvironmentObject private var tracker: LocationTracker
     @EnvironmentObject private var tracks: TrackStore
     @StateObject private var walking = WalkingDetector.shared
+    @ObservedObject private var sleepSvc = SleepService.shared
+    @AppStorage("journalSleepView") private var sleepView = false
 
     @State private var camera: MapCameraPosition = .userLocation(followsHeading: false, fallback: .automatic)
     @State private var refollowTask: Task<Void, Never>?
@@ -165,6 +167,22 @@ struct MapHomeView: View {
             }
         }
         .animation(.spring(duration: 0.4), value: store.workoutPopup)
+        .overlay {
+            if let n = sleepSvc.popup {
+                ZStack {
+                    Color.black.opacity(0.35).ignoresSafeArea()
+                        .onTapGesture { sleepSvc.popup = nil }
+                    SleepPopupCard(night: n, close: { sleepSvc.popup = nil }, more: {
+                        sleepSvc.popup = nil
+                        sleepView = true
+                        withAnimation(.spring(duration: 0.4)) { sheet = .journal }
+                    })
+                    .padding(20)
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
+                }
+            }
+        }
+        .animation(.spring(duration: 0.4), value: sleepSvc.popup)
         // A pickup notification was tapped: show the Party
         .onChange(of: store.openPartyAt) { _, at in
             guard at != nil else { return }
@@ -267,19 +285,57 @@ struct MapHomeView: View {
             HStack(spacing: 8) {
                 Button { withAnimation(.spring(duration: 0.4)) { sheet = .journal } } label: {
                 card {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("TODAY").font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft)
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text(store.stepsToday.formatted()).font(.rounded(22, .black))
-                            Text("steps").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                    ZStack(alignment: .topTrailing) {
+                        if sleepView {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("LAST NIGHT").font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft)
+                                if let n = sleepSvc.lastNight {
+                                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                        Text(SleepFormat.hm(n.asleep)).font(.rounded(22, .black))
+                                        Text("asleep").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                                    }
+                                    Text("\(SleepFormat.time(n.bedtime)) – \(SleepFormat.time(n.wake))")
+                                        .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                                    Label(n.awakenings == 0 ? "Slept straight through" : "Woke \(n.awakenings)×", systemImage: "moon.zzz.fill")
+                                        .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                                } else {
+                                    Text("No sleep yet").font(.rounded(18, .black))
+                                    Text("Wear your watch to bed").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .transition(.opacity)
+                        } else {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("TODAY").font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft)
+                                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                    Text(store.stepsToday.formatted()).font(.rounded(22, .black))
+                                    Text("steps").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                                }
+                                Text("\(Distance.text(store.metersToday)) walked")
+                                    .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                                Label("\(store.caloriesToday.formatted()) kcal burned", systemImage: "flame.fill")
+                                    .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                                    .labelStyle(.titleAndIcon)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .transition(.opacity)
                         }
-                        Text("\(Distance.text(store.metersToday)) walked")
-                            .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
-                        Label("\(store.caloriesToday.formatted()) kcal burned", systemImage: "flame.fill")
-                            .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
-                            .labelStyle(.titleAndIcon)
+                        // Sun / moon: day stats or last night's sleep (the Journal opens on the same one)
+                        Button {
+                            SoundKit.shared.play(.select)
+                            Haptics.tap()
+                            withAnimation(.snappy) { sleepView.toggle() }
+                        } label: {
+                            Image(systemName: sleepView ? "moon.fill" : "sun.max.fill")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(sleepView ? Color(hex: 0x9AA7FF) : Theme.orange)
+                                .frame(width: 30, height: 30)
+                                .glassCircle()
+                                .contentTransition(.symbolEffect(.replace))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .contentShape(RoundedRectangle(cornerRadius: 20))
                 }

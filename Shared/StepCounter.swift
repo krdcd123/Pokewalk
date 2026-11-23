@@ -75,7 +75,13 @@ extension StepCounter {
     /// Steps, distance, active calories (everything you burn, including workouts) and the workouts themselves.
     func requestAuthorizationWithDistance() async throws {
         guard isAvailable else { return }
-        try await store.requestAuthorization(toShare: [], read: [stepType, distanceType, energyType, HKObjectType.workoutType()])
+        var read: Set<HKObjectType> = [stepType, distanceType, energyType, HKObjectType.workoutType()]
+        #if os(iOS)
+        // Sleep (bedtime, stages) and overnight heart rate, breathing and blood oxygen for the Journal's sleep page
+        read.formUnion([HKCategoryType(.sleepAnalysis), HKQuantityType(.heartRate),
+                        HKQuantityType(.respiratoryRate), HKQuantityType(.oxygenSaturation)])
+        #endif
+        try await store.requestAuthorization(toShare: [], read: read)
     }
 
     /// Active calories (kcal) in [start, end) — iPhone + Apple Watch, without double counting.

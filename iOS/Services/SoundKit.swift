@@ -122,6 +122,7 @@ final class SoundKit: ObservableObject {
     private var players: [String: AVAudioPlayer] = [:]
 
     private func activateSession() {
+        guard !SleepRecorder.active else { return }      // don't switch the mic off mid-recording
         try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
         try? AVAudioSession.sharedInstance().setActive(true)
     }

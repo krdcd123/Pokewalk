@@ -48,7 +48,7 @@ final class CryPlayer: ObservableObject {
         guard enabled else { return }
         Task {
             guard let f = await Self.fetch(speciesID) else { return }
-            try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+            if !SleepRecorder.active { try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers]) }
             try? AVAudioSession.sharedInstance().setActive(true)
             player = try? AVAudioPlayer(contentsOf: f)
             player?.volume = 0.8

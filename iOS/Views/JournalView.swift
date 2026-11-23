@@ -18,6 +18,8 @@ struct JournalView: View {
     @State private var expanded: Set<UUID> = []
     @State private var newName = ""
     @State private var dayWorkouts: [StepCounter.WorkoutInfo] = []
+    @State private var calendarMode = false
+    @AppStorage("journalSleepView") private var sleepView = false
     @AppStorage("journalEncountersOpen2") private var encountersOpen = false
 
     private var days: [Date] {
@@ -59,13 +61,25 @@ struct JournalView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                Picker("Range", selection: $showAllTime) {
-                    Text("Day").tag(false)
-                    Text("All time").tag(true)
+                Picker("Range", selection: Binding(get: { showAllTime ? 2 : (calendarMode ? 1 : 0) },
+                                                   set: { showAllTime = $0 == 2; calendarMode = $0 == 1 })) {
+                    Text("Recent").tag(0)
+                    Text("Calendar").tag(1)
+                    Text("All time").tag(2)
                 }
                 .pickerStyle(.segmented)
 
-                if !showAllTime {
+                if calendarMode && !showAllTime {
+                    // Any day of your life: photos, steps from Apple Health, sleep… (walks and places since you started PokéWalk)
+                    DatePicker("Day", selection: Binding(get: { day }, set: { day = Calendar.current.startOfDay(for: $0) }),
+                               in: Date(timeIntervalSince1970: 0)...Date.now, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
+                        .tint(Theme.teal)
+                        .padding(8)
+                        .glassCard(20)
+                    Text(day.formatted(.dateTime.weekday(.wide).day().month(.wide).year()))
+                        .font(.rounded(18, .black))
+                } else if !showAllTime {
                     ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
@@ -88,6 +102,17 @@ struct JournalView: View {
                     }
                 }
 
+                if !showAllTime {
+                    HStack {
+                        Text(sleepView ? "Your night" : "Your day").font(.rounded(15, .heavy)).foregroundStyle(Theme.inkSoft)
+                        Spacer()
+                        DayNightToggle(sleep: $sleepView)
+                    }
+                }
+
+                if sleepView && !showAllTime {
+                    SleepSection(day: day)
+                } else {
                 Map(position: $camera) {
                     ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
                         if seg.count > 1 {
@@ -199,6 +224,7 @@ struct JournalView: View {
                     }
                     .buttonStyle(.plain)
                     .transition(.opacity)
+                }
                 }
                 }
             }
