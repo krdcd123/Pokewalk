@@ -48,6 +48,34 @@ jobs:
           printf '%s\n' "$ASC_KEY_P8" > ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
           echo "KEY_PATH=$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8" >> "$GITHUB_ENV"
 
+      - name: Signing certificate for this run
+        if: env.HAS_KEYS == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          # Each runner is a fresh Mac, so a certificate made by an earlier run has no private key here.
+          # Make a new one with a key we hold, and revoke it again at the end of the job.
+          python3 -m pip install --quiet --user --break-system-packages pyjwt cryptography
+          OSSL=/usr/bin/openssl
+          $OSSL req -new -newkey rsa:2048 -nodes -keyout ci.key -out ci.csr -subj "/CN=PokeWalk CI/C=GB"
+          CERT_ID=$(python3 scripts/asc.py create ci.csr ci.cer)
+          echo "CERT_ID=$CERT_ID" >> "$GITHUB_ENV"
+          $OSSL x509 -inform DER -in ci.cer -out ci.pem
+          $OSSL pkcs12 -export -inkey ci.key -in ci.pem -out ci.p12 -passout pass:ci
+          KC=$RUNNER_TEMP/build.keychain-db
+          security create-keychain -p ci "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p ci "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KC"
+          curl -fsSL -o wwdr.cer https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer
+          security import wwdr.cer -k "$KC" -T /usr/bin/codesign || true
+          security import ci.p12 -k "$KC" -P ci -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k ci "$KC" >/dev/null
+          security find-identity -v -p codesigning "$KC"
+          rm -f ci.key ci.p12
+
       - name: Generate project
         if: env.HAS_KEYS == 'true'
         run: brew install xcodegen && xcodegen generate
@@ -92,6 +120,13 @@ jobs:
             -exportPath build/export -allowProvisioningUpdates \
             -authenticationKeyPath "$KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             2>&1 | tee upload.log | tail -40
+
+      - name: Revoke this run's certificate
+        if: always() && env.CERT_ID != ''
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: python3 scripts/asc.py revoke "$CERT_ID" || true
 
       - name: Logs
         if: always() && env.HAS_KEYS == 'true'
