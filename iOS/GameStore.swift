@@ -513,14 +513,31 @@ final class GameStore: ObservableObject {
         var result: (day: Int, rewards: [DailyStamps.Reward])?
         mutate { result = DailyStamps.stamp(&$0) }
         guard let result else { return }
-        confettiAt = .now
-        if result.day == DailyStamps.days {
-            SoundKit.shared.play(.ballCatch)
-            toast = "Stamp card complete! The present had \(DailyStamps.text(result.rewards))."
-        } else {
-            SoundKit.shared.play(.useItem)
-            toast = "Day \(result.day) stamp! Your present had \(DailyStamps.text(result.rewards))."
+        let text = result.day == DailyStamps.days
+            ? "Stamp card complete! The present had \(DailyStamps.text(result.rewards))."
+            : "Day \(result.day) stamp! Your present had \(DailyStamps.text(result.rewards))."
+        // Stamped while PokéWalk was in the background (e.g. woken by steps after midnight):
+        // save the celebration for when you open it.
+        if UIApplication.State.current != .active {
+            UserDefaults.standard.set(text, forKey: "pendingStampText")
+            UserDefaults.standard.set(result.day == DailyStamps.days, forKey: "pendingStampComplete")
+            return
         }
+        celebrateStamp(text, complete: result.day == DailyStamps.days)
+    }
+
+    private func celebrateStamp(_ text: String, complete: Bool) {
+        confettiAt = .now
+        SoundKit.shared.play(complete ? .ballCatch : .useItem)
+        toast = text
+    }
+
+    /// Plays a stamp celebration that happened while the app was in the background.
+    func showPendingStamp() {
+        guard let text = UserDefaults.standard.string(forKey: "pendingStampText") else { return }
+        let complete = UserDefaults.standard.bool(forKey: "pendingStampComplete")
+        UserDefaults.standard.removeObject(forKey: "pendingStampText")
+        celebrateStamp(text, complete: complete)
     }
 
     /// Active calories from Apple Health: ₽1 for every 10 kcal burned today.

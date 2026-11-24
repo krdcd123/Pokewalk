@@ -26,7 +26,20 @@ struct ConfettiRain: View {
     private let duration = 3.6
 
     var body: some View {
-        if let start, !done {
+        // Always-present container so a new `start` (another stamp, a workout…) restarts the rain every time.
+        ZStack { rain }
+            .allowsHitTesting(false)
+            .task(id: start) {
+                guard start != nil else { return }
+                done = false
+                pieces = ConfettiRain.makePieces()
+                try? await Task.sleep(for: .seconds(duration))
+                done = true
+            }
+    }
+
+    @ViewBuilder private var rain: some View {
+        if let start, !done, Date().timeIntervalSince(start) < duration + 1 {
             TimelineView(.animation) { tl in
                 Canvas { ctx, size in
                     let t = tl.date.timeIntervalSince(start)
@@ -50,12 +63,6 @@ struct ConfettiRain: View {
                 }
             }
             .ignoresSafeArea()
-            .allowsHitTesting(false)
-            .task(id: start) {
-                done = false
-                try? await Task.sleep(for: .seconds(duration))
-                done = true
-            }
         }
     }
 }
