@@ -158,8 +158,25 @@ final class SleepService: ObservableObject {
         return (avg, mins.reduce(0, +) / Double(mins.count))
     }
 
+    /// One-time: clear sleep worked out by earlier builds (the rules changed), so nights are redone.
+    static func resetOldSleepOnce() {
+        let flag = "sleepReset-2026-11-24"
+        guard !UserDefaults.standard.bool(forKey: flag) else { return }
+        UserDefaults.standard.set(true, forKey: flag)
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.removeItem(at: docs.appendingPathComponent("sleep-estimates.json"))
+        for day in ["2026-11-22", "2026-11-23"] {
+            try? FileManager.default.removeItem(at: docs.appendingPathComponent("SleepTalk/\(day)"))
+        }
+        for k in UserDefaults.standard.dictionaryRepresentation().keys where k.hasPrefix("sleepShown-") {
+            UserDefaults.standard.removeObject(forKey: k)
+        }
+        MotionSleep.shared.clearCache()
+    }
+
     /// Refreshes last night and shows the morning popup once per night, after you've woken up.
     func refresh(showPopup: Bool) async {
+        Self.resetOldSleepOnce()
         let today = Calendar.current.startOfDay(for: .now)
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: today) ?? today
         var n = await night(for: yesterday)
@@ -167,14 +184,16 @@ final class SleepService: ObservableObject {
             if let t = await night(for: today), t.wake < .now { n = t }   // an earlier sleep tonight (nap / early night)
         }
         lastNight = n
-        if let n, !SleepRecorder.shared.isRecording {
+        if let n, !SleepRecorder.shared.isRecording, n.wake < Date().addingTimeInterval(-10 * 60) {
             SleepRecorder.trim(day: n.day, asleepFrom: n.bedtime, to: n.wake)
         }
         guard showPopup, let n, popup == nil else { return }
         let key = "sleepShown-\(Int(n.day.timeIntervalSince1970))"
-        // Only once you're up: woke 10+ minutes ago, within the last 14 hours
+        // Only once you're up for the day: woke 10+ minutes ago, within the last 14 hours, and it's
+        // morning or later (checking your phone at 3am isn't waking up — listening carries on)
         let since = Date().timeIntervalSince(n.wake)
-        guard since > 10 * 60, since < 14 * 3600, !UserDefaults.standard.bool(forKey: key) else { return }
+        let hour = Calendar.current.component(.hour, from: .now)
+        guard since > 10 * 60, since < 14 * 3600, hour >= 5, !UserDefaults.standard.bool(forKey: key) else { return }
         UserDefaults.standard.set(true, forKey: key)
         if SleepRecorder.shared.isRecording {
             SleepRecorder.shared.stop()
@@ -226,7 +245,7 @@ final class SleepRecorder: ObservableObject {
     private let motion = CMMotionActivityManager()
     private var stillSince: Date?
     private var stillTimer: Timer?
-    static let stillToCountAsAsleep: TimeInterval = 15 * 60
+    nonisolated static let stillToCountAsAsleep: TimeInterval = 15 * 60
     private var engine: AVAudioEngine?
     private var listener: Listener?
     private var interruptionObserver: NSObjectProtocol?
@@ -500,6 +519,8 @@ final class MotionSleep {
         if let d = try? Data(contentsOf: url), let c = try? JSONDecoder().decode([String: Saved].self, from: d) { cache = c }
     }
 
+    func clearCache() { cache = [:] }
+
     private func key(_ day: Date) -> String {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: day)
     }
@@ -559,15 +580,23 @@ final class MotionSleep {
             if let last = still.last, a.startDate.timeIntervalSince(last.end) < 1 { still[still.count - 1].end = end }
             else { still.append((a.startDate, end)) }
         }
-        // Join stretches split by a quick pickup (under 15 minutes); remember the pickups as wake-ups
-        var merged: [(start: Date, end: Date, wakes: [Date])] = []
+        // Join stretches split by a quick pickup (under 15 minutes), keeping the pieces
+        var merged: [(start: Date, end: Date, parts: [(start: Date, end: Date)])] = []
         for st in still {
             if let last = merged.last, st.start.timeIntervalSince(last.end) <= 15 * 60 {
                 merged[merged.count - 1].end = st.end
-                merged[merged.count - 1].wakes.append(last.end)
+                merged[merged.count - 1].parts.append(st)
             } else {
-                merged.append((st.start, st.end, []))
+                merged.append((st.start, st.end, [st]))
             }
+        }
+        // You're only asleep once the phone has stayed still for 15 minutes in one go (same rule as
+        // the live "Sleeping" on the map). Pickups before that are settling down, not waking up.
+        let asleepAfter = SleepRecorder.stillToCountAsAsleep
+        merged = merged.compactMap { m -> (start: Date, end: Date, parts: [(start: Date, end: Date)])? in
+            guard let i = m.parts.firstIndex(where: { $0.end.timeIntervalSince($0.start) >= asleepAfter }) else { return nil }
+            let parts = Array(m.parts[i...])
+            return (parts[0].start, m.end, parts)
         }
         // Your sleep: the longest one that starts in the evening / night and lasts 3+ hours
         let cal = Calendar.current
@@ -576,8 +605,8 @@ final class MotionSleep {
             return (h >= 19 || h < 6) && m.end.timeIntervalSince(m.start) >= 3 * 3600
         }
         guard let best = candidates.max(by: { $0.end.timeIntervalSince($0.start) < $1.end.timeIntervalSince($1.start) }) else { return nil }
-        // Settling down takes a little while: count sleep from ~10 minutes after the phone went still
-        let bed = best.start.addingTimeInterval(10 * 60)
-        return Saved(bedtime: bed, wake: best.end, wakes: best.wakes.filter { $0 > bed })
+        let bed = best.start
+        let wakes = best.parts.dropLast().map { $0.end }      // each pickup after you'd fallen asleep
+        return Saved(bedtime: bed, wake: best.end, wakes: wakes)
     }
 }
