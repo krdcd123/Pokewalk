@@ -9,7 +9,6 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
     private var pending: WatchSnapshot?
     private let sentSpritesKey = "sentIconsToWatch"
     private var lastPushedParty = ""
-    private var lastPushedLevels = ""
 
     // Watch status for the Settings screen
     var isWatchPaired: Bool { session?.isPaired ?? false }
@@ -36,24 +35,18 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
             session.sendMessage(payload, replyHandler: nil, errorHandler: nil)
         }
 
-        // Priority pushes wake the watch even when its app isn't open, but Apple allows only ~50 a day.
-        // They're spent only on real changes, never on routine refreshes:
-        //  • buddy / party / evolution / name changes — always (these must show on the watch straight away)
-        //  • level-ups — only while plenty are left, so the big changes always have some in reserve
+        // Priority pushes (silent, ~50 a day) are only for changes to what your complications show:
+        // who's in the party and in what order, evolutions, names and the walking buddy.
+        // Level-ups, items, encounters etc. come through as normal notifications instead — and the watch
+        // works out levels itself from its own steps, so the complications keep counting up anyway.
         let party = snapshot.party.map { "\($0.id):\($0.speciesID):\($0.name):\($0.isBuddy)" }.joined(separator: ",")
-        let levels = snapshot.party.map { "\($0.id):\($0.species.growth.level(forExp: $0.exp))" }.joined(separator: ",")
-        let partyChanged = party != lastPushedParty
-        let levelChanged = levels != lastPushedLevels
-        if partyChanged || levelChanged {
-            let left = session.remainingComplicationUserInfoTransfers
-            let worthIt = partyChanged || left > 15
-            if worthIt, session.isComplicationEnabled, left > 0 {
+        if party != lastPushedParty {
+            if session.isComplicationEnabled, session.remainingComplicationUserInfoTransfers > 0 {
                 session.transferCurrentComplicationUserInfo(payload)
             } else {
-                session.transferUserInfo(payload)        // queued: delivered the next time the watch can take it
+                session.transferUserInfo(payload)
             }
             lastPushedParty = party
-            lastPushedLevels = levels
         }
 
         sendIcons(for: snapshot.party.map { ($0.speciesID, $0.isShiny) } + snapshot.wild.map { ($0.speciesID, $0.isShiny) })
