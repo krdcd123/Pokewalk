@@ -20,12 +20,14 @@ struct PokemonEntity: AppEntity {
     static let wholeParty = PokemonEntity(id: partyID, name: "Whole Party")
     static let partyNoBuddyID = "party-nobuddy"
     static let partyNoBuddy = PokemonEntity(id: partyNoBuddyID, name: "Party (not buddy)")
+    static let workoutID = "workout"
+    static let workoutShortcut = PokemonEntity(id: workoutID, name: "Start Workout")
 }
 
 struct PokemonQuery: EntityQuery {
     private var all: [PokemonEntity] {
         let party = SharedStore.loadSnapshot()?.party ?? []
-        return [.walkingBuddy, .wholeParty, .partyNoBuddy] + party.map { PokemonEntity(id: $0.id, name: $0.name) }
+        return [.walkingBuddy, .wholeParty, .partyNoBuddy, .workoutShortcut] + party.map { PokemonEntity(id: $0.id, name: $0.name) }
     }
 
     func entities(for identifiers: [String]) async throws -> [PokemonEntity] {
@@ -56,6 +58,7 @@ struct PokemonEntry: TimelineEntry {
     let live: LiveMember?
     let stepsSinceSync: Int
     let stepsToEncounter: Int
+    var isWorkout = false
 
     static let placeholder: PokemonEntry = {
         let m = WatchSnapshot.Member(id: "preview", speciesID: 25, name: "Pikachu",
@@ -70,6 +73,9 @@ struct Provider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> PokemonEntry { .placeholder }
 
     func snapshot(for configuration: TrackPokemonIntent, in context: Context) async -> PokemonEntry {
+        if configuration.pokemon?.id == PokemonEntity.workoutID {
+            return PokemonEntry(date: .now, member: nil, live: nil, stepsSinceSync: 0, stepsToEncounter: 0, isWorkout: true)
+        }
         if context.isPreview && SharedStore.loadSnapshot() == nil { return .placeholder }
         return await entry(for: configuration)
     }
@@ -78,6 +84,10 @@ struct Provider: AppIntentTimelineProvider {
     static let partyCycle: TimeInterval = 60
 
     func timeline(for configuration: TrackPokemonIntent, in context: Context) async -> Timeline<PokemonEntry> {
+        if configuration.pokemon?.id == PokemonEntity.workoutID {
+            return Timeline(entries: [PokemonEntry(date: .now, member: nil, live: nil, stepsSinceSync: 0, stepsToEncounter: 0,
+                                                   isWorkout: true)], policy: .never)
+        }
         let e = await entry(for: configuration)
         let mode = configuration.pokemon?.id
         guard mode == PokemonEntity.partyID || mode == PokemonEntity.partyNoBuddyID,
@@ -117,6 +127,8 @@ struct Provider: AppIntentTimelineProvider {
                                             description: Text("Whole Party")))
         recs.append(AppIntentRecommendation(intent: TrackPokemonIntent(pokemon: .partyNoBuddy),
                                             description: Text("Party (not buddy)")))
+        recs.append(AppIntentRecommendation(intent: TrackPokemonIntent(pokemon: .workoutShortcut),
+                                            description: Text("Start Workout")))
         recs += party.map {
             AppIntentRecommendation(intent: TrackPokemonIntent(pokemon: PokemonEntity(id: $0.id, name: $0.name)),
                                     description: Text($0.name))
@@ -152,7 +164,9 @@ struct ComplicationView: View {
 
     var body: some View {
         Group {
-            if let member = entry.member, let live = entry.live {
+            if entry.isWorkout {
+                WorkoutShortcutContent()
+            } else if let member = entry.member, let live = entry.live {
                 Group {
                     switch family {
                     case .accessoryCircular: circular(member, live)
@@ -302,6 +316,13 @@ struct WorkoutShortcutProvider: TimelineProvider {
 }
 
 struct WorkoutShortcutView: View {
+    var body: some View {
+        WorkoutShortcutContent().containerBackground(for: .widget) { Color.clear }
+    }
+}
+
+/// The running figure (tap → the workout list on the watch).
+struct WorkoutShortcutContent: View {
     @Environment(\.widgetFamily) private var family
     private let green = Color(red: 0.61, green: 0.88, blue: 0.36)
 
@@ -323,7 +344,6 @@ struct WorkoutShortcutView: View {
             }
         }
         .widgetURL(URL(string: "pokewalk://workouts"))
-        .containerBackground(for: .widget) { Color.clear }
     }
 }
 
