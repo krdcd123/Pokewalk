@@ -170,6 +170,7 @@ enum WatchBattles {
               let wild = store.state.pending.first(where: { $0.id == id }), wild.expiresAt > .now else {
             return reply("It's gone…", ended: true)
         }
+        store.markOpened(id)              // opened on the watch counts as seen
         var s = active[id] ?? {
             var e = SafariEncounter(wild: wild)
             e.caughtBefore = store.state.dexCaught.contains(wild.speciesID)

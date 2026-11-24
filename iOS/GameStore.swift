@@ -454,6 +454,7 @@ final class GameStore: ObservableObject {
     func openEncounter(id: String) {
         guard let uuid = UUID(uuidString: id), let enc = state.pending.first(where: { $0.id == uuid }) else { return }
         activeEncounter = enc
+        markOpened(enc.id)
     }
 
     func useBall(_ kind: BallKind) -> Bool {
@@ -758,6 +759,35 @@ final class GameStore: ObservableObject {
         return earned
     }
 
+    /// You opened this wild Pokémon (saw it up close): if it later leaves, the Journal shows it, not a silhouette.
+    func markOpened(_ id: UUID) {
+        guard !state.openedEncounters.contains(id) else { return }
+        mutate { s in
+            s.openedEncounters.append(id)
+            if s.openedEncounters.count > 100 { s.openedEncounters.removeFirst(s.openedEncounters.count - 100) }
+        }
+    }
+
+    /// Buys an evolution item for its (steep) price.
+    func buyEvolutionItem(_ key: String) -> Bool {
+        guard EvolutionShop.isEvolutionItem(key), state.money >= EvolutionShop.price else { return false }
+        mutate { s in
+            s.money -= EvolutionShop.price
+            s.bag[key, default: 0] += 1
+        }
+        return true
+    }
+
+    /// Cheaper, but you get a random evolution item. Returns which one.
+    func buyMysteryEvolutionItem() -> String? {
+        guard state.money >= EvolutionShop.mysteryPrice, let key = EvolutionShop.items.randomElement() else { return nil }
+        mutate { s in
+            s.money -= EvolutionShop.mysteryPrice
+            s.bag[key, default: 0] += 1
+        }
+        return key
+    }
+
     func buyFishingRod() -> Bool {
         guard (state.bag[Fishing.rodKey] ?? 0) == 0, state.money >= Fishing.rodPrice else { return false }
         mutate { s in
@@ -846,7 +876,10 @@ final class GameStore: ObservableObject {
     /// Wild Pokémon that have run off (their time ran out) leave the list straight away, even without new steps.
     func pruneExpiredEncounters() {
         guard state.pending.contains(where: { $0.expiresAt <= .now }) else { return }
-        mutate { $0.pending.removeAll { $0.expiresAt <= .now } }
+        mutate { s in
+            GameRules.logLeft(s.pending.filter { $0.expiresAt <= .now }, in: &s)
+            s.pending.removeAll { $0.expiresAt <= .now }
+        }
     }
 
     /// Uses up one of an item from the Bag (e.g. a berry thrown in a wild encounter).

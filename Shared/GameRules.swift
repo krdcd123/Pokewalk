@@ -208,13 +208,17 @@ enum GameRules {
         }
 
         // Encounters
+        logLeft(s.pending.filter { $0.expiresAt < date }, in: &s)
         s.pending.removeAll { $0.expiresAt < date }
         s.counters.encounterProgress += steps
         while s.counters.encounterProgress >= s.counters.nextEncounterAt {
             s.counters.encounterProgress -= s.counters.nextEncounterAt
             s.counters.nextEncounterAt = rollEncounterGap(s.settings)
             let enc = generateEncounter(context: context, lifetimeSteps: s.lifetimeSteps, settings: s.settings, at: date)
-            if s.pending.count >= s.settings.maxPendingEncounters { s.pending.removeFirst() }
+            if s.pending.count >= s.settings.maxPendingEncounters {
+                logLeft([s.pending[0]], in: &s)
+                s.pending.removeFirst()
+            }
             s.pending.append(enc)
             s.dexSeen.insert(enc.speciesID)
             out.newEncounters.append(enc)
@@ -699,5 +703,18 @@ struct SafariEncounter {
     private func better(_ a: String?, _ b: String) -> String {
         let order = ["Nice!": 1, "Great!": 2, "Excellent!": 3]
         return (order[a ?? ""] ?? 0) >= (order[b] ?? 0) ? a! : b
+    }
+
+    /// Wild Pokémon that left without being caught go in the Journal too. Ones you never opened
+    /// (never saw up close) are marked unseen and shown as silhouettes.
+    static func logLeft(_ gone: [PendingEncounter], in s: inout GameState) {
+        for p in gone where !s.encounterLog.contains(where: { $0.id == p.id }) {
+            let seen = s.openedEncounters.contains(p.id)
+            s.encounterLog.append(EncounterLogEntry(id: p.id, speciesID: p.speciesID, level: p.level, isShiny: p.isShiny,
+                                                    date: p.appearedAt, location: p.location, outcome: .left,
+                                                    caughtID: nil, ball: nil, seen: seen))
+            s.openedEncounters.removeAll { $0 == p.id }
+        }
+        if s.encounterLog.count > 2_000 { s.encounterLog.removeFirst(s.encounterLog.count - 2_000) }
     }
 }

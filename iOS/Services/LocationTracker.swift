@@ -207,7 +207,9 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let loc = locations.last else { return }
+        // Only precise fixes move "where you are": rough phone-mast fixes (hundreds of metres off) made the
+        // map's follow camera fly back and forth, which looked like it zooming in and out by itself.
+        guard let loc = locations.last, loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 50 else { return }
         Task { @MainActor in if self.lastLocation == nil || loc.timestamp > self.lastLocation!.timestamp { self.lastLocation = loc } }
     }
 

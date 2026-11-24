@@ -198,7 +198,7 @@ enum PCSlot: Hashable {
 
 /// A wild Pokémon you met and what happened, shown in the Journal.
 struct EncounterLogEntry: Codable, Identifiable, Hashable {
-    enum Outcome: String, Codable { case caught, fled, ranAway, waiting }
+    enum Outcome: String, Codable { case caught, fled, ranAway, waiting, left }
     var id: UUID                 // same as the encounter's id
     var speciesID: Int
     var level: Int
@@ -208,9 +208,11 @@ struct EncounterLogEntry: Codable, Identifiable, Hashable {
     var outcome: Outcome
     var caughtID: UUID?          // the Pokémon you got, if caught
     var ball: BallKind?
+    var seen: Bool? = nil        // false: it left before you ever opened it (shown as a silhouette)
 
     var outcomeText: String {
         switch outcome {
+        case .left: return "Left"
         case .caught: return "Caught"
         case .fled: return "Fled"
         case .ranAway: return "You ran"
@@ -313,6 +315,7 @@ struct GameState: Codable {
     var caloriesPaid: Double = 0      // today's active calories already turned into money
     var lifetimeCalories: Double = 0
     var activeLure: ActiveLure?
+    var openedEncounters: [UUID] = []         // wild Pokémon you opened (saw up close) — the Journal shows the rest as silhouettes
     var workouts: [WorkoutRecord] = []        // finished workouts and what they earned (Journal)
     var unseenWorkouts: [String] = []         // workout ids whose "Workout complete!" popup hasn't shown yet
 
@@ -444,6 +447,7 @@ extension GameState {
         lifetimeCalories = c.value(.lifetimeCalories, 0)
         activeLure = c.value(.activeLure, nil)
         workouts = c.value(.workouts, [])
+        openedEncounters = c.value(.openedEncounters, [])
         unseenWorkouts = c.value(.unseenWorkouts, [])
     }
 }
@@ -510,4 +514,21 @@ enum ItemCatalog {
 
     /// Gen 3: bigger boost the less a Pokémon likes you.
     static func berryBoost(_ friendship: Int) -> Int { friendship < 100 ? 10 : friendship < 200 ? 5 : 2 }
+}
+
+
+/// Evolution items for sale (stones, trade items…), and a cheaper mystery one that's a random pick.
+enum EvolutionShop {
+    static let price = 12_000
+    static let mysteryPrice = 8_000
+    static let mysteryKey = "mystery-evolution-item"
+
+    /// Every item that evolves something in PokéWalk.
+    static let items: [String] = {
+        var seen: [String] = []
+        for sp in Dex.all { for r in sp.evolutions where r.kind == .item { if let i = r.item, !seen.contains(i) { seen.append(i) } } }
+        return seen.sorted { Dex.itemName($0) < Dex.itemName($1) }
+    }()
+
+    static func isEvolutionItem(_ key: String) -> Bool { items.contains(key) }
 }

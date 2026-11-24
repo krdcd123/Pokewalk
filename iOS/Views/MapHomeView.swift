@@ -252,7 +252,8 @@ struct MapHomeView: View {
         // Always keep you in view: if you pan away, it glides back to you after a few seconds
         .onMapCameraChange(frequency: .onEnd) { ctx in
             lastCamera = ctx.camera
-            zoomDistance = ctx.camera.distance          // pinch-zooming sets the zoom we keep from now on
+            // Pinch-zooming sets the zoom we keep from now on (sane range only, so a glitchy frame can't stick)
+            if (80...200_000).contains(ctx.camera.distance) { zoomDistance = ctx.camera.distance }
             // Did you pan away from yourself? Then stop following, and glide back after a few seconds.
             if let me = tracker.currentLocation() {
                 let centre = CLLocation(latitude: ctx.camera.centerCoordinate.latitude, longitude: ctx.camera.centerCoordinate.longitude)
@@ -267,8 +268,10 @@ struct MapHomeView: View {
             }
         }
         // Keep you in the middle as you walk (same zoom)
-        .onChange(of: tracker.lastLocation) { _, loc in
-            guard following, sheet == nil, let loc else { return }
+        .onChange(of: tracker.lastLocation) { old, loc in
+            guard following, sheet == nil, let loc, loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 50 else { return }
+            // tiny GPS wobbles don't move the camera
+            if let old, loc.distance(from: old) < 3 { return }
             let cam = MapCamera(centerCoordinate: loc.coordinate, distance: zoomDistance,
                                 heading: lastCamera?.heading ?? 0, pitch: lastCamera?.pitch ?? 0)
             withAnimation(.linear(duration: 0.8)) { camera = .camera(cam) }

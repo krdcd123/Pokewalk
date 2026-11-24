@@ -242,7 +242,7 @@ struct BagView: View {
             }
         }
         static func of(_ key: String) -> Pocket {
-            if key == Fishing.rodKey { return .key }
+            if key == Fishing.rodKey || EvolutionShop.isEvolutionItem(key) { return .key }
             if Fishing.isBait(key) || Fishing.isLure(key) { return .items }
             if ItemCatalog.isBerry(key) { return .berries }
             if key == "rare-candy" || ExpCandy.exp(key) != nil { return .candies }
@@ -1561,6 +1561,57 @@ struct ShopView: View {
                 }
                 .glassRow()
             } header: { Text("Key items") }
+
+            SwiftUI.Section {
+                // Mystery item: cheaper, random
+                let canMystery = store.state.money >= EvolutionShop.mysteryPrice
+                HStack(spacing: 12) {
+                    Image(systemName: "questionmark.diamond.fill").font(.system(size: 26)).foregroundStyle(Theme.orange)
+                        .frame(width: 32, height: 32)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Mystery evolution item").font(.rounded(16, .heavy))
+                        Text("A random stone or trade item — cheaper, but you don't choose.").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                    }
+                    Spacer()
+                    Button {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        if let got = store.buyMysteryEvolutionItem() {
+                            SoundKit.shared.play(.useItem)
+                            store.toast = "It's a \(Dex.itemName(got))! It's in your Bag's Key Items."
+                        }
+                    } label: {
+                        Text("₽\(EvolutionShop.mysteryPrice.formatted())").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                            .padding(.horizontal, 14).frame(height: 36)
+                            .background(canMystery ? Theme.orange.opacity(0.85) : .white.opacity(0.1), in: Capsule())
+                    }
+                    .buttonStyle(.plain).disabled(!canMystery)
+                }
+                .glassRow()
+
+                ForEach(EvolutionShop.items, id: \.self) { key in
+                    let afford = store.state.money >= EvolutionShop.price
+                    HStack(spacing: 12) {
+                        ItemSprite(key: key).frame(width: 32, height: 32)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(Dex.itemName(key)).font(.rounded(15, .heavy))
+                            Text("You have \(store.state.bag[key] ?? 0)").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                        }
+                        Spacer()
+                        Button {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            if store.buyEvolutionItem(key) { store.toast = "Bought a \(Dex.itemName(key))! It's in your Bag's Key Items." }
+                        } label: {
+                            Text("₽\(EvolutionShop.price.formatted())").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                                .padding(.horizontal, 14).frame(height: 36)
+                                .background(afford ? Theme.teal.opacity(0.8) : .white.opacity(0.1), in: Capsule())
+                        }
+                        .buttonStyle(.plain).disabled(!afford)
+                    }
+                    .glassRow()
+                }
+            } header: { Text("Evolution items") } footer: {
+                Text("Use one on a Pokémon from the Bag (Key Items › Use on…) to evolve it. Stones evolve straight away; trade items (Metal Coat, King's Rock…) work as if traded.")
+            }
             }
 
             if section == .bait {

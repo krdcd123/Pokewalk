@@ -21,6 +21,7 @@ struct JournalView: View {
     @State private var calendarMode = false
     @AppStorage("journalSleepView") private var sleepView = false
     @AppStorage("journalEncountersOpen2") private var encountersOpen = false
+    @AppStorage("journalPlacesOpen") private var placesOpen = false
 
     private var days: [Date] {
         // Oldest on the left, today on the right
@@ -43,17 +44,19 @@ struct JournalView: View {
         let inRange: (Date) -> Bool = { showAllTime || cal.isDate($0, inSameDayAs: day) }
         var out: [JournalEncounter] = store.state.encounterLog.filter { inRange($0.date) }.map {
             JournalEncounter(id: $0.id, speciesID: $0.speciesID, level: $0.level, isShiny: $0.isShiny, date: $0.date,
-                             location: $0.location, status: $0.outcomeText, caught: $0.outcome == .caught)
+                             location: $0.location, status: $0.outcomeText, caught: $0.outcome == .caught,
+                             hidden: $0.outcome == .left && $0.seen != true)
         }
         let logged = Set(store.state.encounterLog.compactMap(\.caughtID))
         // Pokémon caught before the Journal kept an encounter log
         for mon in store.state.pokemon where mon.metNote == nil && !logged.contains(mon.id) && inRange(mon.metDate) {
             out.append(JournalEncounter(id: mon.id, speciesID: mon.speciesID, level: mon.metLevel, isShiny: mon.isShiny,
-                                        date: mon.metDate, location: mon.metLocation, status: "Caught", caught: true))
+                                        date: mon.metDate, location: mon.metLocation, status: "Caught", caught: true, hidden: false))
         }
         for p in store.state.pending where inRange(p.appearedAt) {
             out.append(JournalEncounter(id: p.id, speciesID: p.speciesID, level: p.level, isShiny: p.isShiny,
-                                        date: p.appearedAt, location: p.location, status: "Waiting", caught: false))
+                                        date: p.appearedAt, location: p.location, status: "Waiting", caught: false,
+                                        hidden: !store.state.openedEncounters.contains(p.id)))
         }
         return out.sorted { $0.date > $1.date }
     }
@@ -187,7 +190,7 @@ struct JournalView: View {
                 // Encounters: tap the header to fold the list away
                 Button {
                     SoundKit.shared.play(.select)
-                    withAnimation(.snappy) { encountersOpen.toggle() }
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.86)) { encountersOpen.toggle() }
                 } label: {
                     HStack {
                         Text("ENCOUNTERS · \(encounters.count)").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
@@ -208,17 +211,20 @@ struct JournalView: View {
                     Button {
                         if !encountersOpen && encounters.count > 1 {
                             SoundKit.shared.play(.select)
-                            withAnimation(.snappy) { encountersOpen = true }
+                            withAnimation(.spring(response: 0.5, dampingFraction: 0.86)) { encountersOpen = true }
                         } else {
                             select(e)
                         }
                     } label: {
                         HStack(spacing: 12) {
-                            AnimatedSprite(speciesID: e.speciesID, shiny: e.isShiny, kind: .icons)
+                            AnimatedSprite(speciesID: e.speciesID, shiny: e.isShiny && !e.hidden, kind: .icons)
+                                .colorMultiply(e.hidden ? .black : .white)            // never seen up close: silhouette
+                                .opacity(e.hidden ? 0.85 : 1)
                                 .frame(width: 44, height: 40)
                                 .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("\(e.species.name)\(e.isShiny ? " ✨" : "")  Lv \(e.level)").font(.rounded(15, .heavy))
+                                Text(e.hidden ? "???  Lv \(e.level)" : "\(e.species.name)\(e.isShiny ? " ✨" : "")  Lv \(e.level)")
+                                    .font(.rounded(15, .heavy))
                                 Text("\(showAllTime ? e.date.formatted(date: .abbreviated, time: .shortened) : e.date.formatted(date: .omitted, time: .shortened)) · \(e.location?.displayName ?? "No location")")
                                     .font(.rounded(12)).foregroundStyle(Theme.inkSoft).lineLimit(1)
                             }
@@ -235,7 +241,8 @@ struct JournalView: View {
                         .overlay(RoundedRectangle(cornerRadius: 20).stroke(Theme.teal, lineWidth: selected == e.id ? 2 : 0))
                     }
                     .buttonStyle(.plain)
-                    .transition(.opacity)
+                    .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity),
+                                            removal: .move(edge: .top).combined(with: .opacity)))
                 }
                 }
                 }
@@ -265,7 +272,26 @@ struct JournalView: View {
     @ViewBuilder private var placesSection: some View {
         let list = stays
         VStack(alignment: .leading, spacing: 10) {
-            Text("PLACES").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
+            let placeCount = PlaceGroup.make(list).count
+            Button {
+                guard placeCount > 1 else { return }
+                SoundKit.shared.play(.select)
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.86)) { placesOpen.toggle() }
+            } label: {
+                HStack {
+                    Text("PLACES · \(placeCount)").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
+                    Spacer()
+                    if placeCount > 1 {
+                        if !placesOpen {
+                            Text("+\(placeCount - 1) more").font(.rounded(12, .black)).foregroundStyle(Theme.tealDark)
+                        }
+                        Image(systemName: "chevron.down").font(.system(size: 13, weight: .heavy)).foregroundStyle(Theme.inkSoft)
+                            .rotationEffect(.degrees(placesOpen ? 0 : -90))
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
             if list.isEmpty {
                 Text("Places you stay at for 10 minutes or more show up here, with how long you were there.")
                     .font(.rounded(13)).foregroundStyle(Theme.inkSoft)
@@ -275,7 +301,9 @@ struct JournalView: View {
                         .font(.rounded(15, .heavy))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                let groups = PlaceGroup.make(list)
+                let allGroups = PlaceGroup.make(list)
+                // Folded: just the first place (tap it to see the rest). Open: every place.
+                let groups = placesOpen ? allGroups : Array(allGroups.prefix(1))
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(groups.enumerated()), id: \.element.id) { idx, g in
                         HStack(alignment: .top, spacing: 12) {
@@ -321,7 +349,14 @@ struct JournalView: View {
                         }
                         .padding(.bottom, idx < groups.count - 1 ? 14 : 0)
                         .contentShape(Rectangle())
+                        .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity),
+                                                removal: .move(edge: .top).combined(with: .opacity)))
                         .onTapGesture {
+                            if !placesOpen && allGroups.count > 1 {
+                                SoundKit.shared.play(.select)
+                                withAnimation(.spring(response: 0.5, dampingFraction: 0.86)) { placesOpen = true }
+                                return
+                            }
                             if g.visits.count > 1 {
                                 withAnimation(.snappy) {
                                     if expanded.contains(g.id) { expanded.remove(g.id) } else { expanded.insert(g.id) }
@@ -535,6 +570,7 @@ private struct JournalEncounter: Identifiable {
     let location: MetLocation?
     let status: String
     let caught: Bool
+    let hidden: Bool            // never opened: a blacked-out silhouette, name unknown
     var species: Species { Dex.species(speciesID) }
 }
 
