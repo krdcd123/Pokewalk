@@ -23,6 +23,9 @@ struct MapHomeView: View {
     @State private var following = true
     @AppStorage("mapZoomDistance") private var zoomDistance: Double = 900
     @State private var lastCamera: MapCamera?
+    /// Set once the map has zoomed in on you after launch (until then it may be showing the whole country
+    /// while it waits for your location, and that zoom mustn't be kept).
+    @State private var didInitialZoom = false
 
     /// Tap the location button / menus close / app reopens: glide back to you at the same zoom.
     private func followMe(distance: Double? = nil, duration: Double = 0.6) {
@@ -266,8 +269,9 @@ struct MapHomeView: View {
         // Always keep you in view: if you pan away, it glides back to you after a few seconds
         .onMapCameraChange(frequency: .onEnd) { ctx in
             lastCamera = ctx.camera
+            guard didInitialZoom else { return }
             // Pinch-zooming sets the zoom we keep from now on (sane range only, so a glitchy frame can't stick)
-            if (80...200_000).contains(ctx.camera.distance) { zoomDistance = ctx.camera.distance }
+            if (80...20_000).contains(ctx.camera.distance) { zoomDistance = ctx.camera.distance }
             // Did you pan away from yourself? Then stop following, and glide back after a few seconds.
             if let me = tracker.currentLocation() {
                 let centre = CLLocation(latitude: ctx.camera.centerCoordinate.latitude, longitude: ctx.camera.centerCoordinate.longitude)
@@ -290,7 +294,19 @@ struct MapHomeView: View {
                                 heading: lastCamera?.heading ?? 0, pitch: lastCamera?.pitch ?? 0)
             withAnimation(.linear(duration: 0.8)) { camera = .camera(cam) }
         }
-        .onAppear { if tracker.currentLocation() != nil && lastCamera == nil { followMe(duration: 0) } }
+        // Launch: the map starts on the whole country while it waits for a fix. As soon as we know where you
+        // are, jump in to street level (your usual zoom, never a country-sized one).
+        .task {
+            guard !didInitialZoom else { return }
+            if zoomDistance > 20_000 || zoomDistance < 80 { zoomDistance = 900 }
+            for _ in 0..<60 {
+                if tracker.currentLocation() != nil { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            followMe(distance: zoomDistance, duration: 0)
+            try? await Task.sleep(for: .seconds(1))
+            didInitialZoom = true
+        }
         .ignoresSafeArea()
     }
 

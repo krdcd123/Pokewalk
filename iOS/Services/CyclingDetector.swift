@@ -13,9 +13,20 @@ enum CyclingDetector {
     static func cycling(since: Date) async -> Bool {
         if let w = watchSawCyclingAt, Date().timeIntervalSince(w) < 4 * 60 { return true }
         guard CMMotionActivityManager.isActivityAvailable() else { return false }
-        let from = min(since, Date().addingTimeInterval(-3 * 60))
+        // Only the last few minutes (the first check after launch used to ask from the year 1, which Core
+        // Motion never answered — that froze the whole step check, so steps showed 0 and nothing was earned).
+        let now = Date()
+        let from = max(now.addingTimeInterval(-10 * 60), min(since, now.addingTimeInterval(-3 * 60)))
         let list: [CMMotionActivity] = await withCheckedContinuation { cont in
-            manager.queryActivityStarting(from: from, to: .now, to: .main) { a, _ in cont.resume(returning: a ?? []) }
+            var done = false
+            let finish: ([CMMotionActivity]) -> Void = { a in
+                guard !done else { return }
+                done = true
+                cont.resume(returning: a)
+            }
+            manager.queryActivityStarting(from: from, to: now, to: .main) { a, _ in finish(a ?? []) }
+            // never wait more than 5 s for an answer
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) { finish([]) }
         }
         return list.contains { $0.cycling && $0.confidence != .low }
     }
