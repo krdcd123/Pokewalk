@@ -704,7 +704,9 @@ struct SafariEncounter {
         let order = ["Nice!": 1, "Great!": 2, "Excellent!": 3]
         return (order[a ?? ""] ?? 0) >= (order[b] ?? 0) ? a! : b
     }
+}
 
+extension GameRules {
     /// Wild Pokémon that left without being caught go in the Journal too. Ones you never opened
     /// (never saw up close) are marked unseen and shown as silhouettes.
     static func logLeft(_ gone: [PendingEncounter], in s: inout GameState) {
