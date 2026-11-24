@@ -934,6 +934,10 @@ private struct StepSyncSection: View {
             ForEach(Array(workouts.enumerated()), id: \.offset) { _, w in
                 row("\(w.name) · \(w.minutes) min", "\(w.kcal) kcal")
             }
+            row("Apple Watch (sent directly)", StepEngine.watchSteps(day: DailyStampsKey.key(Calendar.current.startOfDay(for: .now))).formatted())
+            if store.workoutStepsToday > 0 {
+                row("Non-walking workouts", "−\(store.workoutStepsToday.formatted())")
+            }
             row("PokéWalk today", store.stepsToday.formatted())
             if let healthError {
                 Text(healthError).font(.rounded(12)).foregroundStyle(Theme.inkSoft).glassRow()
@@ -943,6 +947,7 @@ private struct StepSyncSection: View {
                     checking = true
                     try? await StepCounter.shared.requestAuthorizationWithDistance()
                     await refresh()
+                    await store.refreshStepsToday()
                     await store.tick()
                     checking = false
                 }

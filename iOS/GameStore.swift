@@ -297,13 +297,33 @@ final class GameStore: ObservableObject {
         Task { await tick() }
     }
 
+    /// When the current step check started: if one ever gets stuck waiting on Health / motion data, the next
+    /// one carries on after 2 minutes instead of steps freezing until the app is force closed.
+    private var tickStartedAt = Date.distantPast
+    /// Steps taken off today for non-walking workouts (shown in Settings › Step sync).
+    @Published private(set) var workoutStepsToday = 0
+
+    /// Today's step count on the map: your real total (Apple Health / watch / iPhone, whichever is highest)
+    /// minus steps your watch counted during non-walking workouts. Runs on its own so it always updates.
+    func refreshStepsToday() async {
+        let today = Calendar.current.startOfDay(for: .now)
+        let raw = await engine.steps(onDay: today)
+        let workout = min(raw, await StepCounter.shared.nonWalkingWorkoutSteps(onDay: today))
+        workoutStepsToday = workout
+        stepsToday = max(0, raw - workout)
+    }
+
     func tick() async {
-        guard hasGame, !ticking else { return }
+        guard hasGame else { return }
+        await refreshStepsToday()
+        if ticking && Date().timeIntervalSince(tickStartedAt) > 120 { ticking = false }
+        guard !ticking else { return }
         await checkLure()
         stampToday()                    // past midnight with the app still open: today's stamp
         await syncHealthCalories()
         await processWorkouts()
         ticking = true
+        tickStartedAt = .now
         defer { ticking = false; lastTick = .now }
 
         let cal = Calendar.current
@@ -329,7 +349,7 @@ final class GameStore: ObservableObject {
             let total = max(0, raw - max(0, workout - skipped))
             // Today's step count is your real total (same as Apple Health / your watch) minus steps the watch counted
             // during non-walking workouts. Steps left out of rewards while cycling don't lower it again.
-            if day == today { stepsToday = max(0, raw - workout) }
+            if day == today { stepsToday = max(0, raw - min(raw, workout)); workoutStepsToday = min(raw, workout) }
             // Days we haven't seen yet count from midnight, unless they're before the game started.
             let processed = ledger[key] ?? ((gameExisted && day >= startedDay) ? 0 : total)
             ledger[key] = max(processed, total)
