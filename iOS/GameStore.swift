@@ -1028,7 +1028,8 @@ final class GameStore: ObservableObject {
             },
             bag: watchBag,
             wild: state.pending.filter { $0.expiresAt > .now }.map {
-                .init(id: $0.id.uuidString, speciesID: $0.speciesID, level: $0.level, isShiny: $0.isShiny, expiresAt: $0.expiresAt)
+                .init(id: $0.id.uuidString, speciesID: $0.speciesID, level: $0.level, isShiny: $0.isShiny, expiresAt: $0.expiresAt,
+                      caughtBefore: state.dexCaught.contains($0.speciesID))
             },
             latitude: tracker.currentLocation()?.coordinate.latitude,
             longitude: tracker.currentLocation()?.coordinate.longitude,

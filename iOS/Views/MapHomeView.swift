@@ -243,9 +243,12 @@ struct MapHomeView: View {
                 }.annotationTitles(.hidden)
             }
             ForEach(store.state.pending.filter { $0.location != nil }) { enc in
-                Annotation("Wild \(enc.species.name)", coordinate: CLLocationCoordinate2D(latitude: enc.location!.latitude,
+                Annotation("Wild Pokémon", coordinate: CLLocationCoordinate2D(latitude: enc.location!.latitude,
                                                                                           longitude: enc.location!.longitude)) {
-                    Button { open(enc) } label: { MapPin(speciesID: enc.speciesID, ring: Theme.teal, wild: true) }
+                    Button { open(enc) } label: {
+                        MapPin(speciesID: enc.speciesID, ring: Theme.teal, wild: true,
+                               hidden: !store.state.dexCaught.contains(enc.speciesID))     // never caught one: silhouette
+                    }
                 }.annotationTitles(.hidden)
             }
             if let loc = tracker.lastLocation {
@@ -575,12 +578,14 @@ struct MapPin: View {
     var ring: Color
     var wild = false
     var shiny = false
+    var hidden = false          // a species you've never caught: blacked-out silhouette
 
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
                 Circle().fill(.white)
-                AnimatedSprite(speciesID: speciesID, shiny: shiny, kind: .icons).padding(5)
+                AnimatedSprite(speciesID: speciesID, shiny: shiny && !hidden, kind: .icons).padding(5)
+                    .colorMultiply(hidden ? .black : .white)
             }
             .frame(width: 44, height: 44)
             .overlay(Circle().stroke(ring, lineWidth: 3))
@@ -668,9 +673,12 @@ struct EncounterListView: View {
                 ForEach(live.reversed()) { enc in
                     Button { open(enc) } label: {
                         HStack(spacing: 12) {
-                            AnimatedSprite(speciesID: enc.speciesID, shiny: enc.isShiny, kind: .icons).frame(width: 48, height: 40)
+                            let unknown = !store.state.dexCaught.contains(enc.speciesID)     // never caught one
+                            AnimatedSprite(speciesID: enc.speciesID, shiny: enc.isShiny && !unknown, kind: .icons)
+                                .colorMultiply(unknown ? .black : .white)
+                                .frame(width: 48, height: 40)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("\(enc.species.name)\(enc.isShiny ? " ✨" : "")  Lv. \(enc.level)")
+                                Text(unknown ? "???  Lv. \(enc.level)" : "\(enc.species.name)\(enc.isShiny ? " ✨" : "")  Lv. \(enc.level)")
                                     .font(.rounded(16, .heavy)).foregroundStyle(Theme.ink)
                                 Text(enc.location?.placeName ?? "Somewhere on your walk")
                                     .font(.rounded(12)).foregroundStyle(Theme.inkSoft)

@@ -338,8 +338,8 @@ struct WildPage: View {
                             WildIcon(wild: w, size: 34, hop: true)
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 3) {
-                                    Text(w.species.name).font(.footnote.weight(.semibold)).lineLimit(1)
-                                    if w.isShiny { Text("✨").font(.caption2) }
+                                    Text(w.unknown ? "???" : w.species.name).font(.footnote.weight(.semibold)).lineLimit(1)
+                                    if w.isShiny && !w.unknown { Text("✨").font(.caption2) }
                                 }
                                 Text("Lv\(w.level) · leaves \(w.expiresAt, style: .relative)")
                                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
@@ -389,8 +389,8 @@ struct BattlePage: View {
 
                 if let wild {
                     HStack(spacing: 3) {
-                        Text(wild.species.name).font(.headline).lineLimit(1)
-                        if wild.isShiny { Text("✨").font(.caption) }
+                        Text(wild.unknown ? "???" : wild.species.name).font(.headline).lineLimit(1)
+                        if wild.isShiny && !wild.unknown { Text("✨").font(.caption) }
                         Text("Lv\(wild.level)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     }
                 }
@@ -650,7 +650,8 @@ struct WildIcon: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { ctx in
             let up = hop && !dimmed && HoppingIcon.hopUp(ctx.date)
-            BoxIcon(speciesID: wild.speciesID, shiny: wild.isShiny)
+            BoxIcon(speciesID: wild.speciesID, shiny: wild.isShiny && !wild.unknown)
+                .colorMultiply(wild.unknown ? .black : .white)
                 .id("\(wild.speciesID)-\(wild.isShiny)-\(model.spriteVersion)")
                 .frame(width: size, height: size)
                 .offset(y: up ? -size * 0.08 : 0)

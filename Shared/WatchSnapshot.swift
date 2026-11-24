@@ -39,7 +39,9 @@ struct WatchSnapshot: Codable, Equatable {
         var level: Int
         var isShiny: Bool
         var expiresAt: Date
+        var caughtBefore: Bool? = nil     // false: you've never caught one → silhouette and "???"
         var species: Species { Dex.species(speciesID) }
+        var unknown: Bool { caughtBefore == false }
     }
 
     var syncDate: Date
