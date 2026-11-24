@@ -38,10 +38,11 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
 
         // Complication pushes wake the watch with priority, but there are only ~50 a day:
         // use them when a level changes, or at most every 15 minutes.
-        // Anything you'd see change on the watch: who's in the party, their species (evolutions), level,
-        // name, buddy and held items. Any change pushes to the watch with priority.
+        // Changes that push to the watch with priority: who's in the party, their species (evolutions),
+        // level, name and buddy. A picked-up item doesn't — you get a normal notification, and the red dot
+        // appears with the next regular update.
         let levels = snapshot.party.map {
-            "\($0.id):\($0.speciesID):\($0.species.growth.level(forExp: $0.exp)):\($0.name):\($0.isBuddy):\($0.heldItem ?? "")"
+            "\($0.id):\($0.speciesID):\($0.species.growth.level(forExp: $0.exp)):\($0.name):\($0.isBuddy)"
         }.joined(separator: ",")
         let due = Date().timeIntervalSince(lastComplicationPush) > 15 * 60 || levels != lastComplicationLevels
         if due {
