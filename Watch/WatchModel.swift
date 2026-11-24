@@ -255,10 +255,19 @@ final class WatchModel: NSObject, ObservableObject {
         completeConnectivityTasksIfDone()
     }
 
+    /// Snapshots received but not yet saved + complications not yet reloaded.
+    private var ingestsInFlight = 0
+
     private func completeConnectivityTasksIfDone() {
-        guard WCSession.default.activationState == .activated, !WCSession.default.hasContentPending else { return }
-        pendingConnectivityTasks.forEach { $0.setTaskCompletedWithSnapshot(false) }
+        guard WCSession.default.activationState == .activated, !WCSession.default.hasContentPending,
+              ingestsInFlight == 0, !pendingConnectivityTasks.isEmpty else { return }
+        let tasks = pendingConnectivityTasks
         pendingConnectivityTasks.removeAll()
+        // Give WidgetKit a moment to pick up the reload before watchOS suspends us again
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            tasks.forEach { $0.setTaskCompletedWithSnapshot(false) }
+        }
     }
 }
 
@@ -273,7 +282,17 @@ extension WatchModel: WCSessionDelegate {
 
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         let data = applicationContext["snapshot"] as? Data
-        Task { @MainActor in self.ingest(data) }
+        Task { @MainActor in self.ingestFromPhone(data) }
+    }
+
+    /// Saves a snapshot from the phone and reloads the complications *before* letting watchOS
+    /// put the app back to sleep (otherwise a buddy change could wait until you opened the app).
+    func ingestFromPhone(_ data: Data?) {
+        ingestsInFlight += 1
+        ingest(data)
+        WidgetCenter.shared.reloadAllTimelines()
+        ingestsInFlight -= 1
+        completeConnectivityTasksIfDone()
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
@@ -283,7 +302,7 @@ extension WatchModel: WCSessionDelegate {
 
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         let data = userInfo["snapshot"] as? Data
-        Task { @MainActor in self.ingest(data) }
+        Task { @MainActor in self.ingestFromPhone(data) }
     }
 
     nonisolated func session(_ session: WCSession, didReceive file: WCSessionFile) {

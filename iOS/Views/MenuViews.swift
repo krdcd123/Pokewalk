@@ -717,6 +717,14 @@ struct SettingsView: View {
                     }
                 }
                 .glassRow()
+                if let left = PhoneConnectivity.shared.priorityUpdatesLeft {
+                    HStack {
+                        Text("Watch priority updates left today")
+                        Spacer()
+                        Text("\(left)").foregroundStyle(left < 5 ? Theme.orange : Theme.inkSoft)
+                    }
+                    .glassRow()
+                }
             } header: { Text("Walking") } footer: {
                 Text("Adventure mode records where you walk all day and pauses automatically when you stop. iOS ends Live Activities after 8 hours; PokéWalk starts a new one each time you open it. Set Location to \"Always\" in iOS Settings to get rid of the blue location arrow.")
             }

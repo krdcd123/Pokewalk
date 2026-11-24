@@ -10,6 +10,12 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
     private let sentSpritesKey = "sentIconsToWatch"
     private var lastPushedParty = ""
 
+    /// Priority watch updates left today (Apple allows about 50), for Settings.
+    var priorityUpdatesLeft: Int? {
+        guard let session, session.activationState == .activated, session.isPaired else { return nil }
+        return session.isComplicationEnabled ? session.remainingComplicationUserInfoTransfers : nil
+    }
+
     // Watch status for the Settings screen
     var isWatchPaired: Bool { session?.isPaired ?? false }
     var isWatchAppInstalled: Bool { session?.isWatchAppInstalled ?? false }
