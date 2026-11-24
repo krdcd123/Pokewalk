@@ -164,6 +164,7 @@ struct ComplicationView: View {
                 }
                 .id(member.id)                       // a different member → cross-fade
                 .transition(.opacity)
+                .widgetURL(URL(string: "pokewalk://summary/\(member.id)"))    // tap → its summary in the watch app
             } else {
                 Image(systemName: "figure.walk.circle")
                     .font(.title2)

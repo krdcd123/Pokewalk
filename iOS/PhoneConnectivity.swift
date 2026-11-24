@@ -89,6 +89,17 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
     func session(_ session: WCSession, didReceiveMessage message: [String: Any],
                  replyHandler: @escaping ([String: Any]) -> Void) {
         switch message["request"] as? String {
+        case "buddy":
+            Task { @MainActor in
+                var name = ""
+                if let id = UUID(uuidString: message["id"] as? String ?? ""), let mon = GameStore.shared.state.mon(id) {
+                    await GameStore.shared.setBuddy(id)
+                    name = mon.name
+                }
+                replyHandler(["snapshot": (try? JSONEncoder().encode(GameStore.shared.snapshot)) ?? Data(),
+                              "message": name.isEmpty ? "Couldn't change your buddy." : "\(name) is your walking buddy!"])
+            }
+            return
         case "take":
             Task { @MainActor in
                 let taken = UUID(uuidString: message["id"] as? String ?? "").map { GameStore.shared.takeHeldItems($0) } ?? []

@@ -111,11 +111,15 @@ final class WatchModel: NSObject, ObservableObject {
         guard let data, let snap = try? JSONDecoder().decode(WatchSnapshot.self, from: data) else { return }
         let partyChanged = snap.party.map(\.id) != snapshot.party.map(\.id)
             || snap.party.map(\.speciesID) != snapshot.party.map(\.speciesID)
+        let buddyChanged = snap.buddy?.id != snapshot.buddy?.id
         snapshot = snap
         SharedStore.saveSnapshot(snap)
         if partyChanged || !recommendationsRefreshed {
             recommendationsRefreshed = true
             WidgetCenter.shared.invalidateConfigurationRecommendations()
+            WidgetCenter.shared.reloadAllTimelines()
+        } else if buddyChanged {
+            // Walking Buddy / Party (not buddy) complications swap who they show straight away
             WidgetCenter.shared.reloadAllTimelines()
         }
         Task {
@@ -149,6 +153,21 @@ final class WatchModel: NSObject, ObservableObject {
             WCSession.default.sendMessage(message, replyHandler: { reply in cont.resume(returning: reply) },
                                           errorHandler: { _ in cont.resume(returning: nil) })
         }
+    }
+
+    /// Makes a party Pokémon your walking buddy (on the phone too). Returns a message to show.
+    func makeBuddy(_ member: WatchSnapshot.Member) async -> String {
+        guard let reply = await ask(["request": "buddy", "id": member.id]) else { return "Couldn't reach your iPhone." }
+        ingest(reply["snapshot"] as? Data)
+        WidgetCenter.shared.reloadAllTimelines()
+        WKInterfaceDevice.current().play(.success)
+        return reply["message"] as? String ?? ""
+    }
+
+    /// Opens a Pokémon's summary (from tapping its complication).
+    func open(_ url: URL) {
+        guard url.scheme == "pokewalk", url.host == "summary", let id = url.pathComponents.dropFirst().first else { return }
+        path = [.party, .summary(id)]
     }
 
     /// Moves a party Pokémon's held items into the Bag. Returns a message to show.

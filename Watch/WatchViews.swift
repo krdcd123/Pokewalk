@@ -206,6 +206,18 @@ struct SummaryPage: View {
                     .padding(10)
                     .glassCard()
 
+                    if !member.isBuddy {
+                        Button {
+                            busy = true
+                            Task { note = await model.makeBuddy(member); busy = false }
+                        } label: {
+                            Label(busy ? "Switching…" : "Make walking buddy", systemImage: "figure.walk")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .glassButton(tint: Color(hex: 0x4CC76E))
+                        .disabled(busy)
+                    }
+
                     if let item = member.heldItem {
                         VStack(spacing: 6) {
                             HStack(spacing: 6) {

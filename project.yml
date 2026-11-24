@@ -125,6 +125,9 @@ targets:
         AppGroupID: group.$(BUNDLE_ID_PREFIX).pokewalk
         NSHealthShareUsageDescription: PokéWalk reads your steps so your buddy's level stays live on your wrist.
         NSLocationWhenInUseUsageDescription: PokéWalk shows where you are on the watch map, with your buddy.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.krdcd123.pokewalk.watch
+            CFBundleURLSchemes: [pokewalk]
         NSHealthUpdateUsageDescription: PokéWalk doesn't write to Apple Health; it only reads your activity.
     entitlements:
       path: Watch/PokeWalkWatch.entitlements

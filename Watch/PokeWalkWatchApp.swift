@@ -72,6 +72,7 @@ struct PokeWalkWatchApp: App {
                     if phase == .active { model.becameActive() } else { model.resignedActive() }
                 }
                 .onAppear { model.becameActive() }
+                .onOpenURL { model.open($0) }
         }
     }
 }
