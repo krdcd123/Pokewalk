@@ -142,7 +142,7 @@ private struct PartyBox: View {
         } else {
             HStack(spacing: 4) {
                 Image(systemName: "hand.raised.fill").foregroundStyle(Theme.teal)
-                Text("Pickup in \(max(0, mon.nextPickupAt - mon.pickupSteps).formatted())")
+                Text("Pickup in \(max(0, mon.nextPickupAt - mon.pickupSteps).formatted()) · \(Int((GameRules.Pickup.chance(friendship: mon.friendship) * 100).rounded()))%")
                     .lineLimit(1).minimumScaleFactor(0.6)
                 Spacer(minLength: 0)
             }

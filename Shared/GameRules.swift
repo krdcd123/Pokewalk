@@ -187,22 +187,30 @@ enum GameRules {
         s.money += s.counters.moneyProgress / 100
         s.counters.moneyProgress %= 100
 
-        // Pickup: each party Pokémon has its own timer — every 1,500 of *its* steps (while it's in the party
-        // with empty hands) it tries to find an Exp. Candy or a berry and holds it until you take it.
-        // Sometimes it finds nothing; then it tries again 1,000 steps later.
+        // Friendship: walking together makes the rest of the party like you more too (half the buddy's rate).
+        for pid in s.partyIDs where pid != s.buddyID {
+            guard let i = s.index(of: pid) else { continue }
+            let f = s.pokemon[i].friendshipStepRemainder + steps * (s.pokemon[i].ball == .luxury ? 2 : 1)
+            s.pokemon[i].friendship = min(255, s.pokemon[i].friendship + f / 200)
+            s.pokemon[i].friendshipStepRemainder = f % 200
+        }
+
+        // Pickup (like the Ability in the games): every 2,500 of its steps, each party Pokémon with empty hands
+        // has a chance to find something. Friendship raises the chance (10% → 40%) and nudges the finds up a
+        // tier; its level picks the pool — higher levels find rarer things, like Emerald's Pickup table.
         for pid in s.partyIDs {
             guard let i = s.index(of: pid), s.pokemon[i].heldItems.count < ExpCandy.carryLimit else { continue }
             if s.pokemon[i].nextPickupAt < Pickup.retryAfterMiss { s.pokemon[i].nextPickupAt = Pickup.every }  // old 300-step timers
             s.pokemon[i].pickupSteps += steps
             guard s.pokemon[i].pickupSteps >= s.pokemon[i].nextPickupAt else { continue }
             s.pokemon[i].pickupSteps = 0
-            guard Double.random(in: 0..<1) >= Pickup.missChance else {
+            let mon = s.pokemon[i]
+            guard Double.random(in: 0..<1) < Pickup.chance(friendship: mon.friendship) else {
                 s.pokemon[i].nextPickupAt = Pickup.retryAfterMiss
                 continue
             }
             s.pokemon[i].nextPickupAt = Pickup.every
-            let found = Bool.random() ? weightedPick(ExpCandy.all.map { ($0.key, $0.weight) })
-                                      : ItemCatalog.berries.randomElement()!
+            let found = Pickup.roll(level: mon.level, friendship: mon.friendship)
             s.pokemon[i].heldItems.append(found)
             out.pickedUp.append((pid, found))
         }
@@ -552,7 +560,46 @@ enum GameRules {
     enum Pickup {
         static let every = 2_500          // steps between pickups
         static let retryAfterMiss = 2_000 // found nothing: try again after this many steps
-        static let missChance = 0.5       // half the time it finds nothing
+
+        /// Chance a pickup finds something: 10% (as in the games) rising to 40% at max friendship.
+        static func chance(friendship: Int) -> Double {
+            0.10 + 0.30 * Double(min(255, max(0, friendship))) / 255
+        }
+
+        /// Item tier from level (1–10, 11–20 … 91–100), plus a tier at 150 friendship and another at 220.
+        static func bracket(level: Int, friendship: Int) -> Int {
+            let base = (max(1, min(100, level)) - 1) / 10
+            let bonus = (friendship >= 150 ? 1 : 0) + (friendship >= 220 ? 1 : 0)
+            return min(9, base + bonus)
+        }
+
+        static let berry = "#berry", evolution = "#evolution"
+        /// Ordered from common to valuable. A tier finds items [tier ... tier+8] here…
+        static let common: [String] = [
+            berry, "exp-candy-xs", "tiny-mushroom", "pearl", "exp-candy-s", "heart-scale", "stardust", "exp-candy-m",
+            "big-mushroom", "big-pearl", "exp-candy-m", "rare-candy", "star-piece", "exp-candy-l", "rare-candy",
+            "nugget", "exp-candy-xl", "nugget",
+        ]
+        static let commonWeights: [Double] = [30, 10, 10, 10, 10, 10, 10, 4, 4]
+        /// …plus a 1% shot at each of [tier, tier+1] here (Emerald's rare table).
+        static let rare: [String] = [
+            "exp-candy-s", "exp-candy-m", "rare-candy", evolution, "exp-candy-l", "nugget",
+            evolution, "exp-candy-xl", evolution, "rare-candy", "exp-candy-xl",
+        ]
+
+        static func pool(level: Int, friendship: Int) -> [(String, Double)] {
+            let b = bracket(level: level, friendship: friendship)
+            return (0..<9).map { (common[b + $0], commonWeights[$0]) } + [(rare[b], 1), (rare[b + 1], 1)]
+        }
+
+        static func roll(level: Int, friendship: Int) -> String {
+            let pick = GameRules.weightedPick(pool(level: level, friendship: friendship))
+            switch pick {
+            case berry: return ItemCatalog.berries.randomElement()!
+            case evolution: return EvolutionShop.items.randomElement() ?? "rare-candy"
+            default: return pick
+            }
+        }
     }
 
     static func setBuddy(_ id: UUID, in s: inout GameState) {
