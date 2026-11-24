@@ -264,7 +264,11 @@ struct SleepSection: View {
     @State private var message: String?
     @State private var autoListen = SleepRecorder.autoListen
 
-    private var isTonight: Bool { Calendar.current.isDate(day, inSameDayAs: SleepService.nightDay(for: .now)) }
+    /// Today's page (and, before 3pm, last night's too while it's still being slept/listened to).
+    private var isTonight: Bool {
+        Calendar.current.isDateInToday(day) || Calendar.current.isDate(day, inSameDayAs: SleepService.nightDay(for: .now))
+    }
+    private var isFuture: Bool { Calendar.current.isDateInToday(day) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -275,7 +279,7 @@ struct SleepSection: View {
             } else if loaded {
                 VStack(alignment: .leading, spacing: 6) {
                     Image(systemName: "moon.stars.fill").font(.system(size: 28)).foregroundStyle(Color(hex: 0x9AA7FF))
-                    Text(isTonight ? "Tonight's sleep will show here in the morning." : "No sleep recorded for this night.")
+                    Text(isFuture ? "Tonight's sleep will show here in the morning." : "No sleep recorded for this night.")
                         .font(.rounded(15, .heavy))
                     Text("PokéWalk works out your sleep from when your iPhone sits still overnight — just leave it down when you go to sleep. Wearing your Apple Watch to bed adds sleep stages and heart rate. (The iPhone only keeps 7 days of motion, so older nights need watch data.)")
                         .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
@@ -300,6 +304,11 @@ struct SleepSection: View {
                  ? "Listening since \(recorder.startedAt.map(SleepFormat.time) ?? "now"). It only starts saving once your phone has been still for 15 minutes (you've dropped off), and in the morning it matches the clips to when your watch or iPhone says you were asleep. It stops when you open PokéWalk."
                  : "Start this when you go to bed. PokéWalk listens through the night and keeps the \(SleepRecorder.keep) loudest moments from while you were actually asleep (sleep talking, snoring…). Keep your phone charging. Clips stay on your phone.")
                 .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+            if AVAudioApplication.shared.recordPermission != .granted {
+                Label("Tap Start once to allow the microphone — after that it starts by itself at night.",
+                      systemImage: "exclamationmark.circle.fill")
+                    .font(.rounded(12, .heavy)).foregroundStyle(Theme.orange)
+            }
             Button {
                 if recorder.isRecording { recorder.stop() }
                 else { Task { message = await recorder.start() } }
