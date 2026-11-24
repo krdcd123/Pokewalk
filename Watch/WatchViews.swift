@@ -71,6 +71,8 @@ struct MenuPage: View {
                     NavigationLink(value: WatchRoute.summary(buddy.id)) { BuddyHeader(member: buddy) }
                         .buttonStyle(.plain)
                 }
+                MenuTile(title: "Workouts", subtitle: "Swim, cycle, run, gym…", system: "figure.mixed.cardio",
+                         tint: Color(hex: 0x9BE15D), badge: 0, route: .workout)
                 MenuTile(title: "Party", subtitle: "\(model.snapshot.party.count) Pokémon", system: "circle.grid.2x2.fill",
                          tint: Color(hex: 0x4FA3F7), badge: model.snapshot.party.contains { $0.heldItem != nil } ? -1 : 0,
                          route: .party)
@@ -80,8 +82,6 @@ struct MenuPage: View {
                          system: "leaf.fill", tint: Color(hex: 0x4CC76E), badge: model.snapshot.wild.count, route: .wild)
                 MenuTile(title: "Map", subtitle: "Where you are", system: "map.fill",
                          tint: Color(hex: 0x3FB8AF), badge: 0, route: .map)
-                MenuTile(title: "Workout", subtitle: "Cycle, swim, run…", system: "figure.mixed.cardio",
-                         tint: Color(hex: 0x9BE15D), badge: 0, route: .workout)
                 if let status = model.syncStatus {
                     Text(status).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }
@@ -826,7 +826,7 @@ struct WorkoutPickerPage: View {
                 }
             }
         }
-        .navigationTitle("Workout")
+        .navigationTitle("Workouts")
     }
 }
 

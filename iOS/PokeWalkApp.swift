@@ -55,7 +55,7 @@ struct PokeWalkApp: App {
                         TrackStore.shared.refreshDay()
                         store.startPopupChecks()
                         Task {
-                            await store.checkPopups()          // straight away, before the slower step sync
+                            await store.checkPopups(forceSleep: true)          // straight away, before the slower step sync
                             await store.tick()
                             await store.checkPopups()
                             LiveActivityManager.shared.startIfNeeded(with: store)

@@ -101,26 +101,53 @@ final class PhoneWorkout: NSObject, ObservableObject {
     }
 
     func togglePause() {
-        if let mirrored {
-            let cmd = (live?.paused ?? false) ? "resume" : "pause"
-            Task { try? await mirrored.sendToRemoteWorkoutSession(data: Data(cmd.utf8)) }
-        } else if let localSession {
-            (live?.paused ?? false) ? localSession.resume() : localSession.pause()
+        guard isActive else { return }
+        let cmd = (live?.paused ?? false) ? "resume" : "pause"
+        if let localSession {
+            cmd == "pause" ? localSession.pause() : localSession.resume()
+            return
+        }
+        // Both routes to the watch: the mirrored workout session, and a plain message in case mirroring dropped
+        if let mirrored { Task { try? await mirrored.sendToRemoteWorkoutSession(data: Data(cmd.utf8)) } }
+        tellWatch(cmd)
+        live?.paused = (cmd == "pause")                  // show it straight away; the watch confirms
+    }
+
+    private var endTimeout: Task<Void, Never>?
+    private var endedAt = Date.distantPast
+
+    func end() {
+        guard isActive else { return }
+        if let localSession { localSession.end(); return }
+        if let mirrored { Task { try? await mirrored.sendToRemoteWorkoutSession(data: Data("end".utf8)) } }
+        tellWatch("end")
+        // If the watch doesn't confirm within a few seconds, end it here anyway so the map never gets stuck
+        // on the tracker (and step rewards never stay paused).
+        endTimeout?.cancel()
+        endTimeout = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, self.isActive else { return }
+            self.finished()
         }
     }
 
-    func end() {
-        if let mirrored {
-            Task { try? await mirrored.sendToRemoteWorkoutSession(data: Data("end".utf8)) }
-        } else if let localSession {
-            localSession.end()
+    /// Sends pause / resume / end to the watch app over WatchConnectivity.
+    private func tellWatch(_ cmd: String) {
+        guard WCSession.isSupported() else { return }
+        let s = WCSession.default
+        guard s.activationState == .activated, s.isPaired, s.isWatchAppInstalled else { return }
+        let msg: [String: Any] = ["workoutCommand": cmd, "at": Date().timeIntervalSince1970]
+        if s.isReachable {
+            s.sendMessage(msg, replyHandler: nil) { _ in s.transferUserInfo(msg) }
         } else {
-            finished()
+            s.transferUserInfo(msg)                    // the watch ignores it if it arrives much later
         }
     }
 
     /// The workout's over (saved on the watch / phone): clear the tracker and show "Workout complete!".
     private func finished() {
+        endTimeout?.cancel(); endTimeout = nil
+        if isActive { endedAt = .now }
         kind = nil; live = nil; mirrored = nil; localSession = nil; localBuilder = nil
         Task { @MainActor in
             // Give Apple Health a moment to have the saved workout, then reward it and pop the card up
@@ -170,6 +197,8 @@ extension PhoneWorkout: HKWorkoutSessionDelegate {
         Task { @MainActor in
             for u in updates {
                 if u.ended { self.finished(); return }
+                // late numbers from a workout that's just been ended: don't bring the tracker back
+                if self.kind == nil && Date().timeIntervalSince(self.endedAt) < 20 { continue }
                 self.live = u
                 if self.kind == nil { self.kind = WorkoutKind.kind(id: u.kindID) }
             }

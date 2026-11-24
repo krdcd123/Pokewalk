@@ -253,7 +253,7 @@ final class GameStore: ObservableObject {
         // Your watch saves last night's sleep a little after you wake: show the morning card as soon as it lands
         let sl = HKObserverQuery(sampleType: HKCategoryType(.sleepAnalysis), predicate: nil) { _, completion, _ in
             Task { @MainActor in
-                await GameStore.shared.checkPopups()
+                await GameStore.shared.checkPopups(forceSleep: true)
                 completion()
             }
         }
@@ -327,7 +327,9 @@ final class GameStore: ObservableObject {
             let workout = await StepCounter.shared.nonWalkingWorkoutSteps(onDay: day)
             let skipped = state.cyclingSkipped[key] ?? 0
             let total = max(0, raw - max(0, workout - skipped))
-            if day == today { stepsToday = max(0, raw - max(workout, skipped)) }
+            // Today's step count is your real total (same as Apple Health / your watch) minus steps the watch counted
+            // during non-walking workouts. Steps left out of rewards while cycling don't lower it again.
+            if day == today { stepsToday = max(0, raw - workout) }
             // Days we haven't seen yet count from midnight, unless they're before the game started.
             let processed = ledger[key] ?? ((gameExisted && day >= startedDay) ? 0 : total)
             ledger[key] = max(processed, total)
@@ -341,7 +343,6 @@ final class GameStore: ObservableObject {
         if !skippedNow.isEmpty {
             for (k, n) in skippedNow { state.cyclingSkipped[k, default: 0] += n }
             state.cyclingSkipped = state.cyclingSkipped.filter { k, _ in ledger[k] != nil }
-            if day0StepsChanged(skippedNow) { stepsToday = max(0, stepsToday - (skippedNow[TrackStore.key(for: today)] ?? 0)) }
         }
         // Keep the ledger small.
         let keep = Set([yesterday, today].map { TrackStore.key(for: $0) })
@@ -709,13 +710,22 @@ final class GameStore: ObservableObject {
     /// Everything that can pop up: today's stamp (from 7am), evolutions, workouts, the morning sleep card,
     /// and sleep listening. Runs when the app opens and then every 30 seconds while it's on screen,
     /// so nothing waits for the app to be closed and reopened.
-    func checkPopups() async {
+    /// Last time sleep was re-read (it reads Health + a week of motion data, so not every 30 s).
+    private var lastSleepRefresh = Date.distantPast
+
+    func checkPopups(forceSleep: Bool = false) async {
         guard hasGame, UIApplication.State.current == .active else { return }
         stampToday()
         showPendingStamp()
         if evolutionCandidate == nil { checkPendingEvolutions() }
         showWorkoutPopupIfNeeded()
-        await SleepService.shared.refresh(showPopup: workoutPopup == nil && evolutionCandidate == nil)
+        // Mornings (5am–1pm, when the good-morning card can appear) check every minute, otherwise every 5
+        let hour = Calendar.current.component(.hour, from: .now)
+        let every: TimeInterval = (5..<13).contains(hour) ? 60 : 300
+        if forceSleep || Date().timeIntervalSince(lastSleepRefresh) >= every {
+            lastSleepRefresh = .now
+            await SleepService.shared.refresh(showPopup: workoutPopup == nil && evolutionCandidate == nil)
+        }
         if let note = await SleepRecorder.shared.autoStartOrStop() { toast = note }
     }
 

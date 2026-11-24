@@ -1,3 +1,4 @@
+import UIKit
 import Foundation
 import CoreLocation
 
@@ -163,7 +164,19 @@ final class TrackStore: ObservableObject {
 final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
     static let shared = LocationTracker()
 
+    /// Where you are, for the map. Only republished when you've moved a few metres (or every 15 s / 60 s in
+    /// the background): every GPS fix redrawing the whole map screen made the app laggy.
     @Published private(set) var lastLocation: CLLocation?
+    /// Every fix as it arrives (not published — for code that needs the very latest one).
+    private(set) var latestFix: CLLocation?
+
+    private func setFix(_ loc: CLLocation) {
+        if let f = latestFix, loc.timestamp <= f.timestamp { return }
+        latestFix = loc
+        let gap: TimeInterval = UIApplication.shared.applicationState == .active ? 15 : 60
+        if let shown = lastLocation, loc.distance(from: shown) < 3, loc.timestamp.timeIntervalSince(shown.timestamp) < gap { return }
+        lastLocation = loc
+    }
     @Published private(set) var isRunning = false
     @Published private(set) var authorization: CLAuthorizationStatus = .notDetermined
     @Published var walkStartedAt: Date?
@@ -210,7 +223,7 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         // Only precise fixes move "where you are": rough phone-mast fixes (hundreds of metres off) made the
         // map's follow camera fly back and forth, which looked like it zooming in and out by itself.
         guard let loc = locations.last, loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 50 else { return }
-        Task { @MainActor in if self.lastLocation == nil || loc.timestamp > self.lastLocation!.timestamp { self.lastLocation = loc } }
+        Task { @MainActor in self.setFix(loc) }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
@@ -309,7 +322,7 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
     }
 
     private func handle(_ loc: CLLocation) {
-        lastLocation = loc
+        setFix(loc)
         WeatherService.shared.update(for: loc)
         PlaceLog.shared.feed(loc)
         // Keep walking-speed fixes with decent accuracy; ignore driving and GPS noise.
@@ -326,5 +339,5 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
     }
 
     /// One-off fix (for the map / encounter location when tracking is off).
-    func currentLocation() -> CLLocation? { lastLocation ?? manager.location }
+    func currentLocation() -> CLLocation? { latestFix ?? lastLocation ?? manager.location }
 }

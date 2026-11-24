@@ -60,6 +60,18 @@ final class WatchWorkout: NSObject, ObservableObject {
         session?.end()
     }
 
+    /// Pause / resume / end sent from the iPhone over WatchConnectivity (backup for the mirrored session).
+    /// Ignored if it's old or was sent before this workout started.
+    func remote(_ cmd: String, sentAt: Date) {
+        guard isActive, let start, sentAt >= start, Date().timeIntervalSince(sentAt) < 120 else { return }
+        switch cmd {
+        case "end": end()
+        case "pause": if !paused { togglePause() }
+        case "resume": if paused { togglePause() }
+        default: break
+        }
+    }
+
     private func finish(at date: Date) async {
         guard let builder else { reset(); return }
         try? await builder.endCollection(at: date)

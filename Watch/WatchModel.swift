@@ -310,11 +310,21 @@ extension WatchModel: WCSessionDelegate {
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        if let cmd = message["workoutCommand"] as? String {
+            let at = Date(timeIntervalSince1970: message["at"] as? Double ?? Date().timeIntervalSince1970)
+            Task { @MainActor in WatchWorkout.shared.remote(cmd, sentAt: at) }
+            return
+        }
         let data = message["snapshot"] as? Data
         Task { @MainActor in self.ingest(data) }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        if let cmd = userInfo["workoutCommand"] as? String {
+            let at = Date(timeIntervalSince1970: userInfo["at"] as? Double ?? 0)
+            Task { @MainActor in WatchWorkout.shared.remote(cmd, sentAt: at) }
+            return
+        }
         let data = userInfo["snapshot"] as? Data
         Task { @MainActor in self.ingestFromPhone(data) }
     }

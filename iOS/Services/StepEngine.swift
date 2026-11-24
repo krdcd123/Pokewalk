@@ -145,7 +145,7 @@ final class WalkingDetector: ObservableObject {
     private func refresh() {
         let now = Date()
         let recentSteps = now.timeIntervalSince(lastStepAt) < 8
-        let fix = LocationTracker.shared.lastLocation.flatMap { now.timeIntervalSince($0.timestamp) < 10 ? $0 : nil }
+        let fix = LocationTracker.shared.latestFix.flatMap { now.timeIntervalSince($0.timestamp) < 10 ? $0 : nil }
         if let fix, fix.speed > 4.5 { lastFastAt = fix.timestamp }             // faster than ~10 mph
         let sinceFast = now.timeIntervalSince(lastFastAt)
         let driving = !recentSteps && !motionSaysMoving &&

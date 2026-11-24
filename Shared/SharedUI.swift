@@ -47,6 +47,9 @@ struct LocalIcon: View {
     /// The icon cropped to the Pokémon itself (box icons have lots of empty space around them).
     static func trimmedImage(for speciesID: Int, shiny: Bool = false) -> Image? {
         #if canImport(UIKit)
+        let hasShiny = shiny && FileManager.default.fileExists(atPath: SharedStore.iconFile(speciesID, shiny: true).path)
+        let tkey = "\(speciesID)-\(hasShiny)" as NSString
+        if let hit = trimmedCache.object(forKey: tkey) { return Image(uiImage: hit) }
         guard let ui = iconUIImage(speciesID, shiny: shiny), let cg = ui.cgImage else { return nil }
         let w = cg.width, h = cg.height
         var px = [UInt8](repeating: 0, count: w * h * 4)
@@ -64,7 +67,9 @@ struct LocalIcon: View {
         } }
         guard maxX >= minX, let cropped = cg.cropping(to: CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1))
         else { return Image(uiImage: ui) }
-        return Image(uiImage: UIImage(cgImage: cropped))
+        let out = UIImage(cgImage: cropped)
+        trimmedCache.setObject(out, forKey: tkey)
+        return Image(uiImage: out)
         #else
         return nil
         #endif
@@ -73,8 +78,20 @@ struct LocalIcon: View {
     #if canImport(UIKit)
     /// The shiny icon when there is one, else the regular one.
     static func iconUIImage(_ speciesID: Int, shiny: Bool) -> UIImage? {
-        if shiny, let s = UIImage(contentsOfFile: SharedStore.iconFile(speciesID, shiny: true).path) { return s }
-        return UIImage(contentsOfFile: SharedStore.iconFile(speciesID).path)
+        if shiny, let s = cachedImage(SharedStore.iconFile(speciesID, shiny: true).path) { return s }
+        return cachedImage(SharedStore.iconFile(speciesID).path)
+    }
+
+    /// Icons were read from disk on every redraw; keep the decoded ones in memory (only hits are kept, so an
+    /// icon that downloads later still shows up).
+    private static let cache: NSCache<NSString, UIImage> = { let c = NSCache<NSString, UIImage>(); c.countLimit = 300; return c }()
+    private static let trimmedCache: NSCache<NSString, UIImage> = { let c = NSCache<NSString, UIImage>(); c.countLimit = 100; return c }()
+
+    private static func cachedImage(_ path: String) -> UIImage? {
+        if let hit = cache.object(forKey: path as NSString) { return hit }
+        guard let img = UIImage(contentsOfFile: path) else { return nil }
+        cache.setObject(img, forKey: path as NSString)
+        return img
     }
     #endif
 

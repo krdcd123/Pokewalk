@@ -137,11 +137,20 @@ extension StepCounter {
     func nonWalkingWorkoutSteps(onDay day: Date) async -> Int {
         let start = Calendar.current.startOfDay(for: day)
         let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start
-        var total = 0
-        for w in await workouts(from: start, to: end) where !w.countsSteps {
+        // Overlapping workouts (e.g. the same ride saved by two apps) are merged so their steps aren't taken
+        // off twice; anything over 4 hours is almost certainly a workout left running, so it's ignored.
+        var spans: [(Date, Date)] = []
+        for w in await workouts(from: start, to: end) where !w.countsSteps && w.end.timeIntervalSince(w.start) <= 4 * 3600 {
             let a = max(w.start, start), b = min(w.end, end)
-            if a < b { total += (try? await steps(from: a, to: b)) ?? 0 }
+            if a < b { spans.append((a, b)) }
         }
+        spans.sort { $0.0 < $1.0 }
+        var merged: [(Date, Date)] = []
+        for sp in spans {
+            if let last = merged.last, sp.0 <= last.1 { merged[merged.count - 1].1 = max(last.1, sp.1) } else { merged.append(sp) }
+        }
+        var total = 0
+        for (a, b) in merged { total += (try? await steps(from: a, to: b)) ?? 0 }
         return total
     }
 
