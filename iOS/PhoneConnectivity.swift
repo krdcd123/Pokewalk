@@ -8,8 +8,8 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
     private var session: WCSession? { WCSession.isSupported() ? WCSession.default : nil }
     private var pending: WatchSnapshot?
     private let sentSpritesKey = "sentIconsToWatch"
-    private var lastComplicationPush = Date.distantPast
-    private var lastComplicationLevels = ""
+    private var lastPushedParty = ""
+    private var lastPushedLevels = ""
 
     // Watch status for the Settings screen
     var isWatchPaired: Bool { session?.isPaired ?? false }
@@ -36,23 +36,24 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
             session.sendMessage(payload, replyHandler: nil, errorHandler: nil)
         }
 
-        // Complication pushes wake the watch with priority, but there are only ~50 a day:
-        // use them when a level changes, or at most every 15 minutes.
-        // Changes that push to the watch with priority: who's in the party, their species (evolutions),
-        // level, name and buddy. A picked-up item doesn't — you get a normal notification, and the red dot
-        // appears with the next regular update.
-        let levels = snapshot.party.map {
-            "\($0.id):\($0.speciesID):\($0.species.growth.level(forExp: $0.exp)):\($0.name):\($0.isBuddy)"
-        }.joined(separator: ",")
-        let due = Date().timeIntervalSince(lastComplicationPush) > 15 * 60 || levels != lastComplicationLevels
-        if due {
-            if session.isComplicationEnabled, session.remainingComplicationUserInfoTransfers > 0 {
+        // Priority pushes wake the watch even when its app isn't open, but Apple allows only ~50 a day.
+        // They're spent only on real changes, never on routine refreshes:
+        //  • buddy / party / evolution / name changes — always (these must show on the watch straight away)
+        //  • level-ups — only while plenty are left, so the big changes always have some in reserve
+        let party = snapshot.party.map { "\($0.id):\($0.speciesID):\($0.name):\($0.isBuddy)" }.joined(separator: ",")
+        let levels = snapshot.party.map { "\($0.id):\($0.species.growth.level(forExp: $0.exp))" }.joined(separator: ",")
+        let partyChanged = party != lastPushedParty
+        let levelChanged = levels != lastPushedLevels
+        if partyChanged || levelChanged {
+            let left = session.remainingComplicationUserInfoTransfers
+            let worthIt = partyChanged || left > 15
+            if worthIt, session.isComplicationEnabled, left > 0 {
                 session.transferCurrentComplicationUserInfo(payload)
-            } else if levels != lastComplicationLevels {
-                session.transferUserInfo(payload)        // out of priority pushes today: still queue it
+            } else {
+                session.transferUserInfo(payload)        // queued: delivered the next time the watch can take it
             }
-            lastComplicationPush = .now
-            lastComplicationLevels = levels
+            lastPushedParty = party
+            lastPushedLevels = levels
         }
 
         sendIcons(for: snapshot.party.map { ($0.speciesID, $0.isShiny) } + snapshot.wild.map { ($0.speciesID, $0.isShiny) })
