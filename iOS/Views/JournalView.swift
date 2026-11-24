@@ -111,7 +111,15 @@ struct JournalView: View {
                 }
 
                 if sleepView && !showAllTime {
-                    SleepSection(day: day)
+                    // Today's moon page shows the latest night PokéWalk has registered (last night),
+                    // and only moves on once tonight's sleep has been worked out in the morning.
+                    if Calendar.current.isDateInToday(day) {
+                        SleepSection(day: SleepService.shared.lastNight?.day
+                                        ?? Calendar.current.date(byAdding: .day, value: -1, to: day) ?? day,
+                                     showRecorder: true)
+                    } else {
+                        SleepSection(day: day)
+                    }
                         .transition(.blurReplace.combined(with: .opacity))
                 } else {
                 VStack(alignment: .leading, spacing: 14) {

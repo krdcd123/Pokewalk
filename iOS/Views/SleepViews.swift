@@ -257,6 +257,7 @@ struct SleepPopupCard: View {
 
 struct SleepSection: View {
     let day: Date
+    var showRecorder = false
     @ObservedObject private var recorder = SleepRecorder.shared
     @State private var night: SleepNight?
     @State private var usual: (asleep: TimeInterval, bedtimeMinutes: Double)?
@@ -287,7 +288,7 @@ struct SleepSection: View {
                 .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard(22)
                 SleepClipsList(day: day).padding(16).glassCard(22)
             }
-            if isTonight { recorderCard }
+            if isTonight || showRecorder { recorderCard }
         }
         .task(id: day) {
             loaded = false
