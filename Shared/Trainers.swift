@@ -52,6 +52,20 @@ struct TrainerStyle: Identifiable, Hashable {
     }
     var bikeURL: URL { URL(string: "https://raw.githubusercontent.com/\(bikePath)")! }
 
+    /// Surfing sprite from the same game (shown on the map during a swim).
+    var surfURL: URL {
+        let path: String
+        switch id {
+        case "brendan": path = "pret/pokeemerald/master/graphics/object_events/pics/people/brendan/surfing.png"
+        case "may": path = "pret/pokeemerald/master/graphics/object_events/pics/people/may/surfing.png"
+        case "red": path = "pret/pokefirered/master/graphics/object_events/pics/people/red_surf.png"
+        case "leaf": path = "pret/pokefirered/master/graphics/object_events/pics/people/green_surf.png"
+        case "red1": path = "pret/pokered/master/gfx/sprites/seel.png"           // Red/Blue/Yellow surf on a Seel
+        default: path = "pret/pokecrystal/master/gfx/sprites/surf.png"          // Gold / Kris
+        }
+        return URL(string: "https://raw.githubusercontent.com/\(path)")!
+    }
+
     /// Battle back sprite (frames stacked vertically): Emerald's for the Gen 3 trainers, Crystal's for Gold/Kris.
     var backPicURL: URL {
         switch id {

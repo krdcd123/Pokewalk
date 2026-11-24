@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         CrashReporter.install()
         UNUserNotificationCenter.current().delegate = self
         PhoneConnectivity.shared.activate()
+        Task { @MainActor in PhoneWorkout.shared.setUp() }     // workouts mirrored from the watch
         // Also runs when iOS relaunches us in the background for location or HealthKit updates.
         Task { @MainActor in GameStore.shared.start() }
         return true

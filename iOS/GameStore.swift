@@ -315,7 +315,8 @@ final class GameStore: ObservableObject {
         let gameExisted = !ledger.isEmpty
         let startedDay = cal.startOfDay(for: state.trainer.startedOn)
         // Cycling right now (or since the last check)? Then new steps are your arms, not walking: no rewards.
-        let cyclingNow = await CyclingDetector.cycling(since: lastTick)
+        // …or in a PokéWalk workout that isn't walking (cycling, swimming, gym…): rewards pause for all of it
+        let cyclingNow = PhoneWorkout.shared.pausesSteps || (await CyclingDetector.cycling(since: lastTick))
         var skippedNow: [String: Int] = [:]
         for day in [yesterday, today] {
             let key = TrackStore.key(for: day)

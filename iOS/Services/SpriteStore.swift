@@ -108,7 +108,7 @@ final class SpriteStore {
         return await url(.items, id: 0, key: k, name: k)
     }
 
-    enum TrainerPose: String { case walk, head, card, bike }
+    enum TrainerPose: String { case walk, head, card, bike, surf }
 
     /// Your own trainer file for a pose (Sprites/trainers/<id>-walk.gif, <id>-head.gif, <id>-card.png), if any.
     func userTrainerFile(_ style: TrainerStyle, _ pose: TrainerPose) -> URL? {
@@ -140,6 +140,20 @@ final class SpriteStore {
         // Gen 3 bike frames are 32 px wide (walking ones are 16); GBC bike sheets use the walking layout
         if case .gen3 = style.sheet { return OverworldSheet.walkAnimation(from: data, sheet: style.sheet, frameWidth: 32) }
         return OverworldSheet.walkAnimation(from: data, sheet: style.sheet)
+    }
+
+    /// Surfing (shown on the map during a swim). Falls back to walking if the game has no surf sprite.
+    func trainerSurf(_ style: TrainerStyle) async -> UIImage? {
+        let file = cacheRoot.appendingPathComponent("trainers/\(style.id)-surf.png")
+        if !FileManager.default.fileExists(atPath: file.path) {
+            guard let (data, resp) = try? await URLSession.shared.data(from: style.surfURL),
+                  (resp as? HTTPURLResponse)?.statusCode == 200 else { return await trainerWalk(style) }
+            try? data.write(to: file, options: .atomic)
+        }
+        guard let data = try? Data(contentsOf: file) else { return await trainerWalk(style) }
+        // Gen 3 surfing frames are 32 px wide; the Game Boy ones use the walking layout
+        if case .gen3 = style.sheet { return OverworldSheet.walkAnimation(from: data, sheet: style.sheet, frameWidth: 32) }
+        return OverworldSheet.walkAnimation(from: data, sheet: style.sheet) ?? (await trainerWalk(style))
     }
 
     func trainerWalk(_ style: TrainerStyle) async -> UIImage? {
@@ -439,6 +453,8 @@ struct TrainerSprite: View {
                 image = await Task.detached { GIFCache.shared.image(at: url) }.value
             } else if pose == .bike {
                 image = await SpriteStore.shared.trainerBike(style)
+            } else if pose == .surf {
+                image = await SpriteStore.shared.trainerSurf(style)
             } else {
                 image = await SpriteStore.shared.trainerWalk(style)
             }

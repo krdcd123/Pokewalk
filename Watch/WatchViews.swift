@@ -5,7 +5,7 @@ import WatchKit
 
 /// Screens in the watch app (also where a tapped notification can jump to).
 enum WatchRoute: Hashable {
-    case party, bag, wild, map
+    case party, bag, wild, map, workout
     case summary(String)    // party member id
     case battle(String)     // wild Pokémon id
 }
@@ -14,8 +14,22 @@ enum WatchRoute: Hashable {
 
 struct WatchRootView: View {
     @ObservedObject private var model = WatchModel.shared
+    @ObservedObject private var workout = WatchWorkout.shared
 
     var body: some View {
+        if workout.isActive {
+            // During a workout the app shows the live workout screen
+            WorkoutLiveView().watchBackdrop()
+        } else {
+            menuStack
+                .alert(workout.summary ?? "", isPresented: Binding(get: { workout.summary != nil },
+                                                                   set: { if !$0 { workout.summary = nil } })) {
+                    Button("OK") { workout.summary = nil }
+                }
+        }
+    }
+
+    private var menuStack: some View {
         NavigationStack(path: $model.path) {
             Group {
                 if model.hasData {
@@ -36,6 +50,7 @@ struct WatchRootView: View {
                     case .bag: BagPage()
                     case .wild: WildPage()
                     case .map: WatchMapPage()
+                    case .workout: WorkoutPickerPage()
                     case .summary(let id): SummaryPage(memberID: id)
                     case .battle(let id): BattlePage(wildID: id)
                     }
@@ -65,6 +80,8 @@ struct MenuPage: View {
                          system: "leaf.fill", tint: Color(hex: 0x4CC76E), badge: model.snapshot.wild.count, route: .wild)
                 MenuTile(title: "Map", subtitle: "Where you are", system: "map.fill",
                          tint: Color(hex: 0x3FB8AF), badge: 0, route: .map)
+                MenuTile(title: "Workout", subtitle: "Cycle, swim, run…", system: "figure.mixed.cardio",
+                         tint: Color(hex: 0x9BE15D), badge: 0, route: .workout)
                 if let status = model.syncStatus {
                     Text(status).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }
@@ -780,5 +797,88 @@ extension View {
         } else {
             self.buttonStyle(.bordered).tint(tint)
         }
+    }
+}
+
+// MARK: - Workouts
+
+/// Pick a workout to start (same list as the phone).
+struct WorkoutPickerPage: View {
+    @ObservedObject private var workout = WatchWorkout.shared
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                ForEach(WorkoutKind.all) { k in
+                    Button {
+                        Task { await workout.start(k) }
+                    } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: k.symbol).font(.title3).foregroundStyle(Color(hex: 0x9BE15D))
+                                .frame(width: 44, height: 44)
+                                .glassCard(22, tint: Color(hex: 0x9BE15D))
+                            Text(k.name).font(.system(size: 11, weight: .semibold)).multilineTextAlignment(.center)
+                                .lineLimit(2).minimumScaleFactor(0.8)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .navigationTitle("Workout")
+    }
+}
+
+/// The live workout screen (like the Workout app): time, heart rate, calories, distance.
+struct WorkoutLiveView: View {
+    @ObservedObject private var workout = WatchWorkout.shared
+
+    var body: some View {
+        if let kind = workout.kind {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(kind.name, systemImage: kind.symbol).font(.footnote.weight(.semibold))
+                        .foregroundStyle(Color(hex: 0x9BE15D))
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        Text(Self.clock(workout.elapsed))
+                            .font(.system(size: 34, weight: .semibold, design: .rounded)).monospacedDigit()
+                            .foregroundStyle(workout.paused ? .yellow : .white)
+                    }
+                    metric("\(Int(workout.kcal))", "ACTIVE KCAL", .pink)
+                    if let hr = workout.heartRate { metric("\(Int(hr))", "BPM", .red) }
+                    if kind.tracksDistance {
+                        metric(Self.distance(workout.meters, swim: kind.isSwimming), kind.isSwimming ? "M" : "KM", .cyan)
+                    }
+                    HStack(spacing: 8) {
+                        Button { workout.togglePause() } label: {
+                            Image(systemName: workout.paused ? "play.fill" : "pause.fill").frame(maxWidth: .infinity)
+                        }
+                        .glassButton(tint: .yellow)
+                        Button(role: .destructive) { workout.end() } label: {
+                            Image(systemName: "xmark").frame(maxWidth: .infinity)
+                        }
+                        .glassButton(tint: .red)
+                    }
+                    .padding(.top, 6)
+                }
+            }
+        }
+    }
+
+    private func metric(_ value: String, _ unit: String, _ color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 3) {
+            Text(value).font(.system(size: 26, weight: .semibold, design: .rounded)).monospacedDigit()
+            Text(unit).font(.system(size: 12, weight: .bold)).foregroundStyle(color)
+        }
+    }
+
+    static func clock(_ t: TimeInterval) -> String {
+        let s = Int(t)
+        return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60)
+                         : String(format: "%02d:%02d", s / 60, s % 60)
+    }
+
+    static func distance(_ m: Double, swim: Bool) -> String {
+        swim ? "\(Int(m))" : String(format: "%.2f", m / 1000)
     }
 }

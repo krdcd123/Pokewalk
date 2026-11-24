@@ -8,6 +8,9 @@ struct MapHomeView: View {
     @StateObject private var walking = WalkingDetector.shared
     @ObservedObject private var sleepSvc = SleepService.shared
     @ObservedObject private var recorder = SleepRecorder.shared
+    @ObservedObject private var workout = PhoneWorkout.shared
+    @State private var workoutPicker = false
+    @State private var trainerLongPressAt = Date.distantPast
     /// Steps by default; "Sleeping" only once the phone has sat still for 20 minutes while listening.
     private var sleeping: Bool { recorder.asleepSince != nil }
     @AppStorage("journalSleepView") private var sleepView = false
@@ -188,6 +191,14 @@ struct MapHomeView: View {
             }
         }
         .animation(.spring(duration: 0.4), value: sleepSvc.popup)
+        .overlay {
+            if workoutPicker {
+                WorkoutPickerPopup(close: { withAnimation(.spring(duration: 0.4)) { workoutPicker = false } })
+                    .transition(.opacity.combined(with: .scale(scale: 1.04)))
+            }
+        }
+        .animation(.spring(duration: 0.4), value: workoutPicker)
+        .onChange(of: workout.message) { _, m in if let m { store.toast = m; workout.message = nil } }
         // A pickup notification was tapped: show the Party
         .onChange(of: store.openPartyAt) { _, at in
             guard at != nil else { return }
@@ -292,12 +303,18 @@ struct MapHomeView: View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 Button {
+                    if workout.isActive { SoundKit.shared.play(.menuOpen); workoutPicker = true; return }
                     sleepView = sleeping            // the Journal opens on the night while you're asleep
                     withAnimation(.spring(duration: 0.4)) { sheet = .journal }
                 } label: {
                 card {
                     ZStack {
-                        if sleeping {
+                        if let live = workout.live, let kind = workout.kind {
+                            // During a workout: a live tracker like the watch's
+                            WorkoutTrackerCard(kind: kind, live: live)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .transition(.blurReplace(.downUp))
+                        } else if sleeping {
                             // Gone to bed (sleep listening is on): the card turns into "Sleeping"
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 5) {
@@ -330,6 +347,7 @@ struct MapHomeView: View {
                         }
                     }
                     .animation(.smooth(duration: 0.6), value: sleeping)
+                    .animation(.smooth(duration: 0.6), value: workout.isActive)
                 }
                 .contentShape(RoundedRectangle(cornerRadius: 20))
                 }
@@ -425,14 +443,27 @@ struct MapHomeView: View {
                 }
             }
             HStack(alignment: .bottom) {
-                Button { Haptics.tap(); SoundKit.shared.play(.menuOpen); withAnimation(.spring(duration: 0.4)) { sheet = .party } } label: {
+                Button {
+                    if Date().timeIntervalSince(trainerLongPressAt) < 0.8 { return }     // that was a long press
+                    Haptics.tap(); SoundKit.shared.play(.menuOpen); withAnimation(.spring(duration: 0.4)) { sheet = .party }
+                } label: {
                     // Your trainer's small overworld sprite, walking on the spot.
-                    TrainerSprite(style: store.state.trainer.style, pose: walking.isDriving ? .bike : .walk,
-                                  animating: walking.isWalking || walking.isDriving)
+                    TrainerSprite(style: store.state.trainer.style,
+                                  pose: workout.kind?.isCycling == true ? .bike
+                                      : workout.kind?.isSwimming == true ? .surf
+                                      : (walking.isDriving && !workout.isActive ? .bike : .walk),
+                                  animating: workout.isActive || walking.isWalking || walking.isDriving)
                         .frame(width: 44, height: 46)
                         .frame(width: 64, height: 64, alignment: .center)
                         .contentShape(Circle())
                         .glassCircle()
+                        // Hold your trainer: start a workout
+                        .simultaneousGesture(LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                            trainerLongPressAt = .now
+                            Haptics.hold()
+                            SoundKit.shared.play(.menuOpen)
+                            withAnimation(.spring(duration: 0.4)) { workoutPicker = true }
+                        })
                         // red badge: how many of your party are holding something you can take
                         .overlay(alignment: .topTrailing) {
                             let holding = store.state.party.filter { !$0.heldItems.isEmpty }.count
@@ -917,5 +948,139 @@ struct WorkoutCompleteCard: View {
     static func length(_ s: TimeInterval) -> String {
         let mins = max(1, Int((s / 60).rounded()))
         return mins >= 60 ? "\(mins / 60) h \(mins % 60) min" : "\(mins) min"
+    }
+}
+
+
+// MARK: - Workouts
+
+/// Live workout tracker in the Today card (like the watch): time, calories, distance, heart rate.
+struct WorkoutTrackerCard: View {
+    let kind: WorkoutKind
+    let live: WorkoutLive
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                Image(systemName: kind.symbol).foregroundStyle(Color(hex: 0x9BE15D))
+                Text(kind.name.uppercased()).font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft).lineLimit(1)
+                if live.paused { Text("PAUSED").font(.rounded(10, .black)).foregroundStyle(.yellow) }
+            }
+            TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                // the watch sends the time every few seconds; count on smoothly in between
+                Text(WorkoutTrackerCard.clock(elapsedNow(ctx.date)))
+                    .font(.rounded(22, .black)).monospacedDigit()
+                    .foregroundStyle(live.paused ? .yellow : .white)
+            }
+            HStack(spacing: 10) {
+                Label("\(Int(live.kcal))", systemImage: "flame.fill").foregroundStyle(Color(hex: 0xFF5A7A))
+                if let hr = live.heartRate { Label("\(Int(hr))", systemImage: "heart.fill").foregroundStyle(.red) }
+                if kind.tracksDistance && live.meters > 0 {
+                    Text(kind.isSwimming ? "\(Int(live.meters)) m" : Distance.text(live.meters)).foregroundStyle(.cyan)
+                }
+            }
+            .font(.rounded(12, .heavy))
+            .labelStyle(.titleAndIcon)
+        }
+    }
+
+    private func elapsedNow(_ now: Date) -> TimeInterval {
+        let base = live.elapsed > 0 ? live.elapsed : now.timeIntervalSince(live.start)
+        if live.paused || live.elapsed == 0 { return max(0, base) }
+        return base + max(0, now.timeIntervalSince(PhoneWorkout.shared.liveAt))
+    }
+
+    static func clock(_ t: TimeInterval) -> String {
+        let s = Int(t)
+        return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60)
+                         : String(format: "%02d:%02d", s / 60, s % 60)
+    }
+}
+
+/// Hold your trainer: pick a workout (Liquid Glass, over a blurred map of where you are).
+struct WorkoutPickerPopup: View {
+    @ObservedObject private var workout = PhoneWorkout.shared
+    var close: () -> Void
+
+    var body: some View {
+        ZStack {
+            LocationBackdrop().blur(radius: 14).ignoresSafeArea()
+            Color.black.opacity(0.35).ignoresSafeArea()
+                .onTapGesture { SoundKit.shared.play(.select); close() }
+            VStack(spacing: 14) {
+                HStack {
+                    Text(workout.isActive ? "Workout" : "Start a workout").font(.rounded(22, .black))
+                    Spacer()
+                    Button { SoundKit.shared.play(.select); close() } label: {
+                        Image(systemName: "xmark").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
+                            .frame(width: 38, height: 38).glassCircle()
+                    }
+                    .buttonStyle(.plain)
+                }
+                if let kind = workout.kind, let live = workout.live {
+                    VStack(spacing: 14) {
+                        WorkoutTrackerCard(kind: kind, live: live)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16).glassCard(22)
+                        HStack(spacing: 12) {
+                            Button {
+                                SoundKit.shared.play(.select)
+                                workout.togglePause()
+                            } label: {
+                                Label(live.paused ? "Resume" : "Pause", systemImage: live.paused ? "play.fill" : "pause.fill")
+                                    .font(.rounded(16, .heavy)).foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity).frame(height: 50)
+                                    .glassCapsule(tint: .yellow.opacity(0.6), interactive: true)
+                            }
+                            Button {
+                                SoundKit.shared.play(.select)
+                                workout.end()
+                                close()
+                            } label: {
+                                Label("End", systemImage: "xmark")
+                                    .font(.rounded(16, .heavy)).foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity).frame(height: 50)
+                                    .glassCapsule(tint: Color(hex: 0xE04A3F), interactive: true)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        Text(kind.countsSteps ? "Steps still count as walking during this workout."
+                                              : "Step rewards are paused until you end it.")
+                            .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                    }
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 18) {
+                            ForEach(WorkoutKind.all) { k in
+                                Button {
+                                    SoundKit.shared.play(.select)
+                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                    Task { await workout.start(k) }
+                                    close()
+                                } label: {
+                                    VStack(spacing: 6) {
+                                        Image(systemName: k.symbol).font(.system(size: 26, weight: .semibold))
+                                            .foregroundStyle(Color(hex: 0x9BE15D))
+                                            .frame(width: 66, height: 66)
+                                            .glassCircle(tint: Color(hex: 0x9BE15D).opacity(0.25), interactive: true)
+                                        Text(k.name).font(.rounded(12, .heavy)).multilineTextAlignment(.center)
+                                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                    }
+                    .frame(maxHeight: 460)
+                    Text("Records on your Apple Watch and saves to Apple Health. Step rewards pause for anything that isn't walking, running or hiking.")
+                        .font(.rounded(12)).foregroundStyle(Theme.inkSoft).multilineTextAlignment(.center)
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: 400)
+            .glassCard(30)
+            .padding(18)
+        }
     }
 }

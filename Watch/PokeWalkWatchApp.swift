@@ -1,5 +1,6 @@
 import SwiftUI
 import WatchKit
+import HealthKit
 import UserNotifications
 
 final class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCenterDelegate {
@@ -37,6 +38,11 @@ final class WatchAppDelegate: NSObject, WKApplicationDelegate, UNUserNotificatio
     static func scheduleRefresh() {
         WKApplication.shared().scheduleBackgroundRefresh(
             withPreferredDate: Date().addingTimeInterval(15 * 60), userInfo: nil) { _ in }
+    }
+
+    /// The iPhone asked to start a workout (long-press your trainer in PokéWalk).
+    func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
+        Task { @MainActor in await WatchWorkout.shared.start(WorkoutKind.kind(for: workoutConfiguration)) }
     }
 
     func handle(_ backgroundTasks: Set<WKRefreshBackgroundTask>) {
