@@ -235,11 +235,11 @@ struct SleepPopupCard: View {
             ScrollView { SleepDetails(night: night, usual: usual, compact: true) }
                 .frame(maxHeight: 440)
             HStack(spacing: 10) {
-                Button(action: more) {
+                Button { SoundKit.shared.play(.select); more() } label: {
                     Text("Full night").font(.rounded(16, .heavy)).foregroundStyle(.white)
                         .frame(maxWidth: .infinity).frame(height: 46).glassCapsule(interactive: true)
                 }
-                Button(action: close) {
+                Button { SoundKit.shared.play(.select); close() } label: {
                     Text("Nice!").font(.rounded(16, .black)).foregroundStyle(.white)
                         .frame(maxWidth: .infinity).frame(height: 46).glassCapsule(tint: Theme.teal, interactive: true)
                 }

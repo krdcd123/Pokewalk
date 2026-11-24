@@ -51,18 +51,16 @@ struct PokeWalkApp: App {
                         SoundKit.shared.installTapSound()
                         SoundKit.shared.appBecameActive()
                         store.pruneExpiredEncounters()
-                        store.stampToday()
-                        store.showPendingStamp()
                         TrackStore.shared.refreshDay()
+                        store.startPopupChecks()
                         Task {
+                            await store.checkPopups()          // straight away, before the slower step sync
                             await store.tick()
-                            store.checkPendingEvolutions()
-                            store.showWorkoutPopupIfNeeded()
-                            await SleepService.shared.refresh(showPopup: store.workoutPopup == nil)
-                            if let note = await SleepRecorder.shared.autoStartOrStop() { store.toast = note }
+                            await store.checkPopups()
                             LiveActivityManager.shared.startIfNeeded(with: store)
                         }
                     case .background:
+                        store.stopPopupChecks()
                         SoundKit.shared.appWentToBackground()
                         TrackStore.shared.flush()
                     default: break

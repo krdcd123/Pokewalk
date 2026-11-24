@@ -174,7 +174,7 @@ struct MapHomeView: View {
             if let n = sleepSvc.popup {
                 ZStack {
                     Color.black.opacity(0.35).ignoresSafeArea()
-                        .onTapGesture { sleepSvc.popup = nil }
+                        .onTapGesture { SoundKit.shared.play(.select); sleepSvc.popup = nil }
                     SleepPopupCard(night: n, close: { sleepSvc.popup = nil }, more: {
                         sleepSvc.popup = nil
                         sleepView = true
@@ -889,7 +889,7 @@ struct WorkoutCompleteCard: View {
             }
             .padding(14)
             .glassCard(18)
-            Button(action: close) {
+            Button { SoundKit.shared.play(.select); close() } label: {
                 Text("Nice!").font(.rounded(17, .black)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 48)
                     .glassCapsule(tint: Theme.teal, interactive: true)

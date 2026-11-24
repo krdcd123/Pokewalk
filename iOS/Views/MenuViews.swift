@@ -500,7 +500,7 @@ struct TrainerCardView: View {
         // what that day's present held (days stamped this week, in order)
         let got: [String]? = {
             guard stamped else { return nil }
-            let start = DailyStamps.weekStart(.now)
+            let start = DailyStamps.weekStart(DailyStamps.clock)
             let keys = (0..<7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: start) }
                 .map(DailyStamps.key).filter { store.state.stampDays.contains($0) }
             guard i < keys.count, let rec = store.state.stampGot[keys[i]] else { return nil }

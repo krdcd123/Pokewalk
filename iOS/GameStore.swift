@@ -244,6 +244,14 @@ final class GameStore: ObservableObject {
         }
         hk.store.execute(w)
         hk.store.enableBackgroundDelivery(for: .workoutType(), frequency: .immediate) { _, _ in }
+        // Your watch saves last night's sleep a little after you wake: show the morning card as soon as it lands
+        let sl = HKObserverQuery(sampleType: HKCategoryType(.sleepAnalysis), predicate: nil) { _, completion, _ in
+            Task { @MainActor in
+                await GameStore.shared.checkPopups()
+                completion()
+            }
+        }
+        hk.store.execute(sl)
     }
 
     /// Today's active calories from Apple Health (workouts included) → ₽1 per 10 kcal, only new ones pay.
@@ -653,6 +661,35 @@ final class GameStore: ObservableObject {
                 s.workouts[k].levelUp = nil
             }
         }
+    }
+
+    // MARK: Popups (also while the app just stays open)
+
+    private var popupTimer: Timer?
+
+    /// Everything that can pop up: today's stamp (from 7am), evolutions, workouts, the morning sleep card,
+    /// and sleep listening. Runs when the app opens and then every 30 seconds while it's on screen,
+    /// so nothing waits for the app to be closed and reopened.
+    func checkPopups() async {
+        guard hasGame, UIApplication.State.current == .active else { return }
+        stampToday()
+        showPendingStamp()
+        if evolutionCandidate == nil { checkPendingEvolutions() }
+        showWorkoutPopupIfNeeded()
+        await SleepService.shared.refresh(showPopup: workoutPopup == nil && evolutionCandidate == nil)
+        if let note = await SleepRecorder.shared.autoStartOrStop() { toast = note }
+    }
+
+    func startPopupChecks() {
+        popupTimer?.invalidate()
+        popupTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
+            Task { @MainActor in await GameStore.shared.checkPopups() }
+        }
+    }
+
+    func stopPopupChecks() {
+        popupTimer?.invalidate()
+        popupTimer = nil
     }
 
     /// Shows the next "Workout complete!" card, with confetti and the candy sound.

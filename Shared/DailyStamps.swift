@@ -56,14 +56,14 @@ enum DailyStamps {
     ]
 
     /// This week's present (picked from the week, so it stays the same all week but changes every Monday).
-    static func present(for now: Date = .now) -> [Reward] {
+    static func present(for now: Date = DailyStamps.clock) -> [Reward] {
         let weeks = Int(weekStart(now).timeIntervalSince1970 / (7 * 86_400))
         // scramble the order a little so it doesn't just cycle 1, 2, 3…
         let i = ((weeks &* 40_503) &+ 7) % presents.count
         return presents[abs(i)]
     }
 
-    static func rewards(day i: Int, now: Date = .now) -> [Reward] { i == days - 1 ? present(for: now) : rewards[i] }
+    static func rewards(day i: Int, now: Date = DailyStamps.clock) -> [Reward] { i == days - 1 ? present(for: now) : rewards[i] }
 
     /// Days 1–6 are mystery presents too: each stamp rolls one of these small rewards (all worth about the same).
     static func rollDaily() -> [Reward] {
@@ -96,6 +96,10 @@ enum DailyStamps {
         return parts.count > 1 ? parts.dropLast().joined(separator: ", ") + " and " + parts.last! : parts.first ?? ""
     }
 
+    /// The stamp day starts at 7am: before then it still counts as yesterday's card.
+    static let dayStartsAtHour = 7
+    static var clock: Date { Date().addingTimeInterval(-Double(dayStartsAtHour) * 3600) }
+
     static func key(_ d: Date) -> String {
         let c = Calendar.current.dateComponents([.year, .month, .day], from: d)
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
@@ -110,17 +114,17 @@ enum DailyStamps {
     }
 
     /// How many boxes are stamped on this week's card.
-    static func stampedThisWeek(_ s: GameState, now: Date = .now) -> Int {
+    static func stampedThisWeek(_ s: GameState, now: Date = DailyStamps.clock) -> Int {
         let start = weekStart(now)
         let keys = (0..<7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: start) }.map(key)
         return Set(s.stampDays).intersection(keys).count
     }
 
-    static func stampedToday(_ s: GameState, now: Date = .now) -> Bool { s.stampDays.contains(key(now)) }
+    static func stampedToday(_ s: GameState, now: Date = DailyStamps.clock) -> Bool { s.stampDays.contains(key(now)) }
 
     /// Stamps today's box and gives its reward. Returns (day number 1–7, rewards) or nil if already stamped
     /// today (or this week's card is full).
-    static func stamp(_ s: inout GameState, now: Date = .now) -> (day: Int, rewards: [Reward])? {
+    static func stamp(_ s: inout GameState, now: Date = DailyStamps.clock) -> (day: Int, rewards: [Reward])? {
         let k = key(now)
         let done = stampedThisWeek(s, now: now)
         guard !s.stampDays.contains(k), done < days else { return nil }
