@@ -37,7 +37,23 @@ final class StepEngine {
         let end = min(Date(), day.addingTimeInterval(86_400))
         async let hk = try? health.steps(from: day, to: end)
         async let pm = pedometerSteps(from: day, to: end)
-        return max(await hk ?? 0, await pm ?? 0)
+        return max(await hk ?? 0, await pm ?? 0, Self.watchSteps(day: DailyStampsKey.key(day)))
+    }
+
+    // MARK: Steps sent directly by the watch (readable even while the iPhone is locked)
+
+    private static let watchKey = "watchReportedSteps"
+
+    static func reportWatchSteps(_ steps: Int, day: String) {
+        var d = UserDefaults.standard.dictionary(forKey: watchKey) as? [String: Int] ?? [:]
+        guard steps > (d[day] ?? 0) else { return }
+        d[day] = steps
+        if d.count > 10 { for k in d.keys.sorted().dropLast(10) { d.removeValue(forKey: k) } }
+        UserDefaults.standard.set(d, forKey: watchKey)
+    }
+
+    static func watchSteps(day: String) -> Int {
+        (UserDefaults.standard.dictionary(forKey: watchKey) as? [String: Int])?[day] ?? 0
     }
 
     func distanceToday() async -> Double {
@@ -138,5 +154,14 @@ final class WalkingDetector: ObservableObject {
         let speed = (fix?.speed ?? 0) > 0.6
         let walking = !driving && (motionSaysMoving || recentSteps || speed)
         if walking != isWalking { isWalking = walking }
+    }
+}
+
+
+/// "yyyy-MM-dd" for a calendar day (the same key the watch sends).
+enum DailyStampsKey {
+    static func key(_ d: Date) -> String {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: d)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 }

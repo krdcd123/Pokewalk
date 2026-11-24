@@ -97,11 +97,35 @@ final class WatchModel: NSObject, ObservableObject {
             stepsSinceSync = s
             SharedStore.saveLiveSteps(s, forSync: sync)
         }
-        if let t = try? await StepCounter.shared.stepsToday() { stepsToday = t }
+        if let t = try? await StepCounter.shared.stepsToday() {
+            stepsToday = t
+            sendStepsToPhone(t)
+        }
         // watchOS limits complication reloads, so don't spend them more than once a minute
         if reloadComplications, Date().timeIntervalSince(lastComplicationReload) > 60 {
             lastComplicationReload = .now
             WidgetCenter.shared.reloadAllTimelines()
+        }
+    }
+
+    private var lastStepsSent = 0
+    private var lastStepsSentAt = Date.distantPast
+
+    /// Tells the phone today's watch steps directly. The phone can't read Apple Health while it's
+    /// locked, so this keeps encounters and notifications coming while it's in your pocket.
+    private func sendStepsToPhone(_ steps: Int) {
+        let s = WCSession.default
+        guard s.activationState == .activated, steps > lastStepsSent,
+              Date().timeIntervalSince(lastStepsSentAt) > 30 || steps - lastStepsSent >= 100 else { return }
+        lastStepsSent = steps
+        lastStepsSentAt = .now
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+        let msg: [String: Any] = ["watchSteps": steps,
+                                  "day": String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)]
+        if s.isReachable {
+            s.sendMessage(msg, replyHandler: nil) { _ in s.transferUserInfo(msg) }
+        } else {
+            s.transferUserInfo(msg)       // queued; delivered as soon as the phone can take it
         }
     }
 

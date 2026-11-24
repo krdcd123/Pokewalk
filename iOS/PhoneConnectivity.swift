@@ -122,10 +122,25 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
     }
 
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        if Self.takeWatchSteps(message) { return }
         if message["request"] as? String == "resendSprites" {
             resetSentSprites()
             Task { @MainActor in self.send(GameStore.shared.snapshot) }
         }
+    }
+
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        _ = Self.takeWatchSteps(userInfo)
+    }
+
+    /// The watch's own step count for today. Apple Health can't be read while the iPhone is locked,
+    /// so without this, steps from your watch (and the encounters/notifications they cause) would
+    /// wait until you unlocked the phone.
+    static func takeWatchSteps(_ m: [String: Any]) -> Bool {
+        guard let steps = m["watchSteps"] as? Int, let day = m["day"] as? String else { return false }
+        StepEngine.reportWatchSteps(steps, day: day)
+        Task { @MainActor in GameStore.shared.requestTick(minInterval: 0) }
+        return true
     }
 }
 
