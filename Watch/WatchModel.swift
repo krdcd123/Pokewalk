@@ -204,7 +204,13 @@ final class WatchModel: NSObject, ObservableObject {
 
     /// Opens a Pokémon's summary (from tapping its complication).
     func open(_ url: URL) {
-        guard url.scheme == "pokewalk", url.host == "summary", let id = url.pathComponents.dropFirst().first else { return }
+        guard url.scheme == "pokewalk" else { return }
+        if url.host == "workouts" {
+            // the workout complication: straight to the list (or the live workout if one's running)
+            path = WatchWorkout.shared.isActive ? [] : [.workout]
+            return
+        }
+        guard url.host == "summary", let id = url.pathComponents.dropFirst().first else { return }
         path = [.party, .summary(id)]
     }
 

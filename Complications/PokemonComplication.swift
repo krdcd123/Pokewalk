@@ -285,5 +285,55 @@ struct PokemonComplication: Widget {
 struct PokeWalkComplications: WidgetBundle {
     var body: some Widget {
         PokemonComplication()
+        WorkoutShortcut()
+    }
+}
+
+// MARK: - Workout shortcut: tap to open PokéWalk's workout list on the watch
+
+struct WorkoutShortcutEntry: TimelineEntry { let date: Date }
+
+struct WorkoutShortcutProvider: TimelineProvider {
+    func placeholder(in context: Context) -> WorkoutShortcutEntry { .init(date: .now) }
+    func getSnapshot(in context: Context, completion: @escaping (WorkoutShortcutEntry) -> Void) { completion(.init(date: .now)) }
+    func getTimeline(in context: Context, completion: @escaping (Timeline<WorkoutShortcutEntry>) -> Void) {
+        completion(Timeline(entries: [.init(date: .now)], policy: .never))
+    }
+}
+
+struct WorkoutShortcutView: View {
+    @Environment(\.widgetFamily) private var family
+    private let green = Color(red: 0.61, green: 0.88, blue: 0.36)
+
+    var body: some View {
+        Group {
+            switch family {
+            case .accessoryCorner:
+                Image(systemName: "figure.run").font(.system(size: 22, weight: .semibold))
+                    .widgetLabel("Workout")
+            case .accessoryInline:
+                Label("Start workout", systemImage: "figure.run")
+            default:
+                ZStack {
+                    AccessoryWidgetBackground()
+                    Image(systemName: "figure.run").font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(green)
+                        .widgetAccentable()
+                }
+            }
+        }
+        .widgetURL(URL(string: "pokewalk://workouts"))
+        .containerBackground(for: .widget) { Color.clear }
+    }
+}
+
+struct WorkoutShortcut: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "WorkoutShortcut", provider: WorkoutShortcutProvider()) { _ in
+            WorkoutShortcutView()
+        }
+        .configurationDisplayName("PokéWalk Workout")
+        .description("Tap to start a workout.")
+        .supportedFamilies([.accessoryCircular, .accessoryCorner, .accessoryInline])
     }
 }

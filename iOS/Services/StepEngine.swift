@@ -94,6 +94,16 @@ final class WalkingDetector: ObservableObject {
     private let motion = CMMotionActivityManager()
     private let pedometer = CMPedometer()
     private var motionSaysMoving = false
+    private var motionSaysStill = false
+    /// The step counter is working and allowed, so it's the real test of whether your feet are moving.
+    private var pedometerTrusted: Bool {
+        CMPedometer.isStepCountingAvailable() && CMPedometer.authorizationStatus() == .authorized
+    }
+    /// iOS only reports *changes* in activity, so "walking" can linger for minutes after you stop. When the
+    /// step counter works, "walking" from the motion chip only counts while steps are still coming in.
+    private var motionWalkingNow: Bool {
+        motionSaysMoving && (!pedometerTrusted || Date().timeIntervalSince(lastStepAt) < 15)
+    }
     /// In a car, bus or train (or on a bike): the trainer stands still and the trail isn't recorded.
     @Published private(set) var isDriving = false
     private var motionSaysVehicle = false
@@ -107,6 +117,7 @@ final class WalkingDetector: ObservableObject {
                 guard let self, let a else { return }
                 Task { @MainActor in
                     self.motionSaysMoving = (a.walking || a.running) && a.confidence != .low
+                    self.motionSaysStill = a.stationary && a.confidence != .low
                     self.motionSaysVehicle = (a.automotive || a.cycling) && a.confidence != .low
                     if a.stationary && a.confidence != .low { self.motionSaysMoving = false; self.lastStepAt = .distantPast }
                     self.refresh()
@@ -137,7 +148,7 @@ final class WalkingDetector: ObservableObject {
     var feetMoving: Bool {
         guard CMMotionActivityManager.authorizationStatus() == .authorized,
               CMPedometer.isStepCountingAvailable() || CMMotionActivityManager.isActivityAvailable() else { return true }
-        return motionSaysMoving || Date().timeIntervalSince(lastStepAt) < 20
+        return motionWalkingNow || Date().timeIntervalSince(lastStepAt) < 20
     }
 
     /// Driving needs real evidence: vehicle-speed GPS in the last minute or two. Taking steps (or iOS saying
@@ -148,11 +159,14 @@ final class WalkingDetector: ObservableObject {
         let fix = LocationTracker.shared.latestFix.flatMap { now.timeIntervalSince($0.timestamp) < 10 ? $0 : nil }
         if let fix, fix.speed > 4.5 { lastFastAt = fix.timestamp }             // faster than ~10 mph
         let sinceFast = now.timeIntervalSince(lastFastAt)
-        let driving = !recentSteps && !motionSaysMoving &&
+        let driving = !recentSteps && !motionWalkingNow &&
             (sinceFast < 45 || (motionSaysVehicle && sinceFast < 150))          // stuck in traffic still counts
         if driving != isDriving { isDriving = driving }
-        let speed = (fix?.speed ?? 0) > 0.6
-        let walking = !driving && (motionSaysMoving || recentSteps || speed)
+        // GPS speed drifts while you stand still (especially indoors), so it only counts when there's no step
+        // counter to ask, the fix is precise, and the motion chip doesn't say you're still.
+        let gpsWalking = !pedometerTrusted && !motionSaysStill &&
+            (fix?.speed ?? 0) > 0.8 && (fix?.horizontalAccuracy ?? 999) <= 20
+        let walking = !driving && (motionWalkingNow || recentSteps || gpsWalking)
         if walking != isWalking { isWalking = walking }
     }
 }
