@@ -652,6 +652,7 @@ struct SettingsView: View {
     @State private var testBattle: PendingEncounter?
     @AppStorage("homeSet") private var homeSet = false
     @AppStorage("workSet") private var workSet = false
+    @State private var fullAccuracy = LocationTracker.fullAccuracyAlways
     @State private var sleepAuto = SleepRecorder.autoListen
     @State private var sleepFrom = SleepRecorder.listenFromHour
     @State private var importingSave = false
@@ -708,6 +709,14 @@ struct SettingsView: View {
                     }
                     .glassRow()
                 Toggle("Encounter notifications", isOn: binding(\.notifyEncounters)).glassRow()
+                Toggle(isOn: Binding(get: { fullAccuracy }, set: { fullAccuracy = $0; LocationTracker.shared.setFullAccuracyAlways($0) })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Full accuracy all the time")
+                        Text("Keeps GPS, Wi-Fi and phone masts on even when you're still. Uses noticeably more battery.")
+                            .font(.rounded(11)).foregroundStyle(Theme.inkSoft)
+                    }
+                }
+                .glassRow()
             } header: { Text("Walking") } footer: {
                 Text("Adventure mode records where you walk all day and pauses automatically when you stop. iOS ends Live Activities after 8 hours; PokéWalk starts a new one each time you open it. Set Location to \"Always\" in iOS Settings to get rid of the blue location arrow.")
             }

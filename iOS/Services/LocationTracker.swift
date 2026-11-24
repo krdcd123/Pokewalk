@@ -234,13 +234,29 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
     private var keepAliveMode: TrackingMode = .always
     private var keepAliveOn = false
 
+    /// Settings › Walking: run the stay-awake feed at full accuracy (GPS + Wi-Fi + masts) all the time.
+    static var fullAccuracyAlways: Bool {
+        get { UserDefaults.standard.bool(forKey: "keepAliveFullAccuracy") }
+        set { UserDefaults.standard.set(newValue, forKey: "keepAliveFullAccuracy") }
+    }
+    private var keepAliveBest = false
+
+    func setFullAccuracyAlways(_ on: Bool) {
+        Self.fullAccuracyAlways = on
+        keepAliveOn = false                      // re-apply with the new accuracy
+        keepAlive.stopUpdatingLocation()
+        updateKeepAlive()
+    }
+
     private func updateKeepAlive() {
         let want = keepAliveMode != .off && manager.authorizationStatus == .authorizedAlways
         guard want != keepAliveOn else { return }
         keepAliveOn = want
         if want {
-            keepAlive.desiredAccuracy = kCLLocationAccuracyThreeKilometers
-            keepAlive.distanceFilter = 500
+            let best = Self.fullAccuracyAlways
+            keepAliveBest = best
+            keepAlive.desiredAccuracy = best ? kCLLocationAccuracyBest : kCLLocationAccuracyThreeKilometers
+            keepAlive.distanceFilter = best ? kCLDistanceFilterNone : 500
             keepAlive.pausesLocationUpdatesAutomatically = false
             keepAlive.allowsBackgroundLocationUpdates = true
             keepAlive.showsBackgroundLocationIndicator = false
