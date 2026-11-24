@@ -234,6 +234,15 @@ struct EvolutionView: View {
             if stopped { withAnimation { flash = false; stage = 0 }; return }
             store.evolve(candidate)
             withAnimation(.spring(duration: 0.6)) { stage = 2 }
+            // The new Pokémon's cry, then the same fanfare as a successful catch
+            CryPlayer.shared.play(candidate.into)
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            try? await Task.sleep(for: .milliseconds(1_400))
+            if SoundKit.shared.caughtMusicFile != nil && SoundKit.shared.battleMusicOn {
+                SoundKit.shared.setScene(.caught)
+            } else {
+                SoundKit.shared.play(.ballCatch)
+            }
         }
     }
 }

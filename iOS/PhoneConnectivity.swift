@@ -38,10 +38,18 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
 
         // Complication pushes wake the watch with priority, but there are only ~50 a day:
         // use them when a level changes, or at most every 15 minutes.
-        let levels = snapshot.party.map { "\($0.id):\($0.species.growth.level(forExp: $0.exp))" }.joined(separator: ",")
+        // Anything you'd see change on the watch: who's in the party, their species (evolutions), level,
+        // name, buddy and held items. Any change pushes to the watch with priority.
+        let levels = snapshot.party.map {
+            "\($0.id):\($0.speciesID):\($0.species.growth.level(forExp: $0.exp)):\($0.name):\($0.isBuddy):\($0.heldItem ?? "")"
+        }.joined(separator: ",")
         let due = Date().timeIntervalSince(lastComplicationPush) > 15 * 60 || levels != lastComplicationLevels
-        if due, session.isComplicationEnabled, session.remainingComplicationUserInfoTransfers > 0 {
-            session.transferCurrentComplicationUserInfo(payload)
+        if due {
+            if session.isComplicationEnabled, session.remainingComplicationUserInfoTransfers > 0 {
+                session.transferCurrentComplicationUserInfo(payload)
+            } else if levels != lastComplicationLevels {
+                session.transferUserInfo(payload)        // out of priority pushes today: still queue it
+            }
             lastComplicationPush = .now
             lastComplicationLevels = levels
         }
