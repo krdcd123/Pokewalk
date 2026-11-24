@@ -94,7 +94,7 @@ final class PhoneWorkout: NSObject, ObservableObject {
                 let kcal = b.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0
                 let m = kind?.distanceType.flatMap { b.statistics(for: $0)?.sumQuantity()?.doubleValue(for: .meter()) } ?? 0
                 live?.kcal = kcal; live?.meters = m
-                live?.elapsed = b.elapsedTime
+                live?.elapsed = b.elapsedTime(at: .now)
                 try? await Task.sleep(for: .seconds(3))
             }
         }

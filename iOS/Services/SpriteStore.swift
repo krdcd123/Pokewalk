@@ -153,7 +153,8 @@ final class SpriteStore {
         guard let data = try? Data(contentsOf: file) else { return await trainerWalk(style) }
         // Gen 3 surfing frames are 32 px wide; the Game Boy ones use the walking layout
         if case .gen3 = style.sheet { return OverworldSheet.walkAnimation(from: data, sheet: style.sheet, frameWidth: 32) }
-        return OverworldSheet.walkAnimation(from: data, sheet: style.sheet) ?? (await trainerWalk(style))
+        if let img = OverworldSheet.walkAnimation(from: data, sheet: style.sheet) { return img }
+        return await trainerWalk(style)
     }
 
     func trainerWalk(_ style: TrainerStyle) async -> UIImage? {
