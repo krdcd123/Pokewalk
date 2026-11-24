@@ -52,7 +52,7 @@ targets:
         NSLocationWhenInUseUsageDescription: PokéWalk draws where you walk on the map and records where you catch each Pokémon.
         NSLocationAlwaysAndWhenInUseUsageDescription: Lets PokéWalk record your walks and trigger encounters with your phone in your pocket.
         NSSupportsLiveActivities: true
-        UIBackgroundModes: [location, fetch, audio, workout-processing]
+        UIBackgroundModes: [location, fetch, audio]
         NSMicrophoneUsageDescription: PokéWalk can listen while you sleep and keep a few short clips of sleep talking. Nothing is uploaded.
         NSPhotoLibraryUsageDescription: PokéWalk shows photos you took on each day and at each place in your Journal. It only reads them.
         UIFileSharingEnabled: true
