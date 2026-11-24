@@ -131,6 +131,7 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
     }
 
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        if Self.takeWorkoutLive(message) { return }
         if Self.takeWatchSteps(message) { return }
         if message["request"] as? String == "resendSprites" {
             resetSentSprites()
@@ -139,7 +140,17 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
     }
 
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        if Self.takeWorkoutLive(userInfo) { return }
         _ = Self.takeWatchSteps(userInfo)
+    }
+
+    /// Live workout numbers from the watch (a workout started on the watch shows on the map straight away).
+    static func takeWorkoutLive(_ m: [String: Any]) -> Bool {
+        guard let data = m["workoutLive"] as? Data else { return false }
+        if let u = try? JSONDecoder().decode(WorkoutLive.self, from: data) {
+            Task { @MainActor in PhoneWorkout.shared.takeWatchLive(u) }
+        }
+        return true
     }
 
     /// The watch's own step count for today. Apple Health can't be read while the iPhone is locked,

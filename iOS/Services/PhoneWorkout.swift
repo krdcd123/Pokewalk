@@ -131,6 +131,37 @@ final class PhoneWorkout: NSObject, ObservableObject {
         }
     }
 
+    /// Numbers from the watch, via the mirrored session or WatchConnectivity (whichever arrives).
+    func takeWatchLive(_ u: WorkoutLive) {
+        if u.ended {
+            // only the workout it belongs to (a late "ended" mustn't stop a newer one)
+            if isActive, abs((live?.start ?? u.start).timeIntervalSince(u.start)) < 90 { finished() }
+            return
+        }
+        // late numbers from a workout that's just been ended: don't bring the tracker back
+        if kind == nil && Date().timeIntervalSince(endedAt) < 20 { return }
+        live = u
+        if kind == nil {
+            kind = WorkoutKind.kind(id: u.kindID)
+            GameStore.shared.requestTick(minInterval: 0)
+        }
+        watchStale()
+    }
+
+    /// A watch workout we only hear about over WatchConnectivity: if the watch goes quiet for 2 minutes
+    /// (it ended while out of reach), clear the tracker rather than leave it stuck.
+    private var staleCheck: Task<Void, Never>?
+    private func watchStale() {
+        guard mirrored == nil, localSession == nil else { return }
+        staleCheck?.cancel()
+        staleCheck = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(120))
+            guard !Task.isCancelled, self.isActive, self.mirrored == nil, self.localSession == nil,
+                  Date().timeIntervalSince(self.liveAt) >= 110 else { return }
+            self.finished()
+        }
+    }
+
     /// Sends pause / resume / end to the watch app over WatchConnectivity.
     private func tellWatch(_ cmd: String) {
         guard WCSession.isSupported() else { return }
@@ -147,6 +178,7 @@ final class PhoneWorkout: NSObject, ObservableObject {
     /// The workout's over (saved on the watch / phone): clear the tracker and show "Workout complete!".
     private func finished() {
         endTimeout?.cancel(); endTimeout = nil
+        staleCheck?.cancel(); staleCheck = nil
         if isActive { endedAt = .now }
         kind = nil; live = nil; mirrored = nil; localSession = nil; localBuilder = nil
         Task { @MainActor in
@@ -195,13 +227,7 @@ extension PhoneWorkout: HKWorkoutSessionDelegate {
     nonisolated func workoutSession(_ s: HKWorkoutSession, didReceiveDataFromRemoteWorkoutSession data: [Data]) {
         let updates = data.compactMap { try? JSONDecoder().decode(WorkoutLive.self, from: $0) }
         Task { @MainActor in
-            for u in updates {
-                if u.ended { self.finished(); return }
-                // late numbers from a workout that's just been ended: don't bring the tracker back
-                if self.kind == nil && Date().timeIntervalSince(self.endedAt) < 20 { continue }
-                self.live = u
-                if self.kind == nil { self.kind = WorkoutKind.kind(id: u.kindID) }
-            }
+            for u in updates { self.takeWatchLive(u) }
         }
     }
 }

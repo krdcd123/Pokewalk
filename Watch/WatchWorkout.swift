@@ -1,6 +1,7 @@
 import Foundation
 import HealthKit
 import WatchKit
+import WatchConnectivity
 
 /// Records a workout on the watch (like Apple's Workout app): heart rate, calories, distance, saved to
 /// Apple Health. Mirrors to the iPhone so PokéWalk there shows the live numbers and pauses step rewards.
@@ -79,7 +80,10 @@ final class WatchWorkout: NSObject, ObservableObject {
         let k = kind
         var live = currentLive()
         live.ended = true
-        if let data = try? JSONEncoder().encode(live) { try? await session?.sendToRemoteWorkoutSession(data: data) }
+        if let data = try? JSONEncoder().encode(live) {
+            try? await session?.sendToRemoteWorkoutSession(data: data)
+            tellPhone(data, important: true)
+        }
         WKInterfaceDevice.current().play(.stop)
         if let k {
             let mins = Int(((workout?.duration ?? elapsed) / 60).rounded())
@@ -103,6 +107,24 @@ final class WatchWorkout: NSObject, ObservableObject {
               let data = try? JSONEncoder().encode(currentLive()) else { return }
         lastSent = .now
         Task { try? await session.sendToRemoteWorkoutSession(data: data) }
+        tellPhone(data, important: force)
+    }
+
+    /// Also over WatchConnectivity, so the iPhone's map switches to the workout tracker even when the
+    /// mirrored session doesn't connect (it can't always wake the iPhone app).
+    private var lastPhoneSend = Date.distantPast
+    private func tellPhone(_ data: Data, important: Bool) {
+        guard WCSession.isSupported() else { return }
+        let s = WCSession.default
+        guard s.activationState == .activated else { return }
+        let msg: [String: Any] = ["workoutLive": data]
+        if s.isReachable {
+            guard important || Date().timeIntervalSince(lastPhoneSend) > 5 else { return }
+            lastPhoneSend = .now
+            s.sendMessage(msg, replyHandler: nil) { _ in if important { s.transferUserInfo(msg) } }
+        } else if important {
+            s.transferUserInfo(msg)
+        }
     }
 }
 
