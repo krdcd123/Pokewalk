@@ -62,7 +62,9 @@ struct MapHomeView: View {
     var body: some View {
         ZStack {
             ZStack {
-                map
+                // The 3D map is the biggest thing in memory: drop it while in the background so iOS doesn't
+                // close PokéWalk to make room for other apps (it's rebuilt instantly when you come back).
+                Group { if scenePhase == .background { Theme.ink.ignoresSafeArea() } else { map } }
                     .onAppear {
                         SoundKit.shared.setScene(.map)
                         WeatherService.shared.update(for: tracker.currentLocation())
