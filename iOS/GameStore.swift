@@ -314,16 +314,32 @@ final class GameStore: ObservableObject {
 
         let gameExisted = !ledger.isEmpty
         let startedDay = cal.startOfDay(for: state.trainer.startedOn)
+        // Cycling right now (or since the last check)? Then new steps are your arms, not walking: no rewards.
+        let cyclingNow = await CyclingDetector.cycling(since: lastTick)
+        var skippedNow: [String: Int] = [:]
         for day in [yesterday, today] {
             let key = TrackStore.key(for: day)
             // Steps from non-walking workouts (cycling, gym…) don't count: the watch counts arm movement as steps.
+            // Steps already left out live (while cycling) aren't taken off a second time.
             let raw = await engine.steps(onDay: day)
-            let total = max(0, raw - (await StepCounter.shared.nonWalkingWorkoutSteps(onDay: day)))
-            if day == today { stepsToday = total }
+            let workout = await StepCounter.shared.nonWalkingWorkoutSteps(onDay: day)
+            let skipped = state.cyclingSkipped[key] ?? 0
+            let total = max(0, raw - max(0, workout - skipped))
+            if day == today { stepsToday = max(0, raw - max(workout, skipped)) }
             // Days we haven't seen yet count from midnight, unless they're before the game started.
             let processed = ledger[key] ?? ((gameExisted && day >= startedDay) ? 0 : total)
             ledger[key] = max(processed, total)
-            if total > processed { newSteps += total - processed }
+            guard total > processed else { continue }
+            if cyclingNow && day == today {
+                skippedNow[key] = total - processed          // counted as done, but no rewards
+            } else {
+                newSteps += total - processed
+            }
+        }
+        if !skippedNow.isEmpty {
+            for (k, n) in skippedNow { state.cyclingSkipped[k, default: 0] += n }
+            state.cyclingSkipped = state.cyclingSkipped.filter { k, _ in ledger[k] != nil }
+            if day0StepsChanged(skippedNow) { stepsToday = max(0, stepsToday - (skippedNow[TrackStore.key(for: today)] ?? 0)) }
         }
         // Keep the ledger small.
         let keep = Set([yesterday, today].map { TrackStore.key(for: $0) })
@@ -332,7 +348,9 @@ final class GameStore: ObservableObject {
         // Distance since last sync goes to the buddy (counted the same way as steps).
         let todayKey = TrackStore.key(for: today)
         let creditedMeters = state.distanceLedger[todayKey] ?? 0
-        let newMeters = max(0, metersToday - creditedMeters)
+        // Distance while cycling doesn't go to your buddy either
+        let newMeters = cyclingNow ? 0 : max(0, metersToday - creditedMeters)
+        if cyclingNow { state.distanceLedger[todayKey] = max(creditedMeters, metersToday) }
 
         guard newSteps > 0 else {
             if ledger != state.stepLedger { state.stepLedger = ledger; save() } else { pushOutward() }
@@ -567,6 +585,8 @@ final class GameStore: ObservableObject {
     /// Active calories from Apple Health: ₽1 for every 10 kcal burned today.
     /// The latest total for the day replaces the last one, so only new calories pay out.
     static let pokeDollarsPerKcal = 0.1
+
+    private func day0StepsChanged(_ m: [String: Int]) -> Bool { !m.isEmpty }
 
     // MARK: Workouts
 

@@ -315,7 +315,8 @@ struct GameState: Codable {
     var caloriesPaid: Double = 0      // today's active calories already turned into money
     var lifetimeCalories: Double = 0
     var activeLure: ActiveLure?
-    var openedEncounters: [UUID] = []         // wild Pokémon you opened (saw up close) — the Journal shows the rest as silhouettes
+    var openedEncounters: [UUID] = []
+    var cyclingSkipped: [String: Int] = [:]   // day → steps left out because you were cycling at the time         // wild Pokémon you opened (saw up close) — the Journal shows the rest as silhouettes
     var workouts: [WorkoutRecord] = []        // finished workouts and what they earned (Journal)
     var unseenWorkouts: [String] = []         // workout ids whose "Workout complete!" popup hasn't shown yet
 
@@ -448,6 +449,7 @@ extension GameState {
         activeLure = c.value(.activeLure, nil)
         workouts = c.value(.workouts, [])
         openedEncounters = c.value(.openedEncounters, [])
+        cyclingSkipped = c.value(.cyclingSkipped, [:])
         unseenWorkouts = c.value(.unseenWorkouts, [])
     }
 }

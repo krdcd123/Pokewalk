@@ -147,6 +147,7 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
     /// wait until you unlocked the phone.
     static func takeWatchSteps(_ m: [String: Any]) -> Bool {
         guard let steps = m["watchSteps"] as? Int, let day = m["day"] as? String else { return false }
+        if m["cycling"] as? Bool == true { Task { @MainActor in CyclingDetector.watchSawCyclingAt = .now } }
         StepEngine.reportWatchSteps(steps, day: day)
         Task { @MainActor in GameStore.shared.requestTick(minInterval: 0) }
         return true

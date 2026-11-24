@@ -3,6 +3,7 @@ import WatchConnectivity
 import WidgetKit
 import WatchKit
 import HealthKit
+import CoreMotion
 
 /// Watch-side state: the latest party snapshot from the phone plus live steps from the watch's own HealthKit.
 @MainActor
@@ -44,6 +45,7 @@ final class WatchModel: NSObject, ObservableObject {
         try? await StepCounter.shared.requestAuthorization()
         await refreshSteps()
         startStepObserver()
+        startCyclingWatch()
     }
 
     // MARK: Keeping up with the phone
@@ -109,6 +111,17 @@ final class WatchModel: NSObject, ObservableObject {
     }
 
     private var lastStepsSent = 0
+    private let motion = CMMotionActivityManager()
+    /// Updated in the background from the watch's motion chip: are you on a bike?
+    private var cyclingLately = false
+
+    func startCyclingWatch() {
+        guard CMMotionActivityManager.isActivityAvailable() else { return }
+        motion.startActivityUpdates(to: .main) { [weak self] a in
+            guard let a else { return }
+            Task { @MainActor in self?.cyclingLately = a.cycling && a.confidence != .low }
+        }
+    }
     private var lastStepsSentAt = Date.distantPast
 
     /// Tells the phone today's watch steps directly. The phone can't read Apple Health while it's
@@ -120,8 +133,9 @@ final class WatchModel: NSObject, ObservableObject {
         lastStepsSent = steps
         lastStepsSentAt = .now
         let c = Calendar.current.dateComponents([.year, .month, .day], from: .now)
-        let msg: [String: Any] = ["watchSteps": steps,
+        var msg: [String: Any] = ["watchSteps": steps,
                                   "day": String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)]
+        if cyclingLately { msg["cycling"] = true }
         if s.isReachable {
             s.sendMessage(msg, replyHandler: nil) { _ in s.transferUserInfo(msg) }
         } else {
