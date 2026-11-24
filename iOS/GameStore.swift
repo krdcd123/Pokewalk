@@ -199,6 +199,12 @@ final class GameStore: ObservableObject {
         engine.startLiveUpdates { [weak self] in self?.requestTick(minInterval: 15) }
         startHealthObserver()
         requestTick(minInterval: 0)
+        // Heartbeat: while PokéWalk is running (it now stays awake in the background), check for new
+        // steps every minute — encounters, items and level-ups notify on time instead of when you open it.
+        heartbeat?.invalidate()
+        heartbeat = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+            Task { @MainActor in GameStore.shared.requestTick(minInterval: 45) }
+        }
         LiveActivityManager.shared.startIfNeeded(with: self)
     }
 
@@ -666,6 +672,7 @@ final class GameStore: ObservableObject {
     // MARK: Popups (also while the app just stays open)
 
     private var popupTimer: Timer?
+    private var heartbeat: Timer?
 
     /// Everything that can pop up: today's stamp (from 7am), evolutions, workouts, the morning sleep card,
     /// and sleep listening. Runs when the app opens and then every 30 seconds while it's on screen,

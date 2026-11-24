@@ -197,6 +197,7 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
             if status == .authorizedWhenInUse { manager.requestAlwaysAuthorization() }
             // iOS visit detection for the Journal's Places (needs "Always")
             if status == .authorizedAlways {
+                self.updateKeepAlive()
                 manager.startMonitoringVisits()
                 // If iOS closes PokéWalk to free memory, a significant move (a few hundred metres)
                 // relaunches it in the background, which restarts step and walk tracking.
@@ -220,6 +221,34 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
     func apply(mode: TrackingMode) {
         let shouldRun = mode == .always || (mode == .walks && walkStartedAt != nil)
         shouldRun ? start() : stop()
+        keepAliveMode = mode
+        updateKeepAlive()
+    }
+
+    // MARK: Staying awake in the background
+
+    /// Walk tracking pauses when you're standing still, and then iOS suspends the app — so new steps
+    /// (e.g. from your watch at work) and notifications would wait until you opened it. This very
+    /// low-power location feed (phone masts / Wi-Fi, no GPS) never pauses, which keeps PokéWalk running.
+    private let keepAlive = CLLocationManager()
+    private var keepAliveMode: TrackingMode = .always
+    private var keepAliveOn = false
+
+    private func updateKeepAlive() {
+        let want = keepAliveMode != .off && manager.authorizationStatus == .authorizedAlways
+        guard want != keepAliveOn else { return }
+        keepAliveOn = want
+        if want {
+            keepAlive.desiredAccuracy = kCLLocationAccuracyThreeKilometers
+            keepAlive.distanceFilter = 500
+            keepAlive.pausesLocationUpdatesAutomatically = false
+            keepAlive.allowsBackgroundLocationUpdates = true
+            keepAlive.showsBackgroundLocationIndicator = false
+            keepAlive.activityType = .other
+            keepAlive.startUpdatingLocation()
+        } else {
+            keepAlive.stopUpdatingLocation()
+        }
     }
 
     func startWalk() {
