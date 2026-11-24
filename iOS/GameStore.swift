@@ -373,6 +373,15 @@ final class GameStore: ObservableObject {
             let name = Dex.itemName(pick.item)
             news.append((mon.id, "\(mon.name) picked up \(name.first.map { "AEIOU".contains($0) } == true ? "an" : "a") \(name)!", true))
         }
+        // Pickups always come as a normal notification (a banner even with the app open), never just a toast.
+        let alwaysNotify = news.filter(\.pickup)
+        if !background { news.removeAll(where: \.pickup) }
+        for n in background ? [] : alwaysNotify {
+            let mon = state.mon(n.id)
+            notify(title: n.text, body: mon.map { "Lv. \($0.level) · Tap to see your party." } ?? "",
+                   id: "\(n.id.uuidString)-\(Int(Date().timeIntervalSince1970))-\(n.text.hashValue)",
+                   category: "pickup", icon: mon.map { ($0.speciesID, $0.isShiny) })
+        }
         if background {
             for n in news {
                 let mon = state.mon(n.id)
