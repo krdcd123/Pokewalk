@@ -508,6 +508,31 @@ final class GameStore: ObservableObject {
         markOpened(enc.id)
     }
 
+    func buyItem(_ key: String, price: Int) -> Bool {
+        guard state.money >= price else { return false }
+        mutate { s in s.money -= price; s.bag[key, default: 0] += 1 }
+        return true
+    }
+
+    /// Uses a Repel, herb, flute, Honey, Revive… from the Bag.
+    func useFieldItem(_ key: String) async -> FieldItems.UseResult {
+        let loc = tracker.currentLocation()
+        var context = EncounterContext(habitats: await PlaceService.shared.habitats(near: loc),
+                                       isNight: TimeOfDay.at(.now) == .night)
+        if let loc {
+            context.location = MetLocation(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude,
+                                           placeName: await PlaceService.shared.placeName(for: loc))
+        }
+        var r = FieldItems.UseResult.nothing("")
+        mutate { s in r = FieldItems.use(key, in: &s, context: context, location: context.location) }
+        switch r {
+        case .appeared(let enc): toast = "A wild \(state.dexCaught.contains(enc.speciesID) ? enc.species.name : "Pokémon") appeared!"
+        case .started: toast = "\(Dex.itemName(key)) is working!"
+        case .nothing(let why): toast = why
+        }
+        return r
+    }
+
     /// Ball Fetch: after a ball misses, the buddy sometimes brings it back.
     func ballFetch(_ kind: BallKind) {
         guard state.buddyAbility == .ballFetch, Double.random(in: 0..<1) < 0.3, let b = state.buddy else { return }
@@ -517,7 +542,7 @@ final class GameStore: ObservableObject {
 
     func useBall(_ kind: BallKind) -> Bool {
         guard state.balls[kind, default: 0] > 0 else { return false }
-        mutate { $0.balls[kind, default: 0] -= 1 }
+        mutate { $0.balls[kind, default: 0] -= 1; $0.stats["ballsThrown", default: 0] += 1 }
         return true
     }
 
@@ -622,9 +647,12 @@ final class GameStore: ObservableObject {
         celebrateStamp(text, complete: complete)
     }
 
-    /// Active calories from Apple Health: ₽1 for every 10 kcal burned today.
+    /// Active calories from Apple Health: ₽1 for every 4 kcal burned today.
     /// The latest total for the day replaces the last one, so only new calories pay out.
-    static let pokeDollarsPerKcal = 0.1
+    static let pokeDollarsPerKcal = 0.25
+
+    /// On top of the calories: finishing a workout pays ₽50 + ₽5 a minute (up to ₽1,000).
+    static func workoutBonus(minutes: Double) -> Int { min(1_000, 50 + Int(minutes * 5)) }
 
     private func day0StepsChanged(_ m: [String: Int]) -> Bool { !m.isEmpty }
 
@@ -657,7 +685,8 @@ final class GameStore: ObservableObject {
             let exp = 0     // workouts never give Exp themselves; walking/running/hiking earn it through their steps
             records.append(WorkoutRecord(id: w.id, name: w.name, symbol: w.symbol, start: w.start, end: w.end,
                                          kcal: Int(w.kcal.rounded()), meters: w.meters, countsSteps: w.countsSteps,
-                                         stepsNotCounted: stepsDuring, money: Int(w.kcal * Self.pokeDollarsPerKcal),
+                                         stepsNotCounted: stepsDuring,
+                                         money: Int(w.kcal * Self.pokeDollarsPerKcal) + Self.workoutBonus(minutes: w.end.timeIntervalSince(w.start) / 60),
                                          exp: exp, expMonID: nil, levelUp: nil))
         }
         mutate { s in
@@ -678,6 +707,8 @@ final class GameStore: ObservableObject {
                         }
                     }
                 }
+                s.money += Int(Double(Self.workoutBonus(minutes: r.end.timeIntervalSince(r.start) / 60))
+                               * FieldItems.multiplier(.money, in: s))     // the calories pay separately
                 s.workouts.append(r)
                 s.unseenWorkouts.append(r.id)
             }
@@ -814,6 +845,7 @@ final class GameStore: ObservableObject {
 
     func dismissWorkoutPopup() {
         guard let r = workoutPopup else { return }
+        SoundKit.shared.play(.select)
         workoutPopup = nil
         mutate { $0.unseenWorkouts.removeAll { $0 == r.id } }
         // another one waiting? show it after a moment
@@ -953,7 +985,10 @@ final class GameStore: ObservableObject {
         let here = tracker.currentLocation().map {
             MetLocation(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
         }
-        mutate { result = Fishing.cast(bait: bait, in: &$0, location: here) }
+        mutate { s in
+            result = Fishing.cast(bait: bait, in: &s, location: here)
+            if case .bite = result { s.stats["fishHooked", default: 0] += 1 }
+        }
         return result
     }
 
@@ -1213,6 +1248,7 @@ extension GameStore {
             s.garden.plots[i].berry = berry
             s.garden.plots[i].plantedAt = .now
             s.garden.plots[i].growHours = hours
+            s.stats["berriesPlanted", default: 0] += 1
             ok = true
         }
         if ok { rescheduleGardenNotifications() }
@@ -1235,6 +1271,7 @@ extension GameStore {
         mutate { s in
             guard let i = s.garden.plots.firstIndex(where: { $0.id == plotID }) else { return }
             s.bag[berry, default: 0] += count
+            s.stats["berriesHarvested", default: 0] += count + (bonus == nil ? 0 : 1)
             if let bonus { s.bag[bonus, default: 0] += 1 }
             s.garden.plots[i].berry = replant ? berry : nil
             s.garden.plots[i].plantedAt = replant ? .now : nil
@@ -1404,6 +1441,7 @@ extension GameStore {
             gains.append((mon.id, h.friendship))
             total.friendship += h.friendship
         }
+        total.money = Int(Double(total.money) * FieldItems.multiplier(.money, in: state))    // Amulet Coin
         mutate { s in
             for (m, n) in total.materials { s.ranch.materials[m.rawValue, default: 0] += n }
             s.money += total.money
@@ -1455,6 +1493,7 @@ extension GameStore {
         mutate { s in
             s.money -= d.price
             s.ranch.decor[d.key, default: 0] += 1
+            s.stats["decorBought", default: 0] += 1
         }
         return true
     }
@@ -1511,6 +1550,7 @@ extension GameStore {
             if s.bag[key] == 0 { s.bag[key] = nil }
             s.pending.append(enc)
             s.dexSeen.insert(id)
+            s.stats["ticketsUsed", default: 0] += 1
         }
         toast = "\(t.name): a wild \(sp.name) appeared! It's waiting in your encounters for a day."
         return enc

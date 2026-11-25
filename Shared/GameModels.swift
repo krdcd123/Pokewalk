@@ -156,6 +156,7 @@ struct OwnedPokemon: Codable, Identifiable, Hashable {
 
     var evolutionDeclinedAtLevel: Int?
     var evolvedOn: Date?
+    var abilitySwapped = false      // Ability Capsule: uses its other ability
     var heldItems: [String] = []    // Exp. Candies picked up on walks, until you take them
     var pickupSteps = 0             // its own pickup timer (counts while in the party, empty-handed)
     var nextPickupAt = 1_500
@@ -321,6 +322,9 @@ struct GameState: Codable {
     var unseenWorkouts: [String] = []         // workout ids whose "Workout complete!" popup hasn't shown yet
     var garden = Garden()                     // the berry garden (Menu › Garden)
     var ranch = Ranch()                       // the ranch (Menu › Ranch)
+    var effects: [ActiveEffect] = []          // items in effect (Repel, Energy Root, Lucky Egg…)
+    var stats: [String: Int] = [:]            // running totals for achievements
+    var achievementsClaimed: [String] = []
 
     static let maxParty = 6
 
@@ -401,6 +405,7 @@ extension OwnedPokemon {
         otID = c.value(.otID, 0)
         evolutionDeclinedAtLevel = c.value(.evolutionDeclinedAtLevel, nil)
         evolvedOn = c.value(.evolvedOn, nil)
+        abilitySwapped = c.value(.abilitySwapped, false)
         heldItems = c.value(.heldItems, [])
         pickupSteps = c.value(.pickupSteps, 0)
         nextPickupAt = c.value(.nextPickupAt, 1_500)
@@ -461,6 +466,9 @@ extension GameState {
         unseenWorkouts = c.value(.unseenWorkouts, [])
         garden = c.value(.garden, Garden())
         ranch = c.value(.ranch, Ranch())
+        effects = c.value(.effects, [])
+        stats = c.value(.stats, [:])
+        achievementsClaimed = c.value(.achievementsClaimed, [])
     }
 }
 
@@ -522,7 +530,12 @@ enum ItemCatalog {
 
     /// Berries sell too (not a walking-find valuable, so they're kept out of `sellPrice`'s find table).
     static let berrySellPrice = 20
-    static func price(_ k: String) -> Int? { sellPrice[k] ?? (isBerry(k) ? berrySellPrice : nil) }
+    static func price(_ k: String) -> Int? {
+        if let p = sellPrice[k] ?? FieldItems.sellPrice(k) { return p }
+        if isBerry(k) { return berrySellPrice }
+        if EvolutionShop.isEvolutionItem(k) { return EvolutionShop.price / 2 }      // ₽6,000
+        return nil
+    }
 
     /// Gen 3: bigger boost the less a Pokémon likes you.
     static func berryBoost(_ friendship: Int) -> Int { friendship < 100 ? 10 : friendship < 200 ? 5 : 2 }

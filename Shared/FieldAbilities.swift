@@ -72,7 +72,7 @@ extension OwnedPokemon {
     var abilityName: String? {
         let list = speciesID >= 1 && speciesID <= AbilityData.species.count ? AbilityData.species[speciesID - 1] : []
         guard !list.isEmpty else { return nil }
-        return AbilityData.names[list[Int(personality % 2) % list.count]]
+        return AbilityData.names[list[(Int(personality % 2) + (abilitySwapped ? 1 : 0)) % list.count]]
     }
     var fieldAbility: FieldAbility? { abilityName.flatMap(FieldAbility.of) }
 }

@@ -50,7 +50,8 @@ struct SafariView: View {
 
     init(wild: PendingEncounter, test: Bool = false) {
         var e = SafariEncounter(wild: wild)
-        e.calmerBuddy = !test && GameStore.shared.state.buddyAbility == .calmWild    // Run Away
+        e.calmerBuddy = !test && (GameStore.shared.state.buddyAbility == .calmWild         // Run Away
+                                  || FieldItems.multiplier(.calm, in: GameStore.shared.state) < 1)  // Smoke Ball
         _safari = State(initialValue: e)
         self.test = test
     }

@@ -217,7 +217,7 @@ enum WatchBattles {
         var s = active[id] ?? {
             var e = SafariEncounter(wild: wild)
             e.caughtBefore = store.state.dexCaught.contains(wild.speciesID)
-            e.calmerBuddy = store.state.buddyAbility == .calmWild
+            e.calmerBuddy = store.state.buddyAbility == .calmWild || FieldItems.multiplier(.calm, in: store.state) < 1
             return e
         }()
         var shakes = 0, caught = false

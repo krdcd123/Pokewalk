@@ -284,6 +284,14 @@ struct BagView: View {
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
 
+            // Items working right now (Repel, Energy Root, Lucky Egg…)
+            let effects = store.state.effects.filter { $0.active(at: .now) }
+            if !effects.isEmpty {
+                Section {
+                    ForEach(effects) { e in ActiveEffectRow(effect: e).glassRow() }
+                } header: { Text("In effect") }
+            }
+
             if pocket == .balls {
                 Section {
                     ForEach(BallKind.allCases.filter { $0.isStepBall || store.state.balls[$0, default: 0] > 0 }) { k in
@@ -370,7 +378,7 @@ struct BagView: View {
         switch pocket {
         case .berries: return "Grow more in the Garden: plant one and pick 1–3 a day later. Your party can also pick them up on walks. Throw them in wild encounters so the Pokémon stays longer, or give one to a Pokémon to make it friendlier."
         case .candies: return "Rare Candies raise a level; Exp. Candies give Exp. Each party Pokémon tries to pick something up every 1,500 steps."
-        case .key: return "Key items are never used up."
+        case .key: return "The Fishing Rod is never used up. Evolution items and tickets are used once (evolution items sell for ₽6,000)."
         default: return "An item every \(store.state.settings.itemSteps.formatted()) steps: evolution stones, Link Cables, held items, bitter herbs and valuables to sell. Tap one to use or sell it."
         }
     }
@@ -1042,6 +1050,20 @@ private struct BagItemRow: View {
                         .background(Theme.teal.opacity(0.8), in: Capsule())
                 }
                 .buttonStyle(.plain)
+            } else if expanded, FieldItems.isField(key) {
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    Task {
+                        let r = await store.useFieldItem(key)
+                        if case .nothing = r { return }
+                        SoundKit.shared.play(.useItem)
+                    }
+                } label: {
+                    Text("Use").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity).frame(height: 38)
+                        .background(Theme.teal.opacity(0.8), in: Capsule())
+                }
+                .buttonStyle(.plain)
             } else if expanded, let n = Fishing.lureBerries(key) {
                 Text("Picks the rarest of \(Fishing.lurePicks(berries: n)) wild Pokémon · +\(Fishing.lureLevelBonus(berries: n)) levels")
                     .font(.rounded(12, .heavy)).foregroundStyle(Theme.tealDark)
@@ -1097,7 +1119,10 @@ private struct BagItemRow: View {
             if RanchTickets.isTicket(key) {
                 Button("Use ticket", systemImage: "ticket.fill") { _ = store.useTicket(key) }
             }
-            if !Fishing.isBait(key) && !Fishing.isLure(key) && !RanchTickets.isTicket(key) && ItemCatalog.sellPrice[key] == nil {
+            if FieldItems.isField(key) {
+                Button("Use", systemImage: "sparkles") { Task { _ = await store.useFieldItem(key) } }
+            }
+            if !Fishing.isBait(key) && !Fishing.isLure(key) && !RanchTickets.isTicket(key) && !FieldItems.isField(key) && ItemCatalog.sellPrice[key] == nil {
                 Menu("Use on…", systemImage: "hand.point.up.left.fill") {
                     ForEach(store.state.party) { mon in
                         Button("\(mon.name) · Lv \(mon.level)") { use(on: mon) }
@@ -1481,11 +1506,12 @@ private struct FishingRodRow: View {
 /// Spend Pokédollars from selling valuables on balls (pricier than the games — balls also come free every 100 steps).
 struct ShopView: View {
     enum Section: String, CaseIterable, Identifiable {
-        case balls = "Balls", bait = "Bait & lures", key = "Key items"
+        case balls = "Balls", supplies = "Supplies", bait = "Bait & lures", key = "Key items"
         var id: String { rawValue }
         var icon: String {
             switch self {
             case .balls: return "circle.circle.fill"
+            case .supplies: return "cross.case.fill"
             case .bait: return "fish.fill"
             case .key: return "key.fill"
             }
@@ -1566,6 +1592,37 @@ struct ShopView: View {
             } header: { Text("Balls") }
             }
 
+            if section == .supplies {
+                SwiftUI.Section {
+                    ForEach(FieldItems.shop, id: \.key) { entry in
+                        HStack(spacing: 12) {
+                            ItemSprite(key: entry.key).frame(width: 32, height: 32)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(Dex.itemName(entry.key)).font(.rounded(16, .heavy))
+                                Text(FieldItems.description(entry.key) ?? "").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                                Text("have \(store.state.bag[entry.key] ?? 0)").font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft)
+                            }
+                            Spacer()
+                            Button {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                if store.buyItem(entry.key, price: entry.price) {
+                                    SoundKit.shared.play(.select)
+                                    store.toast = "Bought a \(Dex.itemName(entry.key))!"
+                                }
+                            } label: {
+                                Text("₽\(entry.price.formatted())").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                                    .padding(.horizontal, 12).padding(.vertical, 7)
+                                    .background(Theme.teal.opacity(store.state.money >= entry.price ? 0.85 : 0.3), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(store.state.money < entry.price)
+                        }
+                        .glassRow()
+                    }
+                } footer: {
+                    Text("Use them from your Bag. Herbs work wonders but your buddy hates the taste.")
+                }
+            }
             if section == .key {
             SwiftUI.Section {
                 let owned = (store.state.bag[Fishing.rodKey] ?? 0) > 0
@@ -1749,5 +1806,44 @@ struct SavedSpotSection: View {
         } header: { Text(title) } footer: {
             Text("Stand at \(title.lowercased()) and tap Set. Anywhere within about 120 m counts.")
         }
+    }
+}
+
+
+/// One item effect that's running, with how long it has left.
+struct ActiveEffectRow: View {
+    let effect: ActiveEffect
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { tl in
+            HStack(spacing: 12) {
+                ItemSprite(key: effect.source).frame(width: 30, height: 30)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Dex.itemName(effect.source)).font(.rounded(15, .heavy))
+                    Text(Self.what(effect)).font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                }
+                Spacer()
+                Text(Self.left(effect, now: tl.date)).font(.rounded(13, .heavy)).foregroundStyle(Theme.tealDark).monospacedDigit()
+            }
+        }
+    }
+
+    static func what(_ e: ActiveEffect) -> String {
+        let pct = Int(((e.strength - 1) * 100).rounded())
+        switch e.kind {
+        case .encounters: return pct >= 0 ? "Wild Pokémon +\(pct)%" : "Wild Pokémon \(pct)%"
+        case .items: return "Items +\(pct)%"
+        case .repel: return "No wild Pokémon"
+        case .exp: return "Exp +\(pct)%"
+        case .friendship: return "Friendship ×\(Int(e.strength))"
+        case .money: return "Pokédollars ×\(Int(e.strength))"
+        case .calm: return "Wild Pokémon flee half as often"
+        }
+    }
+
+    static func left(_ e: ActiveEffect, now: Date) -> String {
+        if let s = e.stepsLeft { return "\(max(0, s).formatted()) steps" }
+        guard let end = e.endsAt else { return "" }
+        let t = max(0, Int(end.timeIntervalSince(now)))
+        return t >= 3600 ? "\(t / 3600)h \((t % 3600) / 60)m" : "\(max(1, t / 60))m"
     }
 }

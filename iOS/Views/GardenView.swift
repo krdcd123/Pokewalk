@@ -11,6 +11,7 @@ struct GardenView: View {
     @State private var addingWorker = false
     @State private var ladySays: String?
     @State private var traitsOpen = false
+    @State private var cheers: [UUID: Date] = [:]        // workers tapped in the list: they jump for joy
     @State private var showingBoosts = false
 
     private let scale: CGFloat = 4               // Emerald pixels → points
@@ -181,7 +182,7 @@ struct GardenView: View {
                         }
                     }
                 }
-                WorkersLayer(workers: store.gardenWorkers, iconSize: tile * 1.2)
+                WorkersLayer(workers: store.gardenWorkers, iconSize: tile * 1.2, cheers: cheers)
                     .frame(width: tile * 8, height: tile * 5.6)
                     .offset(x: tile * 2, y: tile * 2.4)
                 boostsBadge(b, tile: tile)
@@ -453,6 +454,12 @@ struct GardenView: View {
             }
             ForEach(list) { mon in
                 HStack(spacing: 10) {
+                    Button {
+                        cheers[mon.id] = .now
+                        CryPlayer.shared.play(mon.speciesID)
+                        Haptics.tap()
+                    } label: {
+                        HStack(spacing: 10) {
                     LocalIcon(speciesID: mon.speciesID, shiny: mon.isShiny).frame(width: 40, height: 40)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("\(mon.name)  Lv. \(mon.level)").font(.rounded(15, .heavy)).foregroundStyle(.white)
@@ -465,7 +472,12 @@ struct GardenView: View {
                             }
                         }
                     }
-                    Spacer()
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Makes it jump in the garden")
                     Button { store.removeGardenWorker(mon.id); SoundKit.shared.play(.select) } label: {
                         Image(systemName: "xmark").font(.system(size: 13, weight: .heavy)).foregroundStyle(.white)
                             .frame(width: 30, height: 30).glassCircle()
@@ -545,10 +557,11 @@ private struct PlantSprite: View {
 private struct WorkersLayer: View {
     let workers: [OwnedPokemon]
     var iconSize: CGFloat = 40
+    var cheers: [UUID: Date] = [:]
     var body: some View {
         GeometryReader { geo in
             ForEach(Array(workers.enumerated()), id: \.element.id) { i, mon in
-                HoppingWorker(mon: mon, area: geo.size, seed: i, size: iconSize)
+                HoppingWorker(mon: mon, area: geo.size, seed: i, size: iconSize, cheer: cheers[mon.id])
             }
         }
         .allowsHitTesting(false)
@@ -560,13 +573,16 @@ private struct HoppingWorker: View {
     let area: CGSize
     let seed: Int
     var size: CGFloat = 40
+    var cheer: Date? = nil
     @State private var pos: CGPoint = .zero
     @State private var facingRight = true
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 20)) { tl in
             let t = tl.date.timeIntervalSince1970 + Double(seed) * 0.37
-            let hop = abs(sin(t * 7)) * size * 0.14
+            // tapped in the Workers list: three big jumps
+            let since = cheer.map { tl.date.timeIntervalSince($0) } ?? 99
+            let hop = since < 1.8 ? abs(sin(since * .pi / 0.6)) * size * 0.9 : abs(sin(t * 7)) * size * 0.14
             LocalIcon(speciesID: mon.speciesID, shiny: mon.isShiny)
                 .frame(width: size, height: size)
                 .scaleEffect(x: facingRight ? -1 : 1, y: 1)

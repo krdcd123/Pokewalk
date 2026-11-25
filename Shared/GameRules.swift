@@ -122,14 +122,16 @@ enum GameRules {
 
         // Buddy: Exp, friendship, steps & distance together
         let ability = s.buddyAbility
-        let buddyExp = Double(steps) * max(0, s.settings.expPerStep) * (ability == .warmth ? 1.15 : 1)
+        let expBoost = FieldItems.multiplier(.exp, in: s, at: date)
+        let friendBoost = Int(FieldItems.multiplier(.friendship, in: s, at: date))
+        let buddyExp = Double(steps) * max(0, s.settings.expPerStep) * (ability == .warmth ? 1.15 : 1) * expBoost
         if let id = s.buddyID, let i = s.index(of: id) {
             var mon = s.pokemon[i]
             out.oldLevel = mon.level
             let gained = grantExp(buddyExp, to: &mon)
             mon.stepsWalked += steps
             mon.metersWalked += max(0, meters)
-            let f = mon.friendshipStepRemainder + steps * (mon.ball == .luxury ? 2 : 1) * (ability == .friendly ? 2 : 1)   // Luxury Ball: twice as fast
+            let f = mon.friendshipStepRemainder + steps * (mon.ball == .luxury ? 2 : 1) * (ability == .friendly ? 2 : 1) * max(1, friendBoost)   // Luxury Ball: twice as fast
             mon.friendship = min(255, mon.friendship + f / 100)
             mon.friendshipStepRemainder = f % 100
             s.pokemon[i] = mon
@@ -162,8 +164,9 @@ enum GameRules {
         }
 
         // Items
-        if case .moreItems(let x) = ability { s.counters.itemProgress += Int((Double(steps) * x).rounded()) }
-        else { s.counters.itemProgress += steps }
+        var itemRate = FieldItems.multiplier(.items, in: s, at: date)
+        if case .moreItems(let x) = ability { itemRate *= x }
+        s.counters.itemProgress += Int((Double(steps) * itemRate).rounded())
         while s.counters.itemProgress >= s.settings.itemSteps {
             s.counters.itemProgress -= s.settings.itemSteps
             let item = rollItem()
@@ -173,6 +176,7 @@ enum GameRules {
                 s.bag[item, default: 0] += 1
             }
             out.itemsFound.append(item)
+            s.stats["itemsFound", default: 0] += 1
         }
 
         // (Berries aren't found on walks any more — they're grown in the Garden, or picked up by your party.)
@@ -211,13 +215,17 @@ enum GameRules {
                 : Pickup.roll(level: mon.level, friendship: mon.friendship)
             s.pokemon[i].heldItems.append(found)
             out.pickedUp.append((pid, found))
+            s.stats["pickups", default: 0] += 1
         }
 
         // Encounters
         logLeft(s.pending.filter { $0.expiresAt < date }, in: &s)
         s.pending.removeAll { $0.expiresAt < date }
-        if case .moreEncounters(let x) = ability { s.counters.encounterProgress += Int((Double(steps) * x).rounded()) }
-        else { s.counters.encounterProgress += steps }
+        // Repel: no encounters at all; herbs, flutes and abilities speed them up (or slow them down)
+        var encRate = FieldItems.repelled(s, at: date) ? 0 : FieldItems.multiplier(.encounters, in: s, at: date)
+        if case .moreEncounters(let x) = ability { encRate *= x }
+        s.counters.encounterProgress += Int((Double(steps) * encRate).rounded())
+        FieldItems.spend(steps: steps, in: &s, at: date)
         while s.counters.encounterProgress >= s.counters.nextEncounterAt {
             s.counters.encounterProgress -= s.counters.nextEncounterAt
             s.counters.nextEncounterAt = rollEncounterGap(s.settings)
@@ -329,8 +337,8 @@ enum GameRules {
             ("fire-stone", 4), ("water-stone", 4), ("thunder-stone", 4), ("leaf-stone", 4), ("moon-stone", 3.5), ("sun-stone", 2),
             ("linking-cord", 0.8),                                 // Link Cable: trade evolutions — rare
         ]
-        // Bitter herbs (berries come from the Garden now, not walks)
-        for k in ItemCatalog.herbs.keys { table.append((k, 2.5)) }
+        // Herbs, Repels, flutes, vitamins, Mints… (berries come from the Garden now, not walks)
+        table += FieldItems.finds
         // Valuables to sell — the cheaper, the more common
         for (k, price) in ItemCatalog.sellPrice { table.append((k, price <= 50 ? 6 : price <= 250 ? 3.5 : price <= 500 ? 1.5 : 0.6)) }
         // Rare balls (Poké/Great/Ultra come every 100 steps instead)
@@ -352,8 +360,10 @@ enum GameRules {
         guard n > 0 else { return 0 }
         s.bag[item, default: 0] -= n
         if s.bag[item] == 0 { s.bag[item] = nil }
-        s.money += n * price
-        return n * price
+        let earned = Int(Double(n * price) * FieldItems.multiplier(.money, in: s))     // Amulet Coin
+        s.money += earned
+        s.stats["itemsSold", default: 0] += n
+        return earned
     }
 
     /// Buys balls. Like the games, every 10 Poké Balls at once comes with a free Premier Ball.
@@ -408,7 +418,13 @@ enum GameRules {
 
     /// Whether using `item` on `mon` would do anything (the games' "ABLE / NOT ABLE").
     static func canUse(_ item: String, on mon: OwnedPokemon, at date: Date = .now) -> Bool {
-        if item == "rare-candy" || ExpCandy.exp(item) != nil { return mon.level < GrowthRate.maxLevel }
+        if item == "rare-candy" || ExpCandy.exp(item) != nil || FieldItems.vitamins.contains(item) { return mon.level < GrowthRate.maxLevel }
+        if let n = FieldItems.mintNature(item) { return mon.nature != n }
+        if item == FieldItems.abilityCapsule {
+            let list = mon.speciesID <= AbilityData.species.count ? AbilityData.species[mon.speciesID - 1] : []
+            return Set(list).count > 1
+        }
+        if FieldItems.isField(item) { return false }
         if ItemCatalog.isBerry(item) { return mon.friendship < 255 }
         if ItemCatalog.herbs[item] != nil { return mon.friendship > 0 }
         if ItemCatalog.sellPrice[item] != nil { return false }
@@ -418,6 +434,7 @@ enum GameRules {
     /// One line for the Bag explaining what an item does in PokéWalk.
     static func itemDescription(_ item: String) -> String {
         if let t = RanchTickets.ticket(item) { return t.text }
+        if let d = FieldItems.description(item) { return d }
         if item == "rare-candy" { return "Raises a Pokémon by one level." }
         if let exp = ExpCandy.exp(item) { return "Gives a Pokémon \(exp.formatted()) Exp." }
         if ItemCatalog.isBerry(item) { return "Makes a Pokémon more friendly (more so if it doesn't like you much yet)." }
@@ -432,7 +449,7 @@ enum GameRules {
         }
         guard !users.isEmpty else { return "No use in PokéWalk yet." }
         let how = item == "linking-cord" ? "Trade-evolves" : (item.hasSuffix("-stone") ? "Evolves" : "Trade-evolves (held item)")
-        return "\(how): " + users.joined(separator: ", ")
+        return "Single use. \(how): " + users.joined(separator: ", ") + ". Sells for ₽\(EvolutionShop.price / 2)."
     }
 
     static func itemEvolution(for mon: OwnedPokemon, item: String, at date: Date = .now) -> Int? {
@@ -452,6 +469,7 @@ enum GameRules {
         s.pokemon[i].speciesID = newSpecies
         s.pokemon[i].evolutionDeclinedAtLevel = nil
         s.pokemon[i].evolvedOn = date
+        s.stats["evolutions", default: 0] += 1
         s.dexSeen.insert(newSpecies)
         s.dexCaught.insert(newSpecies)
 
@@ -487,6 +505,21 @@ enum GameRules {
             mon.exp = growth.exp(forLevel: mon.level + 1)
             mon.friendship = min(255, mon.friendship + 3)
             outcome = .leveled(mon.level)
+        case _ where FieldItems.vitamins.contains(item):
+            guard mon.level < GrowthRate.maxLevel else { return .noEffect }
+            mon.exp = min(mon.exp + FieldItems.vitaminExp, growth.maxExp)
+            mon.friendship = min(255, mon.friendship + 2)
+            outcome = .leveled(mon.level)
+        case _ where FieldItems.mintNature(item) != nil:
+            guard let n = FieldItems.mintNature(item), mon.nature != n else { return .noEffect }
+            mon.nature = n
+            outcome = .friendship(up: true)
+        case FieldItems.abilityCapsule:
+            guard canUse(item, on: mon) else { return .noEffect }
+            mon.abilitySwapped.toggle()
+            outcome = .friendship(up: true)
+        case _ where FieldItems.isField(item):
+            return .noEffect
         case _ where ItemCatalog.isBerry(item):
             guard mon.friendship < 255 else { return .noEffect }
             mon.friendship = min(255, mon.friendship + ItemCatalog.berryBoost(mon.friendship))
@@ -508,6 +541,7 @@ enum GameRules {
         s.pokemon[i] = mon
         s.bag[item, default: 0] -= 1
         if s.bag[item] == 0 { s.bag[item] = nil }
+        s.stats["itemsUsed", default: 0] += 1
         return outcome
     }
 
