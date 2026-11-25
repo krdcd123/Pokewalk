@@ -152,7 +152,7 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
         if let list = try? JSONDecoder().decode([WatchSleepSample].self, from: data) {
             Task { @MainActor in
                 WatchSleepStore.save(list)
-                await GameStore.shared.checkPopups(forceSleep: true)
+                await GameStore.shared.sleepArrived()
             }
         }
         return true

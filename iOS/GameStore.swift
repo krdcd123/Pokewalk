@@ -253,11 +253,13 @@ final class GameStore: ObservableObject {
         // Your watch saves last night's sleep a little after you wake: show the morning card as soon as it lands
         let sl = HKObserverQuery(sampleType: HKCategoryType(.sleepAnalysis), predicate: nil) { _, completion, _ in
             Task { @MainActor in
-                await GameStore.shared.checkPopups(forceSleep: true)
+                await GameStore.shared.sleepArrived()
                 completion()
             }
         }
         hk.store.execute(sl)
+        // wake PokéWalk the moment new sleep lands in Health, even in the background
+        hk.store.enableBackgroundDelivery(for: HKCategoryType(.sleepAnalysis), frequency: .immediate) { _, _ in }
     }
 
     /// Today's active calories from Apple Health (workouts included) → ₽1 per 10 kcal, only new ones pay.
@@ -730,6 +732,26 @@ final class GameStore: ObservableObject {
     /// Everything that can pop up: today's stamp (from 7am), evolutions, workouts, the morning sleep card,
     /// and sleep listening. Runs when the app opens and then every 30 seconds while it's on screen,
     /// so nothing waits for the app to be closed and reopened.
+    /// New sleep from the watch / Apple Health. App open → the morning card straight away. In the background →
+    /// a "Good morning" notification at once (tap it and the card is waiting).
+    func sleepArrived() async {
+        if UIApplication.State.current == .active { await checkPopups(forceSleep: true); return }
+        guard hasGame else { return }
+        await SleepService.shared.refresh(showPopup: false)
+        guard let n = SleepService.shared.lastNight else { return }
+        let day = Int(n.day.timeIntervalSince1970)
+        let since = Date().timeIntervalSince(n.wake)
+        let hour = Calendar.current.component(.hour, from: .now)
+        let wait: TimeInterval = n.source == "Apple Watch" ? 0 : 10 * 60
+        guard since >= wait, since < 14 * 3600, hour >= 5,
+              !UserDefaults.standard.bool(forKey: "sleepShown-\(day)"),
+              !UserDefaults.standard.bool(forKey: "sleepNotified-\(day)") else { return }
+        UserDefaults.standard.set(true, forKey: "sleepNotified-\(day)")
+        notify(title: "Good morning! ☀️",
+               body: "You slept \(SleepFormat.hm(n.asleep)) (\(SleepFormat.time(n.bedtime))–\(SleepFormat.time(n.wake))). Tap to see last night.",
+               id: "sleep-\(day)")
+    }
+
     /// Last time sleep was re-read (it reads Health + a week of motion data, so not every 30 s).
     private var lastSleepRefresh = Date.distantPast
 
