@@ -92,6 +92,8 @@ struct RanchView: View {
                 ZStack(alignment: .topLeading) {
                     if let t = gfx.outdoors {
                         PixelImageView(image: RanchMap.image(t, built: r.built)).frame(width: geo.size.width, height: geo.size.height)
+                            .blur(radius: store.ranchShiftRunning ? 6 : 0)
+                            .overlay(Color.black.opacity(store.ranchShiftRunning ? 0.15 : 0))
                     } else {
                         Color(red: 0.45, green: 0.77, blue: 0.64)
                         ProgressView().tint(.white).frame(width: geo.size.width, height: geo.size.height)
@@ -113,6 +115,10 @@ struct RanchView: View {
                         WorkersHop(workers: store.ranchWorkers, iconSize: tile * 1.2)
                             .frame(width: tile * 10, height: tile * 5)
                             .offset(x: tile * 2, y: tile * 3.5)
+                    } else {
+                        // Out on shift: the ranch goes soft and the team shows in the middle
+                        OnShiftBadges(workers: store.ranchWorkers, end: r.shiftEnd ?? .now, size: min(tile * 2.6, geo.size.width / 4.2))
+                            .frame(width: geo.size.width, height: geo.size.height)
                     }
                 }
             }
@@ -480,6 +486,43 @@ enum RanchMap {
         case 7: return CGPoint(x: tile * 4.5, y: tile * 7.5)
         default: return CGPoint(x: tile * 7, y: tile * 5)
         }
+    }
+}
+
+/// The ranchers on shift: their box sprites hopping in glass circles, with the time left.
+private struct OnShiftBadges: View {
+    let workers: [OwnedPokemon]
+    let end: Date
+    let size: CGFloat
+
+    var body: some View {
+        let rows = workers.count > 3 ? [Array(workers.prefix((workers.count + 1) / 2)), Array(workers.dropFirst((workers.count + 1) / 2))]
+                                     : [workers]
+        TimelineView(.animation(minimumInterval: 1 / 20)) { tl in
+            let t = tl.date.timeIntervalSince1970
+            VStack(spacing: size * 0.18) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    HStack(spacing: size * 0.22) {
+                        ForEach(Array(row.enumerated()), id: \.element.id) { i, mon in
+                            let seed = Double(workers.firstIndex(of: mon) ?? i) * 0.45
+                            LocalIcon(speciesID: mon.speciesID, shiny: mon.isShiny)
+                                .frame(width: size * 0.78, height: size * 0.78)
+                                .offset(y: -abs(sin((t + seed) * 6)) * size * 0.1 + size * 0.04)
+                                .frame(width: size, height: size)
+                                .glassCircle(interactive: false)
+                                .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+                        }
+                    }
+                }
+                let left = max(0, end.timeIntervalSince(tl.date))
+                Label(left > 0 ? "On shift · \(RanchView.countdown(left))" : "Back from their shift!",
+                      systemImage: left > 0 ? "figure.walk" : "basket.fill")
+                    .font(.rounded(13, .heavy)).foregroundStyle(.white).monospacedDigit()
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .glassCapsule()
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 
