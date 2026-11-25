@@ -7,6 +7,9 @@ struct GardenPlot: Codable, Equatable, Identifiable, Hashable {
     var id: Int
     var berry: String?          // item key, e.g. "pomeg-berry"
     var plantedAt: Date?
+    /// Its own grow time, fixed when it was planted (so every plant has its own timer, and changing your
+    /// workers only speeds up what you plant next).
+    var growHours: Double?
 }
 
 struct Garden: Codable, Equatable, Hashable {
@@ -192,14 +195,16 @@ enum GardenRules {
 
     static func hoursToGrow(_ b: GardenBonuses) -> Double { Garden.growHours / b.growthSpeed }
 
+    static func hours(_ plot: GardenPlot, _ b: GardenBonuses) -> Double { plot.growHours ?? hoursToGrow(b) }
+
     static func progress(_ plot: GardenPlot, bonuses b: GardenBonuses, now: Date = .now) -> Double {
         guard let t = plot.plantedAt, plot.berry != nil else { return 0 }
-        return now.timeIntervalSince(t) / (hoursToGrow(b) * 3600)
+        return now.timeIntervalSince(t) / (hours(plot, b) * 3600)
     }
 
     static func readyAt(_ plot: GardenPlot, bonuses b: GardenBonuses) -> Date? {
         guard let t = plot.plantedAt, plot.berry != nil else { return nil }
-        return t.addingTimeInterval(hoursToGrow(b) * 3600)
+        return t.addingTimeInterval(hours(plot, b) * 3600)
     }
 
     /// 1–3 berries, plus the Rainmakers' extras.

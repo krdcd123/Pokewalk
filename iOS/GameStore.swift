@@ -1191,6 +1191,7 @@ extension GameStore {
     @discardableResult
     func plant(_ berry: String, in plotID: Int) -> Bool {
         guard (state.bag[berry] ?? 0) > 0, gardenPlotOpen(plotID) else { return false }
+        let hours = GardenRules.hoursToGrow(gardenBonuses)
         var ok = false
         mutate { s in
             ensurePlots(&s)
@@ -1199,6 +1200,7 @@ extension GameStore {
             if s.bag[berry] == 0 { s.bag[berry] = nil }
             s.garden.plots[i].berry = berry
             s.garden.plots[i].plantedAt = .now
+            s.garden.plots[i].growHours = hours
             ok = true
         }
         if ok { rescheduleGardenNotifications() }
@@ -1224,6 +1226,7 @@ extension GameStore {
             if let bonus { s.bag[bonus, default: 0] += 1 }
             s.garden.plots[i].berry = replant ? berry : nil
             s.garden.plots[i].plantedAt = replant ? .now : nil
+            s.garden.plots[i].growHours = replant ? GardenRules.hoursToGrow(b) : nil
             s.garden.harvests += 1
             for id in workerIDs {
                 guard let m = s.index(of: id) else { continue }
@@ -1237,7 +1240,9 @@ extension GameStore {
     func addGardenWorker(_ id: UUID) {
         guard !state.partyIDs.contains(id), gardenWorkers.count < Garden.maxWorkers,
               !state.garden.workers.contains(id) else { return }
+        let h = GardenRules.hoursToGrow(gardenBonuses)
         mutate { s in
+            Self.fixTimers(&s, hours: h)
             s.garden.workers = s.garden.workers.filter { w in !s.partyIDs.contains(w) && s.index(of: w) != nil }
             s.garden.workers.append(id)
         }
@@ -1245,8 +1250,19 @@ extension GameStore {
     }
 
     func removeGardenWorker(_ id: UUID) {
-        mutate { $0.garden.workers.removeAll { $0 == id } }
+        let h = GardenRules.hoursToGrow(gardenBonuses)
+        mutate { s in
+            Self.fixTimers(&s, hours: h)
+            s.garden.workers.removeAll { $0 == id }
+        }
         rescheduleGardenNotifications()
+    }
+
+    /// Plants from before each one kept its own timer: fix theirs now, so changing workers doesn't move them.
+    private static func fixTimers(_ s: inout GameState, hours: Double) {
+        for i in s.garden.plots.indices where s.garden.plots[i].berry != nil && s.garden.plots[i].growHours == nil {
+            s.garden.plots[i].growHours = hours
+        }
     }
 
     /// The Aroma Lady's present: one berry a day.
