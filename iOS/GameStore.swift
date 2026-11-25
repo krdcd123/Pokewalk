@@ -450,13 +450,17 @@ final class GameStore: ObservableObject {
         for enc in o.newEncounters {
             if background && state.settings.notifyEncounters {
                 let place = enc.location?.placeName.map { " near \($0)" } ?? ""
-                notify(title: "A wild \(enc.species.name) appeared!\(enc.isShiny ? " ✨" : "")",
+                // Only named (with its picture) if you've caught that species before; otherwise it's a mystery
+                let known = state.dexCaught.contains(enc.speciesID)
+                notify(title: "A wild \(known ? enc.species.name : "???") appeared!\(enc.isShiny ? " ✨" : "")",
                        body: "Lv. \(enc.level)\(place). Tap to throw a ball.",
-                       id: enc.id.uuidString, category: "encounter", icon: (enc.speciesID, enc.isShiny))
+                       id: enc.id.uuidString, category: "encounter",
+                       icon: known ? (enc.speciesID, enc.isShiny) : nil)
             }
         }
         if !o.newEncounters.isEmpty && !background {
-            lines.append(o.newEncounters.count == 1 ? "A wild \(o.newEncounters[0].species.name) appeared!"
+            lines.append(o.newEncounters.count == 1
+                         ? "A wild \(state.dexCaught.contains(o.newEncounters[0].speciesID) ? o.newEncounters[0].species.name : "???") appeared!"
                                                     : "\(o.newEncounters.count) wild Pokémon appeared!")
         }
         if background, !lines.isEmpty, o.newEncounters.isEmpty {
