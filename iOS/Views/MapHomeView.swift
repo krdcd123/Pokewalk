@@ -106,34 +106,34 @@ struct MapHomeView: View {
                             }
                         }
                         Spacer()
-                        Button { withAnimation(.snappy) { showCaught.toggle() } } label: {
-                            Image(systemName: showCaught ? "eye.fill" : "eye.slash.fill")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundStyle(.white)
-                                .contentTransition(.symbolEffect(.replace))
-                                .frame(width: 48, height: 48)
-                                .contentShape(Circle())
-                                .glassCircle(tint: showCaught ? Theme.orange : nil)
-                                .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
+                        // Eye and location buttons stay together at the top right, whatever's on the left
+                        VStack(spacing: 10) {
+                            Button { withAnimation(.snappy) { showCaught.toggle() } } label: {
+                                Image(systemName: showCaught ? "eye.fill" : "eye.slash.fill")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .contentTransition(.symbolEffect(.replace))
+                                    .frame(width: 48, height: 48)
+                                    .contentShape(Circle())
+                                    .glassCircle(tint: showCaught ? Theme.orange : nil)
+                                    .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(showCaught ? "Hide caught Pokémon" : "Show caught Pokémon")
+                            Button {
+                                followMe()
+                            } label: {
+                                Image(systemName: following ? "location.fill" : "location")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 48, height: 48)
+                                    .contentShape(Circle())
+                                    .glassCircle(tint: following ? Theme.teal : nil)
+                                    .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Centre on my location")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(showCaught ? "Hide caught Pokémon" : "Show caught Pokémon")
-                    }
-                    HStack {
-                        Spacer()
-                        Button {
-                            followMe()
-                        } label: {
-                            Image(systemName: following ? "location.fill" : "location")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 48, height: 48)
-                                .contentShape(Circle())
-                                .glassCircle(tint: following ? Theme.teal : nil)
-                                .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Centre on my location")
                     }
                     Spacer()
                     bottomBar
