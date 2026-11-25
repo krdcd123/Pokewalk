@@ -200,21 +200,25 @@ struct BattleView: View {
 
     // Spots on Emerald's 240×112 battle scene
     private static let foeFeet = CGPoint(x: 176, y: 62)
-    private static let myFeet = CGPoint(x: 64, y: 118)
+    private static let myFeet = CGPoint(x: 64, y: 112)
     private static let foeTrainerCentre = CGPoint(x: 176, y: 40)
-    private static let playerCentre = CGPoint(x: 80, y: 96)
+    private static let playerCentre = CGPoint(x: 78, y: 79)     // whole sprite above the scene's bottom edge
 
     var body: some View {
         GeometryReader { geo in
-            let s = geo.size.width / 240
+            let sceneW = geo.size.width - 20
+            let s = sceneW / 240
             ZStack(alignment: .top) {
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
+                    // Emerald's scene in a glass frame
                     battleScene(s)
-                        .frame(width: geo.size.width, height: 112 * s)
-                        .clipped()
-                        .overlay(alignment: .bottom) {
-                            LinearGradient(colors: [.clear, .black.opacity(0.18)], startPoint: .top, endPoint: .bottom).frame(height: 10)
-                        }
+                        .frame(width: sceneW, height: 112 * s)
+                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .padding(4)
+                        .glassCard(26)
+                        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(.white.opacity(0.35), lineWidth: 1))
+                        .shadow(color: .black.opacity(0.35), radius: 14, y: 6)
+                        .padding(.top, 6)
                     VStack(spacing: 10) {
                         Text(text).font(.rounded(17, .heavy)).foregroundStyle(.white)
                             .frame(maxWidth: .infinity, minHeight: 68, alignment: .topLeading)
@@ -252,13 +256,14 @@ struct BattleView: View {
     /// The whole screen behind the glass: Emerald's scene, blown up and blurred.
     private var backdrop: some View {
         // overlays don't change the size, so the stretched image can't push the layout wider than the screen
+        // Where you are, low and blurred (like wild battles), tinted with the Frontier's teal and orange
         Color(hex: 0x24414A)
+            .overlay { LocationBackdrop(fallback: nil) }
             .overlay {
-                if let scene {
-                    Image(uiImage: scene).resizable().scaledToFill().blur(radius: 26).opacity(0.55)
-                }
+                LinearGradient(colors: [Color(hex: 0x2E6F86).opacity(0.35), .clear, Color(hex: 0xE0703A).opacity(0.25)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
             }
-            .overlay { LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom) }
+            .overlay { LinearGradient(colors: [.clear, .clear, .black.opacity(0.5)], startPoint: .top, endPoint: .bottom) }
             .clipped()
     }
 
