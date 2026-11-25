@@ -508,6 +508,13 @@ final class GameStore: ObservableObject {
         markOpened(enc.id)
     }
 
+    /// Ball Fetch: after a ball misses, the buddy sometimes brings it back.
+    func ballFetch(_ kind: BallKind) {
+        guard state.buddyAbility == .ballFetch, Double.random(in: 0..<1) < 0.3, let b = state.buddy else { return }
+        mutate { $0.balls[kind, default: 0] += 1 }
+        toast = "\(b.name) fetched your \(kind.name) back!"
+    }
+
     func useBall(_ kind: BallKind) -> Bool {
         guard state.balls[kind, default: 0] > 0 else { return false }
         mutate { $0.balls[kind, default: 0] -= 1 }

@@ -217,6 +217,7 @@ enum WatchBattles {
         var s = active[id] ?? {
             var e = SafariEncounter(wild: wild)
             e.caughtBefore = store.state.dexCaught.contains(wild.speciesID)
+            e.calmerBuddy = store.state.buddyAbility == .calmWild
             return e
         }()
         var shakes = 0, caught = false
@@ -226,6 +227,7 @@ enum WatchBattles {
             let kind = BallKind(rawValue: m["ball"] as? String ?? "") ?? .poke
             guard store.useBall(kind) else { return reply("No \(kind.name)s left!", ended: false) }
             let r = s.throwBall(kind)
+            if !r.caught { store.ballFetch(kind) }
             shakes = r.shakes; caught = r.caught
         case "berry":
             let owned = ItemCatalog.berries.filter { (store.state.bag[$0] ?? 0) > 0 }

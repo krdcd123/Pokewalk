@@ -49,7 +49,9 @@ struct SafariView: View {
     let test: Bool
 
     init(wild: PendingEncounter, test: Bool = false) {
-        _safari = State(initialValue: SafariEncounter(wild: wild))
+        var e = SafariEncounter(wild: wild)
+        e.calmerBuddy = !test && GameStore.shared.state.buddyAbility == .calmWild    // Run Away
+        _safari = State(initialValue: e)
         self.test = test
     }
 
@@ -497,6 +499,7 @@ struct SafariView: View {
             flight = nil
 
             let result = safari.throwBall(ball, quality: nil)
+            if !result.caught && !test { store.ballFetch(ball) }
 
             // 2. It hits: the ball pops open, the Pokémon is pulled in with a flash, then it snaps shut
             SoundKit.shared.play(.ballOpen)

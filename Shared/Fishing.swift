@@ -101,13 +101,19 @@ enum Fishing {
 
     /// Casts with a bait: uses it up and starts the 20-minute cooldown, then maybe hooks something.
     static func cast(bait key: String, in s: inout GameState, location: MetLocation?, now: Date = .now) -> Result {
-        guard (s.bag[rodKey] ?? 0) > 0, let n = baitBerries(key), (s.bag[key] ?? 0) > 0,
-              cooldownLeft(s, now: now) == 0 else { return .notReady }
-        s.bag[key, default: 0] -= 1
-        if s.bag[key] == 0 { s.bag[key] = nil }
+        // Suction Cups: cast with no bait at all (key "")
+        let noBait = key.isEmpty && s.buddyAbility == .fishWithoutBait
+        guard (s.bag[rodKey] ?? 0) > 0, cooldownLeft(s, now: now) == 0,
+              noBait || ((s.bag[key] ?? 0) > 0 && baitBerries(key) != nil) else { return .notReady }
+        let n = noBait ? 0 : baitBerries(key)!
+        if !noBait {
+            s.bag[key, default: 0] -= 1
+            if s.bag[key] == 0 { s.bag[key] = nil }
+        }
         s.lastFishedAt = now
         // No nibble: the bait's gone, but you can cast again straight away
-        guard Double.random(in: 0..<1) < biteChance(berries: n) else { s.lastFishedAt = nil; return .nothing }
+        let bite = min(1, biteChance(berries: n) * (noBait ? 0.6 : 1) + (s.buddyAbility == .betterBites ? 0.15 : 0))
+        guard Double.random(in: 0..<1) < bite else { s.lastFishedAt = nil; return .nothing }
 
         let tiers = [common, uncommon, rare].map { $0.filter { $0 <= Dex.count } }
         let tier = GameRules.weightedPick(Array(zip([0, 1, 2], tierWeights(berries: n))).filter { !tiers[$0.0].isEmpty })

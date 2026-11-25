@@ -121,14 +121,15 @@ enum GameRules {
         s.lifetimeSteps += steps
 
         // Buddy: Exp, friendship, steps & distance together
-        let buddyExp = Double(steps) * max(0, s.settings.expPerStep)
+        let ability = s.buddyAbility
+        let buddyExp = Double(steps) * max(0, s.settings.expPerStep) * (ability == .warmth ? 1.15 : 1)
         if let id = s.buddyID, let i = s.index(of: id) {
             var mon = s.pokemon[i]
             out.oldLevel = mon.level
             let gained = grantExp(buddyExp, to: &mon)
             mon.stepsWalked += steps
             mon.metersWalked += max(0, meters)
-            let f = mon.friendshipStepRemainder + steps * (mon.ball == .luxury ? 2 : 1)   // Luxury Ball: twice as fast
+            let f = mon.friendshipStepRemainder + steps * (mon.ball == .luxury ? 2 : 1) * (ability == .friendly ? 2 : 1)   // Luxury Ball: twice as fast
             mon.friendship = min(255, mon.friendship + f / 100)
             mon.friendshipStepRemainder = f % 100
             s.pokemon[i] = mon
@@ -161,7 +162,8 @@ enum GameRules {
         }
 
         // Items
-        s.counters.itemProgress += steps
+        if case .moreItems(let x) = ability { s.counters.itemProgress += Int((Double(steps) * x).rounded()) }
+        else { s.counters.itemProgress += steps }
         while s.counters.itemProgress >= s.settings.itemSteps {
             s.counters.itemProgress -= s.settings.itemSteps
             let item = rollItem()
@@ -198,12 +200,15 @@ enum GameRules {
             guard s.pokemon[i].pickupSteps >= s.pokemon[i].nextPickupAt else { continue }
             s.pokemon[i].pickupSteps = 0
             let mon = s.pokemon[i]
-            guard Double.random(in: 0..<1) < Pickup.chance(friendship: mon.friendship) else {
+            let bonus = pid == s.buddyID && (ability == .betterPickup || ability == .honeyGather) ? 0.10 : 0
+            guard Double.random(in: 0..<1) < Pickup.chance(friendship: mon.friendship) + bonus else {
                 s.pokemon[i].nextPickupAt = Pickup.retryAfterMiss
                 continue
             }
             s.pokemon[i].nextPickupAt = Pickup.every
-            let found = Pickup.roll(level: mon.level, friendship: mon.friendship)
+            let found = pid == s.buddyID && ability == .honeyGather && Double.random(in: 0..<1) < 0.5
+                ? ItemCatalog.berries.randomElement()!
+                : Pickup.roll(level: mon.level, friendship: mon.friendship)
             s.pokemon[i].heldItems.append(found)
             out.pickedUp.append((pid, found))
         }
@@ -211,11 +216,13 @@ enum GameRules {
         // Encounters
         logLeft(s.pending.filter { $0.expiresAt < date }, in: &s)
         s.pending.removeAll { $0.expiresAt < date }
-        s.counters.encounterProgress += steps
+        if case .moreEncounters(let x) = ability { s.counters.encounterProgress += Int((Double(steps) * x).rounded()) }
+        else { s.counters.encounterProgress += steps }
         while s.counters.encounterProgress >= s.counters.nextEncounterAt {
             s.counters.encounterProgress -= s.counters.nextEncounterAt
             s.counters.nextEncounterAt = rollEncounterGap(s.settings)
-            let enc = generateEncounter(context: context, lifetimeSteps: s.lifetimeSteps, settings: s.settings, at: date)
+            var enc = generateEncounter(context: context, lifetimeSteps: s.lifetimeSteps, settings: s.settings, at: date)
+            applyBuddyAbility(to: &enc, in: s, context: context, date: date)
             if s.pending.count >= s.settings.maxPendingEncounters {
                 logLeft([s.pending[0]], in: &s)
                 s.pending.removeFirst()
@@ -228,6 +235,31 @@ enum GameRules {
     }
 
     // MARK: Wild encounters
+
+    /// The buddy's ability nudging a new wild Pokémon (as Synchronize, Cute Charm, Magnet Pull… do in the games).
+    static func applyBuddyAbility(to enc: inout PendingEncounter, in s: GameState, context: EncounterContext, date: Date) {
+        guard let buddy = s.buddy, let a = buddy.fieldAbility else { return }
+        switch a {
+        case .attractsType(let t):
+            // half the time, look a few more times for one of that type
+            if !enc.species.types.contains(t), Double.random(in: 0..<1) < 0.5 {
+                for _ in 0..<8 {
+                    let e = generateEncounter(context: context, lifetimeSteps: s.lifetimeSteps, settings: s.settings, at: date)
+                    if e.species.types.contains(t) { enc = e; break }
+                }
+            }
+        case .synchronize:
+            if Double.random(in: 0..<1) < 0.5 { enc.nature = buddy.nature }
+        case .cuteCharm:
+            let opposite: Gender? = buddy.gender == .male ? .female : buddy.gender == .female ? .male : nil
+            if let opposite, enc.species.genderRate > 0, enc.species.genderRate < 8, Double.random(in: 0..<1) < 0.66 {
+                enc.gender = opposite
+            }
+        case .higherLevels(let n):
+            enc.level = min(100, enc.level + Int.random(in: 1...n))
+        default: break
+        }
+    }
 
     /// Chance that any single encounter is a legendary or mythical Pokémon (0.01%).
     static let legendaryChance = 0.0001
@@ -687,7 +719,8 @@ struct SafariEncounter {
     }
 
     /// While it's eating a berry it's much calmer.
-    var fleeChance: Double { baseFleeChance * (baitTurns > 0 ? 0.35 : 1) }
+    var fleeChance: Double { baseFleeChance * (baitTurns > 0 ? 0.35 : 1) * (calmerBuddy ? 0.5 : 1) }
+    var calmerBuddy = false          // buddy has Run Away
 
     /// Modified catch rate "a" from the Gen 3/4 formula at full HP.
     func modifiedRate(ball: BallKind, quality: Double?) -> Double {

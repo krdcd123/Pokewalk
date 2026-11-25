@@ -57,6 +57,12 @@ struct SummaryView: View {
                         row("Met", "\(mon.metDate.formatted(date: .abbreviated, time: .omitted)) at Lv \(mon.metLevel)")
                         row("Caught in", mon.ball.name)
                         row("Nature", mon.nature)
+                        if let ab = mon.abilityName {
+                            row("Ability", ab)
+                            if let f = mon.fieldAbility {
+                                row(mon.id == store.state.buddyID ? "As your buddy (active)" : "As your buddy", f.text)
+                            }
+                        }
                         row("Characteristic", mon.characteristic)
                         row("Friendship", friendshipText(mon.friendship))
                         row("Steps walked", mon.stepsWalked.formatted())

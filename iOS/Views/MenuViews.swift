@@ -1408,12 +1408,26 @@ private struct FishingRodRow: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(Fishing.rodName).font(.rounded(16, .heavy))
                         Text(casting ? "…" : wait > 0 ? "Ready again in \(Self.mmss(wait))"
-                             : baits.isEmpty ? "No bait — make some in the Berries pocket" : "Ready to cast")
+                             : baits.isEmpty && !suction ? "No bait — make some in the Berries pocket" : "Ready to cast")
                             .font(.rounded(12, .heavy))
                             .foregroundStyle(wait > 0 || baits.isEmpty ? Theme.inkSoft : Theme.tealDark)
                             .monospacedDigit()
                     }
                     Spacer()
+                }
+                // Suction Cups buddy: fish with no bait at all (fewer bites)
+                if wait == 0 && suction && !casting {
+                    Button { cast("") } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "hand.raised.fill").frame(width: 26, height: 26)
+                            Text("Cast without bait (\(store.state.buddy?.name ?? "buddy")'s Suction Cups)").font(.rounded(14, .heavy))
+                            Spacer()
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 8)
+                        .background(Theme.teal.opacity(0.25), in: RoundedRectangle(cornerRadius: 12))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
                 if wait == 0 && !baits.isEmpty && !casting {
                     ForEach(baits, id: \.self) { key in
@@ -1434,6 +1448,8 @@ private struct FishingRodRow: View {
             }
         }
     }
+
+    private var suction: Bool { store.state.buddyAbility == .fishWithoutBait }
 
     private func cast(_ bait: String) {
         casting = true
