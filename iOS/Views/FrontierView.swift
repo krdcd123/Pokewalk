@@ -208,7 +208,6 @@ struct BattleView: View {
         GeometryReader { geo in
             let s = geo.size.width / 240
             ZStack(alignment: .top) {
-                backdrop.ignoresSafeArea()
                 VStack(spacing: 10) {
                     battleScene(s)
                         .frame(width: geo.size.width, height: 112 * s)
@@ -229,9 +228,11 @@ struct BattleView: View {
                     }
                     .padding(.horizontal, 14)
                 }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
                 ConfettiRain(start: confetti).allowsHitTesting(false).ignoresSafeArea()
             }
         }
+        .background { backdrop.ignoresSafeArea() }
         .task { await begin() }
         .task(id: foes.indices.contains(foe) ? foes[foe].speciesID : 0) {
             guard foes.indices.contains(foe) else { return }
@@ -250,13 +251,15 @@ struct BattleView: View {
 
     /// The whole screen behind the glass: Emerald's scene, blown up and blurred.
     private var backdrop: some View {
-        ZStack {
-            Color(hex: 0x24414A)
-            if let scene {
-                Image(uiImage: scene).resizable().scaledToFill().blur(radius: 26).opacity(0.55)
+        // overlays don't change the size, so the stretched image can't push the layout wider than the screen
+        Color(hex: 0x24414A)
+            .overlay {
+                if let scene {
+                    Image(uiImage: scene).resizable().scaledToFill().blur(radius: 26).opacity(0.55)
+                }
             }
-            LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
-        }
+            .overlay { LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom) }
+            .clipped()
     }
 
     // MARK: Scene
