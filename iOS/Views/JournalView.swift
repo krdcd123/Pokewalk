@@ -119,8 +119,7 @@ struct JournalView: View {
                     Group {
                     if Calendar.current.isDateInToday(day) {
                         SleepSection(day: SleepService.shared.lastNight?.day
-                                        ?? Calendar.current.date(byAdding: .day, value: -1, to: day) ?? day,
-                                     showRecorder: true)
+                                        ?? Calendar.current.date(byAdding: .day, value: -1, to: day) ?? day)
                     } else {
                         SleepSection(day: day)
                     }

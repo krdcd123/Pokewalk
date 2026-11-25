@@ -1,7 +1,6 @@
 import Foundation
 import UIKit
 import HealthKit
-import AVFoundation
 import CoreMotion
 
 // MARK: - Sleep from Apple Health
@@ -76,20 +75,27 @@ final class SleepService: ObservableObject {
     func healthNight(for day: Date) async -> SleepNight? {
         let start = Calendar.current.startOfDay(for: day).addingTimeInterval(15 * 3600)
         let end = start.addingTimeInterval(24 * 3600)
-        let samples = await sleepSamples(from: start, to: end)
+        var samples = await sleepSamples(from: start, to: end).map {
+            WatchSleepSample(value: $0.value, start: $0.startDate, end: $0.endDate, source: $0.sourceRevision.source.bundleIdentifier)
+        }
+        // The watch sends its sleep straight to PokéWalk when you wake (Apple Health on the iPhone can take a
+        // while to get it from the watch). Use that until — or as well as — Health has it.
+        let fromWatch = WatchSleepStore.samples(from: start, to: end)
+        let stagedValues: [HKCategoryValueSleepAnalysis] = [.asleepCore, .asleepDeep, .asleepREM]
+        func isStaged(_ x: WatchSleepSample) -> Bool { HKCategoryValueSleepAnalysis(rawValue: x.value).map { stagedValues.contains($0) } ?? false }
+        if !fromWatch.isEmpty && !samples.contains(where: isStaged) { samples = fromWatch }
         guard !samples.isEmpty else { return nil }
 
         // Prefer the Apple Watch's staged sleep when there is any; otherwise use whatever recorded sleep.
-        let stagedValues: [HKCategoryValueSleepAnalysis] = [.asleepCore, .asleepDeep, .asleepREM]
-        let staged = samples.filter { s in HKCategoryValueSleepAnalysis(rawValue: s.value).map { stagedValues.contains($0) } ?? false }
-        let watchSources = Set(staged.map { $0.sourceRevision.source.bundleIdentifier })
-        let chosen = watchSources.isEmpty ? samples : samples.filter { watchSources.contains($0.sourceRevision.source.bundleIdentifier) }
+        let staged = samples.filter(isStaged)
+        let watchSources = Set(staged.map(\.source))
+        let chosen = watchSources.isEmpty ? samples : samples.filter { watchSources.contains($0.source) }
 
         var blocks: [SleepNight.Block] = []
         var t: [SleepNight.Stage: TimeInterval] = [:]
         var inBedFrom: Date?
         var inBedBlocks: [SleepNight.Block] = []
-        for s in chosen.sorted(by: { $0.startDate < $1.startDate }) {
+        for s in chosen.sorted(by: { $0.start < $1.start }) {
             guard let value = HKCategoryValueSleepAnalysis(rawValue: s.value) else { continue }
             let stage: SleepNight.Stage
             switch value {
@@ -99,13 +105,13 @@ final class SleepService: ObservableObject {
             case .asleepDeep: stage = .deep
             case .asleepUnspecified: stage = .asleep
             case .inBed:
-                inBedFrom = min(inBedFrom ?? s.startDate, s.startDate)
-                inBedBlocks.append(.init(stage: .inBed, start: s.startDate, end: s.endDate))
+                inBedFrom = min(inBedFrom ?? s.start, s.start)
+                inBedBlocks.append(.init(stage: .inBed, start: s.start, end: s.end))
                 continue
             default: continue
             }
-            blocks.append(.init(stage: stage, start: s.startDate, end: s.endDate))
-            t[stage, default: 0] += s.endDate.timeIntervalSince(s.startDate)
+            blocks.append(.init(stage: stage, start: s.start, end: s.end))
+            t[stage, default: 0] += s.end.timeIntervalSince(s.start)
         }
         // iPhone only (no watch): Health just has "in bed" time from your Sleep Schedule — use it as the night.
         var phoneOnly = false
@@ -183,22 +189,18 @@ final class SleepService: ObservableObject {
         if n == nil || (n!.wake < .now.addingTimeInterval(-20 * 3600)) {
             if let t = await night(for: today), t.wake < .now { n = t }   // an earlier sleep tonight (nap / early night)
         }
-        lastNight = n
-        if let n, !SleepRecorder.shared.isRecording, n.wake < Date().addingTimeInterval(-10 * 60) {
-            SleepRecorder.trim(day: n.day, asleepFrom: n.bedtime, to: n.wake)
-        }
+        if lastNight != n { lastNight = n }
         guard showPopup, let n, popup == nil else { return }
         let key = "sleepShown-\(Int(n.day.timeIntervalSince1970))"
         // Only once you're up for the day: woke 10+ minutes ago, within the last 14 hours, and it's
         // morning or later (checking your phone at 3am isn't waking up — listening carries on)
+        // (Watch sleep is only written once you're up, so it needs no wait; the iPhone-only estimate does.)
         let since = Date().timeIntervalSince(n.wake)
         let hour = Calendar.current.component(.hour, from: .now)
-        guard since > 10 * 60, since < 14 * 3600, hour >= 5, !UserDefaults.standard.bool(forKey: key) else { return }
+        let wait: TimeInterval = n.source == "Apple Watch" ? 0 : 10 * 60
+        guard since >= wait, since < 14 * 3600, hour >= 5, !UserDefaults.standard.bool(forKey: key) else { return }
         UserDefaults.standard.set(true, forKey: key)
-        if SleepRecorder.shared.isRecording {
-            SleepRecorder.shared.stop()
-            SleepRecorder.trim(day: n.day, asleepFrom: n.bedtime, to: n.wake)
-        }
+        SleepRecorder.shared.stop()
         popup = n
     }
 
@@ -227,95 +229,26 @@ final class SleepService: ObservableObject {
     }
 }
 
-// MARK: - Sleep talking recorder
+// MARK: - Live "asleep" detection (no microphone)
 
-/// Listens through the night and keeps the 5 loudest moments (sleep talking, snoring…) as short clips.
-/// iOS only lets an app start the microphone while it's open, so you start it before bed; it keeps
-/// listening with the screen off and stops when you open PokéWalk in the morning.
+/// At night it watches the iPhone's motion chip live: still for 15 minutes → you've dropped off (the map's
+/// Today card shows "Sleeping"); moving about → awake again. It used to record sleep talking too — that's
+/// gone, and any old clips are deleted.
 @MainActor
 final class SleepRecorder: ObservableObject {
     static let shared = SleepRecorder()
-    /// Read by the sound effects so they don't change the audio setup mid-recording.
-    nonisolated(unsafe) static var active = false
+    /// Nothing records any more (kept so the sound code doesn't need to check).
+    static let active = false
 
-    @Published private(set) var isRecording = false
+    @Published private(set) var isRecording = false        // watching for sleep
     @Published private(set) var startedAt: Date?
-    /// Set once the phone has been completely still for a while during listening (you've dropped off).
     @Published private(set) var asleepSince: Date?
     private let motion = CMMotionActivityManager()
     private var stillSince: Date?
     private var stillTimer: Timer?
     nonisolated static let stillToCountAsAsleep: TimeInterval = 15 * 60
-    private var engine: AVAudioEngine?
-    private var listener: Listener?
-    private var interruptionObserver: NSObjectProtocol?
 
-    nonisolated static let keep = 5
-    /// While listening, keep plenty: in the morning only the ones from while you were asleep are kept.
-    nonisolated static let keepWhileListening = 40
-
-    /// Morning tidy-up: drop clips from before you fell asleep or after you woke (TV, chatting…),
-    /// then keep the loudest few.
-    nonisolated static func trim(day: Date, asleepFrom: Date?, to: Date?) {
-        let all = clipFiles(for: day)
-        var keepList = all
-        if let from = asleepFrom, let to {
-            keepList = all.filter { url in
-                guard let t = time(url) else { return true }
-                return t >= from.addingTimeInterval(-60) && t <= to.addingTimeInterval(60)
-            }
-        }
-        keepList = Array(keepList.sorted { score($0) > score($1) }.prefix(keep))
-        for url in all where !keepList.contains(url) { try? FileManager.default.removeItem(at: url) }
-    }
-
-    nonisolated static func clipFiles(for day: Date) -> [URL] {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
-        let d = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("SleepTalk/\(f.string(from: day))", isDirectory: true)
-        let files = (try? FileManager.default.contentsOfDirectory(at: d, includingPropertiesForKeys: nil)) ?? []
-        return files.filter { $0.pathExtension == "caf" && $0.lastPathComponent.hasPrefix("clip-") }
-    }
-
-    static var root: URL {
-        let d = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("SleepTalk", isDirectory: true)
-        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
-        return d
-    }
-
-    static func folder(for day: Date) -> URL {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
-        let d = root.appendingPathComponent(f.string(from: day), isDirectory: true)
-        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
-        return d
-    }
-
-    /// The clips from a night, loudest first.
-    static func clips(for day: Date) -> [URL] {
-        let d = folder(for: day)
-        let files = (try? FileManager.default.contentsOfDirectory(at: d, includingPropertiesForKeys: nil)) ?? []
-        return files.filter { $0.pathExtension == "caf" }.sorted { score($0) > score($1) }
-    }
-
-    /// File names hold the clip's loudness: clip-<time>-<score>.caf
-    nonisolated static func score(_ url: URL) -> Double {
-        Double(url.deletingPathExtension().lastPathComponent.split(separator: "-").last ?? "0") ?? 0
-    }
-
-    nonisolated static func time(_ url: URL) -> Date? {
-        let parts = url.deletingPathExtension().lastPathComponent.split(separator: "-")
-        guard parts.count >= 3, let t = Double(parts[1]) else { return nil }
-        return Date(timeIntervalSince1970: t)
-    }
-
-    /// Start listening by itself when you open PokéWalk at night with your phone charging
-    /// (iOS only allows the microphone to start while the app is open).
-    static var autoListen: Bool {
-        get { UserDefaults.standard.object(forKey: "sleepAutoListen") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "sleepAutoListen") }
-    }
-
-    /// From what hour it may start by itself (Settings), until 4am. 23 = 11pm.
+    /// From what hour it starts watching (Settings), until 4am. 23 = 11pm.
     static var listenFromHour: Int {
         get { UserDefaults.standard.object(forKey: "sleepListenFrom") as? Int ?? 23 }
         set { UserDefaults.standard.set(newValue, forKey: "sleepListenFrom") }
@@ -326,9 +259,18 @@ final class SleepRecorder: ObservableObject {
             .formatted(date: .omitted, time: .shortened) ?? "\(h):00"
     }
 
-    /// Called whenever PokéWalk opens: starts at night (from your chosen time until 4am, charging), stops in the morning.
+    /// Deletes the old sleep-talk clips once.
+    static func removeOldClips() {
+        guard !UserDefaults.standard.bool(forKey: "sleepTalkRemoved") else { return }
+        UserDefaults.standard.set(true, forKey: "sleepTalkRemoved")
+        let d = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("SleepTalk")
+        try? FileManager.default.removeItem(at: d)
+    }
+
+    /// Called on every check: starts at night (from your chosen time until 4am), stops in the morning.
     @discardableResult
     func autoStartOrStop() async -> String? {
+        Self.removeOldClips()
         let hour = Calendar.current.component(.hour, from: .now)
         if isRecording, (5..<15).contains(hour), let s = startedAt, Date().timeIntervalSince(s) > 2 * 3600 {
             stop()
@@ -336,64 +278,23 @@ final class SleepRecorder: ObservableObject {
         }
         let from = Self.listenFromHour
         let inWindow = from >= 12 ? (hour >= from || hour < 4) : (hour >= from && hour < 4)
-        guard Self.autoListen, !isRecording, inWindow,
-              AVAudioApplication.shared.recordPermission == .granted else { return nil }
-        UIDevice.current.isBatteryMonitoringEnabled = true
-        let charging = UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full
-        guard charging else { return nil }
-        guard await start() == nil else { return nil }
-        return "🌙 Listening for sleep talking tonight — it stops when you open PokéWalk in the morning."
-    }
-
-    func start() async -> String? {
-        guard !isRecording else { return nil }
-        let granted = await AVAudioApplication.requestRecordPermission()
-        guard granted else { return "Allow the microphone for PokéWalk in Settings to record sleep talking." }
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(.playAndRecord, mode: .measurement, options: [.mixWithOthers])
-            try session.setActive(true)
-        } catch { return "Couldn't start the microphone." }
-        let engine = AVAudioEngine()
-        let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
-        let night = SleepService.nightDay(for: .now)
-        let listener = Listener(folder: Self.folder(for: night), format: format)
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { buf, _ in listener.process(buf) }
-        do { try engine.start() } catch { return "Couldn't start the microphone." }
-        self.engine = engine
-        self.listener = listener
-        // A call, Siri or an alarm pauses the microphone; pick back up when it's over.
-        interruptionObserver = NotificationCenter.default.addObserver(
-            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
-            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
-                  AVAudioSession.InterruptionType(rawValue: raw) == .ended else { return }
-            Task { @MainActor in
-                guard let self, self.isRecording else { return }
-                try? AVAudioSession.sharedInstance().setActive(true)
-                if self.engine?.isRunning == false { try? self.engine?.start() }
-            }
-        }
-        Self.active = true
-        isRecording = true
-        startedAt = .now
-        startSleepDetection()
+        guard !isRecording, inWindow, CMMotionActivityManager.isActivityAvailable() else { return nil }
+        start()
         return nil
     }
 
-    /// While listening the app is awake in the background, so it can watch the motion chip live:
-    /// still for 20 minutes → asleep; walking around → awake again.
-    private func startSleepDetection() {
+    func start() {
+        guard !isRecording else { return }
+        isRecording = true
+        startedAt = .now
         asleepSince = nil
         stillSince = .now
-        guard CMMotionActivityManager.isActivityAvailable() else { return }
         motion.startActivityUpdates(to: .main) { [weak self] a in
             guard let self, let a else { return }
             Task { @MainActor in
                 if a.walking || a.running || a.cycling || a.automotive {
                     self.stillSince = nil
                     self.asleepSince = nil
-                    self.listener?.setArmed(false)        // up and about: stop saving
                 } else if a.stationary, self.stillSince == nil {
                     self.stillSince = a.startDate
                 }
@@ -409,92 +310,40 @@ final class SleepRecorder: ObservableObject {
         guard isRecording, asleepSince == nil, let still = stillSince,
               Date().timeIntervalSince(still) >= Self.stillToCountAsAsleep else { return }
         asleepSince = still
-        listener?.setArmed(true)                          // asleep: noises from now on are saved
     }
 
     func stop() {
+        guard isRecording else { return }
         motion.stopActivityUpdates()
         stillTimer?.invalidate(); stillTimer = nil
         asleepSince = nil; stillSince = nil
-        if let o = interruptionObserver { NotificationCenter.default.removeObserver(o); interruptionObserver = nil }
-        engine?.inputNode.removeTap(onBus: 0)
-        engine?.stop()
-        listener?.finish()
-        engine = nil; listener = nil
-        Self.active = false
         isRecording = false
         startedAt = nil
-        try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+    }
+}
+
+// MARK: - Sleep sent straight from the watch
+
+/// The last ~2 nights of sleep the watch app sent over WatchConnectivity.
+enum WatchSleepStore {
+    private static var url: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("watch-sleep.json")
     }
 
-    /// Runs on the audio thread: tracks the room's quiet level and saves bursts well above it.
-    final class Listener: @unchecked Sendable {
-        let folder: URL
-        let format: AVAudioFormat
-        private var floorDB: Float = -60
-        private var file: AVAudioFile?
-        private var clipStart = Date()
-        private var lastLoud = Date()
-        private var peak: Float = -160
-        private var loudSum: Float = 0
-        private let lock = NSLock()
-        /// Only saves while you're asleep (the phone's been still); listening before that saves nothing.
-        private var armed = false
+    static func save(_ new: [WatchSleepSample]) {
+        let cutoff = Date().addingTimeInterval(-3 * 86_400)
+        var all = load().filter { $0.end > cutoff }
+        for x in new where !all.contains(x) { all.append(x) }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let d = try? JSONEncoder().encode(all) { try? d.write(to: url, options: .atomic) }
+    }
 
-        func setArmed(_ on: Bool) {
-            lock.lock(); defer { lock.unlock() }
-            armed = on
-            if !on { close() }
-        }
+    static func load() -> [WatchSleepSample] {
+        (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode([WatchSleepSample].self, from: $0) } ?? []
+    }
 
-        init(folder: URL, format: AVAudioFormat) { self.folder = folder; self.format = format }
-
-        func process(_ buf: AVAudioPCMBuffer) {
-            lock.lock(); defer { lock.unlock() }
-            guard let ch = buf.floatChannelData?[0], buf.frameLength > 0 else { return }
-            var sum: Float = 0
-            for i in 0..<Int(buf.frameLength) { sum += ch[i] * ch[i] }
-            let rms = sqrt(sum / Float(buf.frameLength))
-            let db = 20 * log10(max(rms, 1e-7))
-            // the quiet level drifts slowly; loud moments don't drag it up much
-            floorDB = db < floorDB ? floorDB * 0.9 + db * 0.1 : floorDB * 0.999 + db * 0.001
-            let loud = armed && db > max(floorDB + 18, -48)
-            let now = Date()
-            if loud {
-                lastLoud = now
-                if file == nil {
-                    clipStart = now; peak = -160; loudSum = 0
-                    let tmp = folder.appendingPathComponent("recording.caf")
-                    try? FileManager.default.removeItem(at: tmp)
-                    file = try? AVAudioFile(forWriting: tmp, settings: format.settings)
-                }
-                peak = max(peak, db)
-                loudSum += db - floorDB
-            }
-            if let file {
-                try? file.write(from: buf)
-                // end the clip after 2.5 s of quiet, or at 20 s
-                if now.timeIntervalSince(lastLoud) > 2.5 || now.timeIntervalSince(clipStart) > 20 { close() }
-            }
-        }
-
-        func finish() { lock.lock(); close(); lock.unlock() }
-
-        private func close() {
-            guard file != nil else { return }
-            file = nil
-            let tmp = folder.appendingPathComponent("recording.caf")
-            let length = Date().timeIntervalSince(clipStart)
-            guard length > 1.2 else { try? FileManager.default.removeItem(at: tmp); return }   // a single bump/cough
-            let score = Int(loudSum)
-            let dest = folder.appendingPathComponent("clip-\(Int(clipStart.timeIntervalSince1970))-\(score).caf")
-            try? FileManager.default.moveItem(at: tmp, to: dest)
-            // keep only the loudest few
-            let all = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
-                .filter { $0.lastPathComponent.hasPrefix("clip-") }
-                .sorted { SleepRecorder.score($0) > SleepRecorder.score($1) }
-            for extra in all.dropFirst(SleepRecorder.keepWhileListening) { try? FileManager.default.removeItem(at: extra) }
-        }
+    static func samples(from: Date, to: Date) -> [WatchSleepSample] {
+        load().filter { $0.start >= from && $0.start < to }
     }
 }
 

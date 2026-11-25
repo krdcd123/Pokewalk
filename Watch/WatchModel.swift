@@ -43,8 +43,11 @@ final class WatchModel: NSObject, ObservableObject {
 
     func requestHealth() async {
         try? await StepCounter.shared.requestAuthorization()
+        // the watch's own sleep, so it can go straight to the iPhone when you wake
+        try? await StepCounter.shared.store.requestAuthorization(toShare: [], read: [HKCategoryType(.sleepAnalysis)])
         await refreshSteps()
         startStepObserver()
+        startSleepObserver()
         startCyclingWatch()
     }
 
@@ -92,6 +95,57 @@ final class WatchModel: NSObject, ObservableObject {
         hk.store.enableBackgroundDelivery(for: hk.stepType, frequency: .immediate) { _, _ in }
     }
 
+    // MARK: Sleep → iPhone
+
+    private var sleepObserverStarted = false
+    private var lastSleepSent: [WatchSleepSample] = []
+    private var lastSleepCheck = Date.distantPast
+
+    /// When the watch finishes a night's sleep (in the background too), send it to the iPhone straight away.
+    private func startSleepObserver() {
+        guard !sleepObserverStarted, StepCounter.shared.isAvailable else { return }
+        sleepObserverStarted = true
+        let hk = StepCounter.shared
+        let type = HKCategoryType(.sleepAnalysis)
+        let q = HKObserverQuery(sampleType: type, predicate: nil) { _, completion, _ in
+            Task { @MainActor in
+                await WatchModel.shared.sendSleepToPhone(force: true)
+                completion()
+            }
+        }
+        hk.store.execute(q)
+        hk.store.enableBackgroundDelivery(for: type, frequency: .immediate) { _, _ in }
+    }
+
+    /// The last 20 hours of the watch's sleep → the iPhone (only when it's changed).
+    func sendSleepToPhone(force: Bool = false) async {
+        guard force || Date().timeIntervalSince(lastSleepCheck) > 10 * 60 else { return }
+        lastSleepCheck = .now
+        let s = WCSession.default
+        guard s.activationState == .activated else { return }
+        let start = Date().addingTimeInterval(-20 * 3600)
+        let samples: [WatchSleepSample] = await withCheckedContinuation { cont in
+            let pred = HKQuery.predicateForSamples(withStart: start, end: .now, options: [])
+            let q = HKSampleQuery(sampleType: HKCategoryType(.sleepAnalysis), predicate: pred, limit: HKObjectQueryNoLimit,
+                                  sortDescriptors: nil) { _, list, _ in
+                let out = (list as? [HKCategorySample] ?? []).map {
+                    WatchSleepSample(value: $0.value, start: $0.startDate, end: $0.endDate,
+                                     source: $0.sourceRevision.source.bundleIdentifier)
+                }
+                cont.resume(returning: out)
+            }
+            StepCounter.shared.store.execute(q)
+        }
+        guard !samples.isEmpty, samples != lastSleepSent, let data = try? JSONEncoder().encode(samples) else { return }
+        lastSleepSent = samples
+        let msg: [String: Any] = ["watchSleep": data]
+        if s.isReachable {
+            s.sendMessage(msg, replyHandler: nil) { _ in s.transferUserInfo(msg) }
+        } else {
+            s.transferUserInfo(msg)
+        }
+    }
+
     /// Query HealthKit on the watch and cache the result for the complications.
     func refreshSteps(reloadComplications: Bool = true) async {
         let sync = snapshot.syncDate
@@ -103,6 +157,7 @@ final class WatchModel: NSObject, ObservableObject {
             stepsToday = t
             sendStepsToPhone(t)
         }
+        await sendSleepToPhone()
         // watchOS limits complication reloads, so don't spend them more than once a minute
         if reloadComplications, Date().timeIntervalSince(lastComplicationReload) > 60 {
             lastComplicationReload = .now

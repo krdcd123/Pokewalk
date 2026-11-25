@@ -58,60 +58,7 @@ struct SleepChart: View {
     }
 }
 
-/// Plays one of the night's sleep-talk clips.
-@MainActor
-final class ClipPlayer: ObservableObject {
-    static let shared = ClipPlayer()
-    @Published var playing: URL?
-    private var player: AVAudioPlayer?
-
-    func toggle(_ url: URL) {
-        if playing == url { player?.stop(); playing = nil; return }
-        if !SleepRecorder.active { try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.mixWithOthers]) }
-        player = try? AVAudioPlayer(contentsOf: url)
-        player?.volume = 1
-        player?.play()
-        playing = url
-        let d = player?.duration ?? 0
-        Task { try? await Task.sleep(for: .seconds(d + 0.2)); if self.playing == url { self.playing = nil } }
-    }
-}
-
-struct SleepClipsList: View {
-    let day: Date
-    @ObservedObject private var player = ClipPlayer.shared
-
-    var body: some View {
-        let clips = Array(SleepRecorder.clips(for: day).prefix(SleepRecorder.keep))
-        if !clips.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Sleep talking", systemImage: "waveform").font(.rounded(14, .heavy))
-                ForEach(Array(clips.enumerated()), id: \.element) { i, url in
-                    Button { player.toggle(url) } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: player.playing == url ? "stop.fill" : "play.fill")
-                                .font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
-                                .frame(width: 34, height: 34).glassCircle(tint: Theme.teal, interactive: false)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("Clip \(i + 1)").font(.rounded(14, .heavy))
-                                Text(SleepRecorder.time(url).map(SleepFormat.time) ?? "")
-                                    .font(.rounded(11)).foregroundStyle(Theme.inkSoft)
-                            }
-                            Spacer()
-                            if player.playing == url {
-                                Image(systemName: "waveform").symbolEffect(.variableColor.iterative, options: .repeating)
-                                    .foregroundStyle(Theme.teal)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-}
-
-/// Everything about one night: headline, chart, stages, body stats, comparisons and sleep talking.
+/// Everything about one night: headline, chart, stages, body stats and comparisons.
 struct SleepDetails: View {
     let night: SleepNight
     var usual: (asleep: TimeInterval, bedtimeMinutes: Double)?
@@ -161,8 +108,6 @@ struct SleepDetails: View {
                     }
                 }
             }
-
-            SleepClipsList(day: night.day)
 
             Text("From \(night.source) sleep tracking in Apple Health")
                 .font(.rounded(11)).foregroundStyle(Theme.inkSoft)
@@ -257,13 +202,10 @@ struct SleepPopupCard: View {
 
 struct SleepSection: View {
     let day: Date
-    var showRecorder = false
-    @ObservedObject private var recorder = SleepRecorder.shared
+    @ObservedObject private var svc = SleepService.shared
     @State private var night: SleepNight?
     @State private var usual: (asleep: TimeInterval, bedtimeMinutes: Double)?
     @State private var loaded = false
-    @State private var message: String?
-    @State private var autoListen = SleepRecorder.autoListen
 
     /// Today's page (and, before 3pm, last night's too while it's still being slept/listened to).
     private var isTonight: Bool {
@@ -286,54 +228,16 @@ struct SleepSection: View {
                         .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                 }
                 .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassCard(22)
-                SleepClipsList(day: day).padding(16).glassCard(22)
             }
-            if isTonight || showRecorder { recorderCard }
         }
-        .task(id: day) {
-            loaded = false
+        // reloads when PokéWalk registers new sleep (e.g. the watch's data arriving in the morning)
+        .task(id: "\(day.timeIntervalSince1970)-\(svc.lastNight?.source ?? "")-\(svc.lastNight?.wake.timeIntervalSince1970 ?? 0)") {
             night = await SleepService.shared.night(for: day)
             usual = await SleepService.shared.usual(before: day)
             loaded = true
         }
     }
 
-    private var recorderCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("Sleep talking", systemImage: "waveform.badge.mic").font(.rounded(15, .heavy))
-            Text(recorder.isRecording
-                 ? "Listening since \(recorder.startedAt.map(SleepFormat.time) ?? "now"). It only starts saving once your phone has been still for 15 minutes (you've dropped off), and in the morning it matches the clips to when your watch or iPhone says you were asleep. It stops when you open PokéWalk."
-                 : "Start this when you go to bed. PokéWalk listens through the night and keeps the \(SleepRecorder.keep) loudest moments from while you were actually asleep (sleep talking, snoring…). Keep your phone charging. Clips stay on your phone.")
-                .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
-            if AVAudioApplication.shared.recordPermission != .granted {
-                Label("Tap Start once to allow the microphone — after that it starts by itself at night.",
-                      systemImage: "exclamationmark.circle.fill")
-                    .font(.rounded(12, .heavy)).foregroundStyle(Theme.orange)
-            }
-            Button {
-                if recorder.isRecording { recorder.stop() }
-                else { Task { message = await recorder.start() } }
-            } label: {
-                Label(recorder.isRecording ? "Stop listening" : "Start listening tonight",
-                      systemImage: recorder.isRecording ? "stop.circle.fill" : "mic.fill")
-                    .font(.rounded(15, .heavy)).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity).frame(height: 46)
-                    .glassCapsule(tint: recorder.isRecording ? Color(hex: 0xE04A3F) : Color(hex: 0x5B4BD8), interactive: true)
-            }
-            .buttonStyle(.plain)
-            if let message { Text(message).font(.rounded(12)).foregroundStyle(Theme.orange) }
-            Toggle(isOn: Binding(get: { autoListen }, set: { autoListen = $0; SleepRecorder.autoListen = $0 })) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Start by itself at night").font(.rounded(14, .heavy))
-                    Text("When you open PokéWalk after \(SleepRecorder.hourText(SleepRecorder.listenFromHour)) with your phone charging (change the time in Settings).")
-                        .font(.rounded(11)).foregroundStyle(Theme.inkSoft)
-                }
-            }
-            .tint(Color(hex: 0x5B4BD8))
-        }
-        .padding(16)
-        .glassCard(22)
-    }
 }
 
 /// Sun / moon switch: day stats or that night's sleep.

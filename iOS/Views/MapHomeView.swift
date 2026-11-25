@@ -294,16 +294,19 @@ struct MapHomeView: View {
                                 heading: lastCamera?.heading ?? 0, pitch: lastCamera?.pitch ?? 0)
             withAnimation(.linear(duration: 0.8)) { camera = .camera(cam) }
         }
-        // Launch: the map starts on the whole country while it waits for a fix. As soon as we know where you
-        // are, jump in to street level (your usual zoom, never a country-sized one).
+        // Launch, and every time you come back to the app (the map is rebuilt after being in the background):
+        // it starts on the whole country, so as soon as we know where you are, jump in to street level —
+        // your usual zoom, never a country-sized one. Done twice, as MapKit can ignore the very first move.
         .task {
-            guard !didInitialZoom else { return }
+            didInitialZoom = false
             if zoomDistance > 20_000 || zoomDistance < 80 { zoomDistance = 900 }
             for _ in 0..<60 {
                 if tracker.currentLocation() != nil { break }
                 try? await Task.sleep(for: .milliseconds(250))
             }
             followMe(distance: zoomDistance, duration: 0)
+            try? await Task.sleep(for: .milliseconds(600))
+            followMe(distance: zoomDistance, duration: 0.3)
             try? await Task.sleep(for: .seconds(1))
             didInitialZoom = true
         }
