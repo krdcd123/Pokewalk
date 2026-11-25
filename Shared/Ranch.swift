@@ -130,7 +130,7 @@ struct RanchProject: Identifiable {
 
     static let all: [RanchProject] = [
         .init(id: 0, name: "Clear the Land", symbol: "leaf.fill", text: "Cut back the tall grass so there's room to work.",
-              cost: [.wood: 30, .fibre: 30], money: 0, hours: 12, reward: "A 3rd rancher", ticket: nil),
+              cost: [.wood: 30, .fibre: 30], money: 0, hours: 12, reward: "+5% materials", ticket: nil),
         .init(id: 1, name: "Dig a Well", symbol: "drop.circle.fill", text: "Fresh water for thirsty workers.",
               cost: [.stone: 90, .clay: 60], money: 3_000, hours: 24, reward: "Shifts take 7h instead of 8h", ticket: nil),
         .init(id: 2, name: "Fence & Gate", symbol: "square.dashed", text: "A proper picket fence with a gate.",
@@ -153,7 +153,7 @@ struct RanchProject: Identifiable {
               ticket: "aurora-ticket"),
         .init(id: 9, name: "Grand Extension", symbol: "building.2.fill", text: "Knock through and double the house.",
               cost: [.wood: 1_000, .stone: 800, .clay: 800, .fibre: 650], money: 120_000, hours: 168,
-              reward: "A much bigger room", ticket: "mystic-ticket"),
+              reward: "A much bigger room · a 7th rancher", ticket: "mystic-ticket"),
     ]
 }
 
@@ -202,9 +202,10 @@ struct Ranch: Codable, Equatable, Hashable {
 
     func has(_ project: Int) -> Bool { built > project }
     var houseBuilt: Bool { has(6) }
-    var slots: Int { 2 + (has(0) ? 1 : 0) + (has(2) ? 1 : 0) + (has(3) ? 1 : 0) + (has(8) ? 1 : 0) }
+    /// Ranchers you can send: 3 to start, more as the ranch grows (up to 7).
+    var slots: Int { 3 + (has(2) ? 1 : 0) + (has(3) ? 1 : 0) + (has(8) ? 1 : 0) + (has(9) ? 1 : 0) }
     var shiftHours: Double { has(7) ? 6 : has(1) ? 7 : 8 }
-    var materialBonus: Double { (has(3) ? 0.1 : 0) + (has(8) ? 0.1 : 0) }
+    var materialBonus: Double { (has(0) ? 0.05 : 0) + (has(3) ? 0.1 : 0) + (has(8) ? 0.1 : 0) }
     func amount(_ m: RanchMaterial) -> Int { materials[m.rawValue] ?? 0 }
     var nextProject: RanchProject? { RanchProject.all.first { $0.id == built } }
     /// House room size in metatiles (walls included).
