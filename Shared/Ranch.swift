@@ -214,6 +214,38 @@ struct Ranch: Codable, Equatable, Hashable {
 
 // MARK: - Rules
 
+/// Team bonuses: several Pokémon with the same job work better together, and a varied crew helps everyone.
+struct RanchTeam: Equatable {
+    var jobs: [RanchJob: Int] = [:]
+    var distinct = 0
+
+    static let tiers = [2, 3, 4]
+    func tier(_ j: RanchJob) -> Int { (j == .scavenger ? [2, 3] : Self.tiers).filter { (jobs[j] ?? 0) >= $0 }.count }
+    var varietyTier: Int { distinct >= 5 ? 2 : distinct >= 4 ? 1 : 0 }
+
+    /// Extra share of a material from same-job teamwork, plus the variety bonus.
+    func materialBonus(_ m: RanchMaterial) -> Double {
+        let job = RanchJob.allCases.first { $0.material == m }!
+        return [0, 0.15, 0.30, 0.50][tier(job)] + [0, 0.10, 0.20][varietyTier]
+    }
+    var rareMultiplier: Double { [1, 2, 3][tier(.scavenger)] }
+    var moneyBonus: Double { [0, 0.25, 0.5][tier(.scavenger)] + [0, 0.10, 0.20][varietyTier] }
+
+    static func of(_ workers: [OwnedPokemon]) -> RanchTeam {
+        var t = RanchTeam()
+        for m in workers { t.jobs[RanchJob.of(m.species.types[0]), default: 0] += 1 }
+        t.distinct = t.jobs.count
+        return t
+    }
+
+    static func tierText(_ j: RanchJob) -> [String] {
+        if j == .scavenger { return ["Rare finds twice as likely, +25% ₽", "Three times as likely, +50% ₽"] }
+        let m = j.material!.name
+        return ["+15% \(m)", "+30% \(m)", "+50% \(m)"]
+    }
+    static let varietyText = ["4 different jobs: +10% of everything", "All 5 jobs: +20% of everything"]
+}
+
 enum RanchRules {
     struct Haul: Equatable {
         var materials: [RanchMaterial: Int] = [:]
@@ -223,7 +255,7 @@ enum RanchRules {
     }
 
     /// What one Pokémon brings back from a shift (on average — `random` adds the luck).
-    static func haul(for mon: OwnedPokemon, ranch: Ranch, random: Bool = true) -> Haul {
+    static func haul(for mon: OwnedPokemon, ranch: Ranch, team: RanchTeam = RanchTeam(), random: Bool = true) -> Haul {
         var h = Haul()
         let job = RanchJob.of(mon.species.types[0])
         let attr = RanchAttribute.of(nature: mon.nature)
@@ -231,11 +263,13 @@ enum RanchRules {
         amount *= 1 + ranch.materialBonus + (attr == .strong ? 0.25 : attr == .steady ? 0.10 : 0)
         let roll = random ? Double.random(in: 0.8...1.2) : 1
         if let m = job.material {
-            h.materials[m] = Int((amount * roll).rounded())
+            h.materials[m] = Int((amount * roll * (1 + team.materialBonus(m))).rounded())
         } else {
             // Scavengers: a little of each, some Pokédollars, and the odd rare find
-            for m in RanchMaterial.allCases { h.materials[m] = Int((amount * 0.35 * roll).rounded()) }
-            h.money = Int((amount * 40 * roll).rounded())
+            for m in RanchMaterial.allCases {
+                h.materials[m] = Int((amount * 0.35 * roll * (1 + [0, 0.10, 0.20][team.varietyTier])).rounded())
+            }
+            h.money = Int((amount * 40 * roll * (1 + team.moneyBonus)).rounded())
         }
         if attr == .clever && (!random || Double.random(in: 0..<1) < 0.15),
            let bonus = RanchMaterial.allCases.filter({ $0 != job.material }).randomElement() {
@@ -243,7 +277,7 @@ enum RanchRules {
         }
         // Very rare: an event ticket turns up (scavengers and lucky Pokémon find them more)
         if random {
-            var chance = 0.002
+            var chance = 0.002 * team.rareMultiplier
             if job == .scavenger { chance *= 2 }
             if attr == .lucky { chance *= 2 }
             if Double.random(in: 0..<1) < chance { h.ticket = RanchTickets.all.randomElement()!.key }

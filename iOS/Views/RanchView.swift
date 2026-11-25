@@ -185,7 +185,7 @@ struct RanchView: View {
     private func rancherRow(_ mon: OwnedPokemon) -> some View {
         let job = RanchJob.of(mon.species.types[0])
         let attr = RanchAttribute.of(nature: mon.nature)
-        let h = RanchRules.haul(for: mon, ranch: store.ranch, random: false)
+        let h = RanchRules.haul(for: mon, ranch: store.ranch, team: RanchTeam.of(store.ranchWorkers), random: false)
         return HStack(spacing: 10) {
             LocalIcon(speciesID: mon.speciesID, shiny: mon.isShiny).frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 3) {
@@ -290,6 +290,7 @@ struct RanchView: View {
     private var traitsCard: some View {
         let workers = store.ranchWorkers
         let jobs = Dictionary(grouping: workers) { RanchJob.of($0.species.types[0]) }.mapValues(\.count)
+        let team = RanchTeam.of(workers)
         let attrs = Dictionary(grouping: workers) { RanchAttribute.of(nature: $0.nature) }.mapValues(\.count)
         return VStack(alignment: .leading, spacing: 10) {
             Button {
@@ -300,8 +301,14 @@ struct RanchView: View {
                     Text("Traits").font(.rounded(17, .heavy)).foregroundStyle(.white)
                     HStack(spacing: 4) {
                         ForEach(RanchJob.allCases.filter { jobs[$0] != nil }, id: \.self) { j in
-                            Image(systemName: j.symbol).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
-                                .frame(width: 22, height: 22).background(Circle().fill(Theme.teal))
+                            Image(systemName: j.symbol).font(.system(size: 10, weight: .heavy))
+                                .foregroundStyle(team.tier(j) > 0 ? .white : Theme.teal)
+                                .frame(width: 22, height: 22)
+                                .background(Circle().fill(team.tier(j) > 0 ? Theme.teal : Color.white.opacity(0.1)))
+                        }
+                        if team.varietyTier > 0 {
+                            Image(systemName: "square.grid.2x2.fill").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
+                                .frame(width: 22, height: 22).background(Circle().fill(Color.purple))
                         }
                         ForEach(RanchAttribute.allCases.filter { attrs[$0] != nil }, id: \.self) { a in
                             Image(systemName: a.symbol).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
@@ -319,11 +326,18 @@ struct RanchView: View {
 
             if traitsOpen {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Jobs — from a Pokémon's first type").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
+                    Text("Jobs — from a Pokémon's first type. Same jobs together earn team bonuses.")
+                        .font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
                     ForEach(RanchJob.allCases, id: \.self) { j in
+                        let tiers = j == .scavenger ? [2, 3] : RanchTeam.tiers
+                        let tier = team.tier(j)
                         traitRow(symbol: j.symbol, tint: Theme.teal, name: j.name, count: jobs[j] ?? 0,
-                                 detail: "\(Self.types(for: j)) · \(j.text)")
+                                 detail: "\(Self.types(for: j)) · \(j.text)" + (tier > 0 ? "\nTeam bonus: \(RanchTeam.tierText(j)[tier - 1])" : "\nTeam of \(tiers[0]): \(RanchTeam.tierText(j)[0])"),
+                                 tiers: tiers, tier: tier)
                     }
+                    traitRow(symbol: "square.grid.2x2.fill", tint: .purple, name: "Variety", count: team.distinct,
+                             detail: team.varietyTier > 0 ? RanchTeam.varietyText[team.varietyTier - 1] : RanchTeam.varietyText.joined(separator: " · "),
+                             tiers: [4, 5], tier: team.varietyTier)
                     Text("Attributes — from a Pokémon's nature").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
                         .padding(.top, 4)
                     ForEach(RanchAttribute.allCases, id: \.self) { a in
@@ -341,15 +355,23 @@ struct RanchView: View {
         .clipped()
     }
 
-    private func traitRow(symbol: String, tint: Color, name: String, count: Int, detail: String) -> some View {
+    private func traitRow(symbol: String, tint: Color, name: String, count: Int, detail: String,
+                          tiers: [Int] = [], tier: Int = 0) -> some View {
         HStack(spacing: 10) {
             Image(systemName: symbol).font(.system(size: 15, weight: .bold))
                 .foregroundStyle(count > 0 ? .white : Theme.inkSoft)
                 .frame(width: 34, height: 34)
                 .background(Circle().fill(count > 0 ? tint : Color.white.opacity(0.08)))
             VStack(alignment: .leading, spacing: 2) {
-                HStack {
+                HStack(spacing: 6) {
                     Text(name).font(.rounded(14, .heavy)).foregroundStyle(.white)
+                    // team sizes, lit up as you reach them
+                    ForEach(Array(tiers.enumerated()), id: \.offset) { i, n in
+                        Text("\(n)").font(.rounded(11, .black)).monospacedDigit()
+                            .foregroundStyle(i < tier ? .black : Theme.inkSoft)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Capsule().fill(i < tier ? tint : Color.white.opacity(0.08)))
+                    }
                     Spacer()
                     Text("\(count)").font(.rounded(14, .heavy)).foregroundStyle(count > 0 ? .white : Theme.inkSoft)
                 }

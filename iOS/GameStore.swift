@@ -1388,8 +1388,9 @@ extension GameStore {
         guard ranchShiftDone else { return nil }
         var total = RanchRules.Haul()
         var gains: [(UUID, Int)] = []
+        let team = RanchTeam.of(ranchWorkers)
         for mon in ranchWorkers {
-            let h = RanchRules.haul(for: mon, ranch: state.ranch)
+            let h = RanchRules.haul(for: mon, ranch: state.ranch, team: team)
             for (m, n) in h.materials { total.materials[m, default: 0] += n }
             total.money += h.money
             if let t = h.ticket, total.ticket == nil { total.ticket = t }
