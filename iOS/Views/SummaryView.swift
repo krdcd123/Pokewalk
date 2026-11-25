@@ -70,6 +70,7 @@ struct SummaryView: View {
                     }
                     .padding(.horizontal, 14).padding(.vertical, 4)
                     .glassCard(20)
+                    .padding(.horizontal)
 
                     let ribbons = store.state.contests.ribbons(mon.id)
                     if !ribbons.isEmpty {
@@ -80,8 +81,8 @@ struct SummaryView: View {
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .glassCard(20)
+                        .padding(.horizontal)
                     }
-                    .padding(.horizontal)
 
                     if !mon.heldItems.isEmpty {
                         HeldItemsCard(mon: mon) {
