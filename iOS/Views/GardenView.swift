@@ -10,6 +10,8 @@ struct GardenView: View {
     @State private var info: Int?                // plot whose details are showing
     @State private var addingWorker = false
     @State private var ladySays: String?
+    @State private var traitsOpen = false
+    @State private var showingBoosts = false
 
     private let scale: CGFloat = 4               // Emerald pixels → points
     private let columns = 4
@@ -94,46 +96,151 @@ struct GardenView: View {
     private var field: some View {
         let b = store.gardenBonuses
         let open = store.gardenPlotCount
-        let cellW = 16 * scale, cellH = 32 * scale
-        return VStack(spacing: 6) {
-            TimelineView(.periodic(from: .now, by: 0.6)) { tl in
-                let frame = Int(tl.date.timeIntervalSince1970 / 0.6)
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(cellW), spacing: 14), count: columns), spacing: 6) {
-                    ForEach(store.state.garden.plots.prefix(Garden.maxPlots)) { plot in
-                        PlotCell(plot: plot, locked: plot.id >= open, bonuses: b, frame: frame, scale: scale,
-                                 cellW: cellW, cellH: cellH, now: tl.date)
-                            .onTapGesture { tap(plot) }
+        return VStack(spacing: 10) {
+            GeometryReader { geo in
+                let k = geo.size.width / CGFloat(GardenGfx.fieldTiles * 16)     // points per Emerald pixel
+                let tile = 16 * k
+                ZStack(alignment: .topLeading) {
+                    if let img = gfx.field(openPlots: open) {
+                        PixelImageView(image: img).frame(width: geo.size.width, height: geo.size.width)
+                    } else {
+                        Color(red: 0.45, green: 0.77, blue: 0.64)
+                        ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    // brand-new saves: show all patches
-                    if store.state.garden.plots.count < Garden.maxPlots {
-                        ForEach(store.state.garden.plots.count..<Garden.maxPlots, id: \.self) { i in
-                            PlotCell(plot: GardenPlot(id: i), locked: i >= open, bonuses: b, frame: frame, scale: scale,
-                                     cellW: cellW, cellH: cellH, now: tl.date)
-                                .onTapGesture { tap(GardenPlot(id: i)) }
+                    // Berry plants stand on their soil, rising a tile above it (16×32, as in Emerald)
+                    TimelineView(.periodic(from: .now, by: 0.6)) { tl in
+                        let frame = Int(tl.date.timeIntervalSince1970 / 0.6)
+                        ForEach(0..<Garden.maxPlots, id: \.self) { i in
+                            let pos = GardenGfx.plotTile(i)
+                            let plot = store.state.garden.plots.first { $0.id == i } ?? GardenPlot(id: i)
+                            PlantSprite(plot: plot, bonuses: b, frame: frame, now: tl.date, k: k)
+                                .frame(width: tile, height: tile * 2)
+                                .contentShape(Rectangle())
+                                .onTapGesture { tap(plot) }
+                                .offset(x: CGFloat(pos.x) * tile, y: CGFloat(pos.y - 1) * tile)
+                                .accessibilityLabel(i >= open ? "Overgrown patch" : plot.berry.map { Dex.itemName($0) } ?? "Empty soil")
                         }
                     }
+                    // Workers wander the grass inside the trees
+                    WorkersLayer(workers: store.gardenWorkers, iconSize: tile * 1.25)
+                        .frame(width: tile * 6, height: tile * 6)
+                        .offset(x: tile * 2, y: tile * 2)
+                    boostsBadge(b, tile: tile)
+                        .offset(x: geo.size.width - tile * 1.9, y: tile * 0.35)
                 }
             }
-            .padding(.vertical, 14)
-            .frame(maxWidth: .infinity)
-            .background { grassBackground }
-            .overlay { WorkersLayer(workers: store.gardenWorkers) }
-            .clipShape(RoundedRectangle(cornerRadius: 18))
+            .aspectRatio(1, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.18), lineWidth: 1))
+            .overlay(alignment: .top) {
+                if showingBoosts { boostsCard(b).padding(.top, 52).padding(.horizontal, 12).transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .topTrailing))) }
+            }
+            .animation(.spring(duration: 0.25), value: showingBoosts)
 
             if let i = info, let plot = store.state.garden.plots.first(where: { $0.id == i }), let berry = plot.berry {
                 plotInfo(plot, berry: berry, bonuses: b)
                     .transition(.opacity.combined(with: .move(edge: .top)))
+            } else {
+                statusLine(b)
             }
         }
+        .padding(8)
+        .glassCard(24)
         .animation(.spring(duration: 0.3), value: info)
     }
 
-    @ViewBuilder private var grassBackground: some View {
-        if let g = gfx.grass, let tile = Self.scaled(g, by: scale) {
-            Rectangle().fill(ImagePaint(image: Image(uiImage: tile)))
-        } else {
-            Color(red: 0.45, green: 0.77, blue: 0.64)
+    /// "3 growing · next ready in 4h 12m" under the garden.
+    private func statusLine(_ b: GardenBonuses) -> some View {
+        TimelineView(.periodic(from: .now, by: 30)) { tl in
+            let growing = store.state.garden.plots.filter { $0.berry != nil }
+            let ready = growing.filter { GardenRules.progress($0, bonuses: b, now: tl.date) >= 1 }.count
+            let next = growing.compactMap { GardenRules.readyAt($0, bonuses: b) }.filter { $0 > tl.date }.min()
+            HStack(spacing: 8) {
+                Image(systemName: ready > 0 ? "basket.fill" : "leaf.fill")
+                    .foregroundStyle(ready > 0 ? .yellow : Color(hex: 0x9BE15D))
+                Text(growing.isEmpty ? "Tap the soil to plant a berry"
+                     : ready > 0 ? "\(ready) ready to pick" + (next.map { " · next in \(countdown($0.timeIntervalSince(tl.date)))" } ?? "")
+                     : "\(growing.count) growing · next ready in \(countdown((next ?? tl.date).timeIntervalSince(tl.date)))")
+                    .font(.rounded(14, .heavy)).foregroundStyle(.white).monospacedDigit()
+                Spacer()
+                Text("\(store.gardenPlanted)/\(store.gardenPlotCount)").font(.rounded(13, .bold)).foregroundStyle(Theme.inkSoft)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4)
         }
+    }
+
+    // MARK: Active boosts (hold the badge in the garden)
+
+    private func boostsBadge(_ b: GardenBonuses, tile: CGFloat) -> some View {
+        let active = GardenTrait.allCases.filter { b.tier($0) > 0 }
+        let any = !active.isEmpty || !b.families.isEmpty
+        return HStack(spacing: -6) {
+            if any {
+                ForEach(active) { t in
+                    Image(systemName: t.symbol).font(.system(size: 11, weight: .heavy)).foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(Color(hex: t.hex)))
+                        .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1.5))
+                }
+                if !b.families.isEmpty {
+                    Image(systemName: "person.2.fill").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(Color.purple))
+                        .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1.5))
+                }
+            } else {
+                Image(systemName: "sparkles").font(.system(size: 13, weight: .heavy)).foregroundStyle(.white.opacity(0.8))
+                    .frame(width: 26, height: 26)
+            }
+        }
+        .padding(5)
+        .glassCapsule()
+        .fixedSize()
+        .frame(width: tile * 1.6, alignment: .trailing)
+        // Hold for a description of what's boosting the garden right now
+        .onLongPressGesture(minimumDuration: 0.25, maximumDistance: 40, pressing: { down in
+            if down { Haptics.tap() }
+            showingBoosts = down
+        }, perform: {})
+        .accessibilityLabel("Active garden boosts. Hold to see them.")
+    }
+
+    private func boostsCard(_ b: GardenBonuses) -> some View {
+        let active = GardenTrait.allCases.filter { b.tier($0) > 0 }
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Active boosts").font(.rounded(15, .heavy)).foregroundStyle(.white)
+            if active.isEmpty && b.families.isEmpty {
+                Text("None yet. Put 2 workers with the same trait (or from the same evolution family) in the garden.")
+                    .font(.rounded(13, .semibold)).foregroundStyle(Theme.inkSoft)
+            }
+            ForEach(active) { t in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: t.symbol).foregroundStyle(Color(hex: t.hex)).frame(width: 18)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(t.name) (\(b.counts[t] ?? 0))").font(.rounded(13, .heavy)).foregroundStyle(.white)
+                        Text(t.tierText[b.tier(t) - 1]).font(.rounded(12, .semibold)).foregroundStyle(Theme.inkSoft)
+                    }
+                }
+            }
+            if !b.families.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "person.2.fill").foregroundStyle(.purple).frame(width: 18)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Family Ties").font(.rounded(13, .heavy)).foregroundStyle(.white)
+                        Text("\(b.families.map { Dex.species($0).name }.joined(separator: ", ")): \(min(30, b.families.count * 10))% faster, +\(b.families.count) friendship")
+                            .font(.rounded(12, .semibold)).foregroundStyle(Theme.inkSoft)
+                    }
+                }
+            }
+            Divider().overlay(.white.opacity(0.2))
+            Text("Grows in \(hoursText(GardenRules.hoursToGrow(b))) · workers +\(b.friendshipPerHarvest) friendship per harvest")
+                .font(.rounded(12, .bold)).foregroundStyle(.white)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassCard(18)
+        .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
+        .allowsHitTesting(false)
     }
 
     private func plotInfo(_ plot: GardenPlot, berry: String, bonuses b: GardenBonuses) -> some View {
@@ -183,29 +290,53 @@ struct GardenView: View {
 
     private var traits: some View {
         let b = store.gardenBonuses
+        let active = GardenTrait.allCases.filter { (b.counts[$0] ?? 0) > 0 }
         return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Team bonuses").font(.rounded(17, .heavy)).foregroundStyle(.white)
-                Spacer()
-                Text("Grow time \(hoursText(GardenRules.hoursToGrow(b)))").font(.rounded(13, .bold)).foregroundStyle(Theme.inkSoft)
-            }
-            ForEach(GardenTrait.allCases) { t in TraitRow(trait: t, count: b.counts[t] ?? 0, tier: b.tier(t)) }
-            HStack(spacing: 10) {
-                Image(systemName: "person.2.fill").font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(b.families.isEmpty ? Theme.inkSoft : .white)
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(b.families.isEmpty ? Color.white.opacity(0.08) : Color.purple.opacity(0.7)))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Family Ties").font(.rounded(14, .heavy)).foregroundStyle(.white)
-                    Text(b.families.isEmpty
-                         ? "2 from the same evolution family: 10% faster growth and +1 friendship each harvest (up to 3 families)"
-                         : b.families.map { Dex.species($0).name }.joined(separator: ", ") + " family · \(b.families.count * 10)% faster, +\(b.families.count) friendship")
-                        .font(.rounded(12, .semibold)).foregroundStyle(Theme.inkSoft)
+            Button {
+                SoundKit.shared.play(.select)
+                withAnimation(.spring(duration: 0.35)) { traitsOpen.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("Traits").font(.rounded(17, .heavy)).foregroundStyle(.white)
+                    // what your workers bring, at a glance
+                    HStack(spacing: 4) {
+                        ForEach(active) { t in
+                            Image(systemName: t.symbol).font(.system(size: 10, weight: .heavy))
+                                .foregroundStyle(b.tier(t) > 0 ? .white : Color(hex: t.hex))
+                                .frame(width: 22, height: 22)
+                                .background(Circle().fill(b.tier(t) > 0 ? Color(hex: t.hex) : Color.white.opacity(0.1)))
+                        }
+                    }
+                    Spacer()
+                    Text("Grows in \(hoursText(GardenRules.hoursToGrow(b)))").font(.rounded(13, .bold)).foregroundStyle(Theme.inkSoft)
+                    Image(systemName: "chevron.down").font(.system(size: 13, weight: .heavy)).foregroundStyle(Theme.inkSoft)
+                        .rotationEffect(.degrees(traitsOpen ? 180 : 0))
                 }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if traitsOpen {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(GardenTrait.allCases) { t in TraitRow(trait: t, count: b.counts[t] ?? 0, tier: b.tier(t)) }
+                    HStack(spacing: 10) {
+                        Image(systemName: "person.2.fill").font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(b.families.isEmpty ? Theme.inkSoft : .white)
+                            .frame(width: 34, height: 34)
+                            .background(Circle().fill(b.families.isEmpty ? Color.white.opacity(0.08) : Color.purple.opacity(0.7)))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Family Ties").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                            Text("2 from the same evolution family: 10% faster growth and +1 friendship each harvest (up to 3 families)")
+                                .font(.rounded(12, .semibold)).foregroundStyle(Theme.inkSoft)
+                        }
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(14)
         .glassCard(22)
+        .clipped()
     }
 
     // MARK: Workers
@@ -283,63 +414,31 @@ struct GardenView: View {
     }
 }
 
-// MARK: - One patch of soil
+// MARK: - One berry plant
 
-private struct PlotCell: View {
+private struct PlantSprite: View {
     let plot: GardenPlot
-    let locked: Bool
     let bonuses: GardenBonuses
     let frame: Int
-    let scale: CGFloat
-    let cellW: CGFloat
-    let cellH: CGFloat
     let now: Date
+    let k: CGFloat
     @ObservedObject private var gfx = GardenGfx.shared
 
     var body: some View {
-        let progress = GardenRules.progress(plot, bonuses: bonuses, now: now)
-        let stage = BerryStage.at(progress: progress)
-        VStack(spacing: 2) {
-            ZStack(alignment: .bottom) {
-                // soft soil (the bottom half of the tree's 16×32 cell, like on Route 123)
-                Group {
-                    if locked {
-                        Image(systemName: "lock.fill").font(.system(size: 18, weight: .bold)).foregroundStyle(.white.opacity(0.6))
-                            .frame(width: cellW, height: cellW)
-                    } else if let soil = gfx.soil {
-                        PixelImageView(image: soil).frame(width: cellW, height: cellW)
-                    } else {
-                        RoundedRectangle(cornerRadius: 4).fill(Color(red: 0.6, green: 0.45, blue: 0.42)).frame(width: cellW, height: cellW)
-                    }
-                }
-                if let berry = plot.berry, !locked, let img = gfx.sprite(berry: berry, stage: stage, frame: frame) {
-                    let h = img.size.height * scale
-                    PixelImageView(image: img)
-                        .frame(width: img.size.width * scale, height: h)
-                        .offset(y: -cellW / 4)
-                        .shadow(color: stage == .berries ? .yellow.opacity(0.6) : .clear, radius: 6)
-                }
+        let stage = BerryStage.at(progress: GardenRules.progress(plot, bonuses: bonuses, now: now))
+        ZStack(alignment: .bottom) {
+            Color.clear
+            if let berry = plot.berry, let img = gfx.sprite(berry: berry, stage: stage, frame: frame) {
+                PixelImageView(image: img)
+                    .frame(width: img.size.width * k, height: img.size.height * k)
             }
-            .frame(width: cellW, height: cellH, alignment: .bottom)
-            label(progress: progress, stage: stage)
-                .frame(height: 16)
-        }
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(locked ? "Locked patch" : plot.berry.map { "\(Dex.itemName($0)), \(stage.name)" } ?? "Empty soil")
-    }
-
-    @ViewBuilder private func label(progress: Double, stage: BerryStage) -> some View {
-        if locked {
-            Text("Locked").font(.rounded(11, .heavy)).foregroundStyle(.white.opacity(0.6))
-        } else if plot.berry == nil {
-            Text("Plant").font(.rounded(11, .heavy)).foregroundStyle(.white.opacity(0.85))
-        } else if stage == .berries {
-            Text("Pick!").font(.rounded(12, .black)).foregroundStyle(.yellow)
-        } else if let at = GardenRules.readyAt(plot, bonuses: bonuses) {
-            let s = max(0, Int(at.timeIntervalSince(now)))
-            Text(s >= 3600 ? "\(s / 3600)h \((s % 3600) / 60)m" : "\(s / 60)m").font(.rounded(11, .heavy))
-                .foregroundStyle(.white).monospacedDigit()
+            if plot.berry != nil && stage == .berries {
+                // a little bouncing marker over plants ready to pick
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 14 * k / 2, weight: .black))
+                    .foregroundStyle(.white, Color(hex: 0xF5A623))
+                    .offset(y: -32 * k - 4 - abs(sin(Double(frame) * .pi / 2)) * 3)
+            }
         }
     }
 }
@@ -348,10 +447,11 @@ private struct PlotCell: View {
 
 private struct WorkersLayer: View {
     let workers: [OwnedPokemon]
+    var iconSize: CGFloat = 40
     var body: some View {
         GeometryReader { geo in
             ForEach(Array(workers.enumerated()), id: \.element.id) { i, mon in
-                HoppingWorker(mon: mon, area: geo.size, seed: i)
+                HoppingWorker(mon: mon, area: geo.size, seed: i, size: iconSize)
             }
         }
         .allowsHitTesting(false)
@@ -362,22 +462,23 @@ private struct HoppingWorker: View {
     let mon: OwnedPokemon
     let area: CGSize
     let seed: Int
+    var size: CGFloat = 40
     @State private var pos: CGPoint = .zero
     @State private var facingRight = true
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 20)) { tl in
             let t = tl.date.timeIntervalSince1970 + Double(seed) * 0.37
-            let hop = abs(sin(t * 7)) * 7
+            let hop = abs(sin(t * 7)) * size * 0.14
             LocalIcon(speciesID: mon.speciesID, shiny: mon.isShiny)
-                .frame(width: 44, height: 44)
+                .frame(width: size, height: size)
                 .scaleEffect(x: facingRight ? -1 : 1, y: 1)
                 .offset(y: -hop)
                 .shadow(color: .black.opacity(0.3), radius: 2, y: 2)
         }
         .position(pos)
-        .task(id: area) {
-            guard area.width > 60, area.height > 60 else { return }
+        .task(id: "\(area.width)x\(area.height)") {
+            guard area.width > size * 2, area.height > size * 2 else { return }
             pos = random()
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(Double.random(in: 1.6...3.4)))
@@ -389,7 +490,8 @@ private struct HoppingWorker: View {
     }
 
     private func random() -> CGPoint {
-        CGPoint(x: .random(in: 26...(area.width - 26)), y: .random(in: 30...(area.height - 26)))
+        let m = size / 2
+        return CGPoint(x: .random(in: m...(area.width - m)), y: .random(in: m...(area.height - m)))
     }
 }
 
