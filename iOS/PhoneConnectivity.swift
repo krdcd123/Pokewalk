@@ -120,6 +120,23 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
         case "battle":
             Task { @MainActor in replyHandler(WatchBattles.handle(message)) }
             return
+        case "gardenPlant", "gardenPick":
+            Task { @MainActor in
+                let store = GameStore.shared
+                let plot = message["plot"] as? Int ?? -1
+                var text = ""
+                if message["request"] as? String == "gardenPlant", let berry = message["berry"] as? String {
+                    text = store.plant(berry, in: plot) ? "\(Dex.itemName(berry)) planted!" : "Couldn't plant that."
+                } else if let r = store.harvest(plot) {
+                    text = "Picked \(r.count) \(Dex.itemName(r.berry))\(r.count == 1 ? "" : "s")!"
+                    if let bonus = r.bonus { text += " +1 \(Dex.itemName(bonus))" }
+                    if r.replanted { text += " (replanted)" }
+                } else {
+                    text = "Not ready yet."
+                }
+                replyHandler(["snapshot": (try? JSONEncoder().encode(store.snapshot)) ?? Data(), "message": text])
+            }
+            return
         case "sync": break
         default: replyHandler([:]); return
         }

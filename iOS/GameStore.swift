@@ -1090,7 +1090,17 @@ final class GameStore: ObservableObject {
             latitude: tracker.currentLocation()?.coordinate.latitude,
             longitude: tracker.currentLocation()?.coordinate.longitude,
             money: state.money,
-            trail: watchTrail)
+            trail: watchTrail,
+            garden: watchGarden)
+    }
+
+    /// Open garden patches for the watch.
+    private var watchGarden: [WatchSnapshot.GardenSpot] {
+        let b = gardenBonuses
+        return (0..<(state.garden.fields * Garden.plotsPerField)).filter(gardenPlotOpen).map { id in
+            let p = gardenPlot(id)
+            return .init(id: id, berry: p.berry, plantedAt: p.plantedAt, readyAt: GardenRules.readyAt(p, bonuses: b))
+        }
     }
 
     /// Today's route for the watch map, thinned to about 300 points in total.

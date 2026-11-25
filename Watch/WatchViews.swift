@@ -5,7 +5,7 @@ import WatchKit
 
 /// Screens in the watch app (also where a tapped notification can jump to).
 enum WatchRoute: Hashable {
-    case party, bag, wild, map, workout
+    case party, bag, wild, map, workout, garden
     case summary(String)    // party member id
     case battle(String)     // wild Pokémon id
 }
@@ -51,6 +51,7 @@ struct WatchRootView: View {
                     case .wild: WildPage()
                     case .map: WatchMapPage()
                     case .workout: WorkoutPickerPage()
+                    case .garden: GardenPage()
                     case .summary(let id): SummaryPage(memberID: id)
                     case .battle(let id): BattlePage(wildID: id)
                     }
@@ -80,6 +81,9 @@ struct MenuPage: View {
                          tint: Color(hex: 0xE8A23A), badge: 0, route: .bag)
                 MenuTile(title: "Wild", subtitle: model.snapshot.wild.isEmpty ? "\(model.liveStepsToEncounter) steps to go" : "Waiting to be caught",
                          system: "leaf.fill", tint: Color(hex: 0x4CC76E), badge: model.snapshot.wild.count, route: .wild)
+                MenuTile(title: "Garden", subtitle: GardenPage.subtitle(model.snapshot.garden), system: "camera.macro",
+                         tint: Color(hex: 0xE86FB0),
+                         badge: model.snapshot.garden.filter { ($0.readyAt ?? .distantFuture) <= .now }.count, route: .garden)
                 MenuTile(title: "Map", subtitle: "Where you are", system: "map.fill",
                          tint: Color(hex: 0x3FB8AF), badge: 0, route: .map)
                 if let status = model.syncStatus {
@@ -881,5 +885,116 @@ struct WorkoutLiveView: View {
 
     static func distance(_ m: Double, swim: Bool) -> String {
         swim ? "\(Int(m))" : String(format: "%.2f", m / 1000)
+    }
+}
+
+
+// MARK: - Garden
+
+/// The berry garden at a glance: a timer on each growing berry, tap to pick ready ones or plant in empty soil.
+struct GardenPage: View {
+    @ObservedObject private var model = WatchModel.shared
+    @State private var message: String?
+    @State private var planting: Int?
+    @State private var busy = false
+
+    static func subtitle(_ spots: [WatchSnapshot.GardenSpot]) -> String {
+        let ready = spots.filter { ($0.readyAt ?? .distantFuture) <= .now }.count
+        if ready > 0 { return "\(ready) ready to pick" }
+        if let next = spots.compactMap(\.readyAt).min() { return "Next in \(short(next.timeIntervalSinceNow))" }
+        return spots.isEmpty ? "Open it on your iPhone" : "Plant some berries"
+    }
+
+    static func short(_ s: TimeInterval) -> String {
+        let t = max(0, Int(s))
+        return t >= 3600 ? "\(t / 3600)h \((t % 3600) / 60)m" : "\(max(1, t / 60))m"
+    }
+
+    private var berries: [WatchSnapshot.BagLine] {
+        model.snapshot.bag.filter { ItemCatalog.isBerry($0.key) && $0.count > 0 }
+    }
+
+    var body: some View {
+        let spots = model.snapshot.garden
+        ScrollView {
+            VStack(spacing: 8) {
+                if let message {
+                    Text(message).font(.footnote.weight(.semibold)).multilineTextAlignment(.center)
+                        .transition(.opacity)
+                }
+                if spots.isEmpty {
+                    Text("Open the Garden on your iPhone (Menu › Garden) to get started.")
+                        .font(.footnote).multilineTextAlignment(.center).foregroundStyle(.secondary)
+                }
+                TimelineView(.periodic(from: .now, by: 30)) { tl in
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6), GridItem(.flexible())], spacing: 6) {
+                        ForEach(spots) { spot in spotCell(spot, now: tl.date) }
+                    }
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+        .navigationTitle("Garden")
+        .sheet(item: Binding(get: { planting.map { Plot(id: $0) } }, set: { planting = $0?.id })) { p in
+            plantList(p.id)
+        }
+        .animation(.easeInOut, value: message)
+    }
+
+    private struct Plot: Identifiable { let id: Int }
+
+    private func spotCell(_ spot: WatchSnapshot.GardenSpot, now: Date) -> some View {
+        let ready = (spot.readyAt ?? .distantFuture) <= now
+        let total = max(1, (spot.readyAt ?? now).timeIntervalSince(spot.plantedAt ?? now))
+        let done = spot.berry == nil ? 0 : min(1, now.timeIntervalSince(spot.plantedAt ?? now) / total)
+        return Button {
+            guard !busy else { return }
+            if spot.berry == nil {
+                if berries.isEmpty { message = "No berries to plant." } else { planting = spot.id }
+            } else if ready {
+                busy = true
+                Task { message = await model.garden("gardenPick", plot: spot.id); busy = false }
+            } else {
+                message = "\(Dex.itemName(spot.berry!)) · ready in \(Self.short((spot.readyAt ?? now).timeIntervalSince(now)))"
+            }
+        } label: {
+            VStack(spacing: 2) {
+                ZStack {
+                    Circle().stroke(.white.opacity(0.15), lineWidth: 3)
+                    Circle().trim(from: 0, to: done)
+                        .stroke(ready ? Color.yellow : Color(hex: 0x9BE15D), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    if let b = spot.berry {
+                        ItemIcon(key: b).frame(width: 22, height: 22)
+                    } else {
+                        Image(systemName: "plus").font(.system(size: 14, weight: .bold)).foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: 42, height: 42)
+                Text(spot.berry == nil ? "Plant" : ready ? "Pick!" : Self.short((spot.readyAt ?? now).timeIntervalSince(now)))
+                    .font(.system(size: 11, weight: .bold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(ready ? .yellow : .primary)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func plantList(_ plot: Int) -> some View {
+        List(berries) { line in
+            Button {
+                planting = nil
+                busy = true
+                Task { message = await model.garden("gardenPlant", plot: plot, berry: line.key); busy = false }
+            } label: {
+                HStack {
+                    ItemIcon(key: line.key).frame(width: 22, height: 22)
+                    Text(line.name).font(.footnote)
+                    Spacer()
+                    Text("×\(line.count)").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Plant")
     }
 }

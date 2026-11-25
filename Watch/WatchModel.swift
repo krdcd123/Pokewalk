@@ -277,6 +277,16 @@ final class WatchModel: NSObject, ObservableObject {
         return reply["message"] as? String ?? ""
     }
 
+    /// Plant a berry in a garden patch, or pick a ready one (done on the iPhone).
+    func garden(_ request: String, plot: Int, berry: String? = nil) async -> String {
+        var msg: [String: Any] = ["request": request, "plot": plot]
+        if let berry { msg["berry"] = berry }
+        guard let reply = await ask(msg) else { return "Couldn't reach your iPhone." }
+        ingest(reply["snapshot"] as? Data)
+        WKInterfaceDevice.current().play(.success)
+        return reply["message"] as? String ?? ""
+    }
+
     struct BattleReply {
         var message: String
         var shakes = 0

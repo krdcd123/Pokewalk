@@ -18,6 +18,14 @@ struct WatchSnapshot: Codable, Equatable {
     }
 
     /// One row of the Bag (balls, berries, items) for the watch's condensed list.
+    /// One open garden patch (for the watch's Garden page).
+    struct GardenSpot: Codable, Equatable, Identifiable {
+        var id: Int
+        var berry: String?
+        var plantedAt: Date?
+        var readyAt: Date?
+    }
+
     struct BagLine: Codable, Equatable, Identifiable {
         var key: String
         var name: String
@@ -62,6 +70,7 @@ struct WatchSnapshot: Codable, Equatable {
     var longitude: Double? = nil
     var money: Int = 0
     var trail: [TrailSegment] = []  // today's walks (and drives), thinned out for the watch map
+    var garden: [GardenSpot] = []   // open garden patches
 
     var buddy: Member? { party.first { $0.isBuddy } }
 
@@ -257,5 +266,6 @@ extension WatchSnapshot {
         longitude = try? c.decodeIfPresent(Double.self, forKey: .longitude)
         money = (try? c.decodeIfPresent(Int.self, forKey: .money)) ?? 0
         trail = (try? c.decodeIfPresent([TrailSegment].self, forKey: .trail)) ?? []
+        garden = (try? c.decodeIfPresent([GardenSpot].self, forKey: .garden)) ?? []
     }
 }
