@@ -10,6 +10,7 @@ struct RanchView: View {
     @State private var builtOpen = false
     @State private var foreman: UIImage?
     @State private var confirmRecall = false
+    @State private var traitsOpen = false
 
     var body: some View {
         ScrollView {
@@ -17,6 +18,7 @@ struct RanchView: View {
                 foremanCard
                 ranchMap
                 shiftCard
+                traitsCard
                 materialsCard
                 buildCard
                 if store.ranch.houseBuilt {
@@ -281,6 +283,87 @@ struct RanchView: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    // MARK: Jobs & attributes (collapsible, like the Garden's traits)
+
+    private var traitsCard: some View {
+        let workers = store.ranchWorkers
+        let jobs = Dictionary(grouping: workers) { RanchJob.of($0.species.types[0]) }.mapValues(\.count)
+        let attrs = Dictionary(grouping: workers) { RanchAttribute.of(nature: $0.nature) }.mapValues(\.count)
+        return VStack(alignment: .leading, spacing: 10) {
+            Button {
+                SoundKit.shared.play(.select)
+                withAnimation(.spring(duration: 0.35)) { traitsOpen.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Text("Traits").font(.rounded(17, .heavy)).foregroundStyle(.white)
+                    HStack(spacing: 4) {
+                        ForEach(RanchJob.allCases.filter { jobs[$0] != nil }, id: \.self) { j in
+                            Image(systemName: j.symbol).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
+                                .frame(width: 22, height: 22).background(Circle().fill(Theme.teal))
+                        }
+                        ForEach(RanchAttribute.allCases.filter { attrs[$0] != nil }, id: \.self) { a in
+                            Image(systemName: a.symbol).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
+                                .frame(width: 22, height: 22).background(Circle().fill(Color.orange))
+                        }
+                    }
+                    Spacer()
+                    Text("Shift \(Self.hours(store.ranchShiftHours))").font(.rounded(13, .bold)).foregroundStyle(Theme.inkSoft)
+                    Image(systemName: "chevron.down").font(.system(size: 13, weight: .heavy)).foregroundStyle(Theme.inkSoft)
+                        .rotationEffect(.degrees(traitsOpen ? 180 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if traitsOpen {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Jobs — from a Pokémon's first type").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
+                    ForEach(RanchJob.allCases, id: \.self) { j in
+                        traitRow(symbol: j.symbol, tint: Theme.teal, name: j.name, count: jobs[j] ?? 0,
+                                 detail: "\(Self.types(for: j)) · \(j.text)")
+                    }
+                    Text("Attributes — from a Pokémon's nature").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
+                        .padding(.top, 4)
+                    ForEach(RanchAttribute.allCases, id: \.self) { a in
+                        traitRow(symbol: a.symbol, tint: .orange, name: a.name, count: attrs[a] ?? 0,
+                                 detail: "\(Self.natures(for: a)) · \(a.text)")
+                    }
+                    Text("Every rancher also gathers more the higher its level and friendship.")
+                        .font(.rounded(12, .semibold)).foregroundStyle(Theme.inkSoft).padding(.top, 4)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(14)
+        .glassCard(22)
+        .clipped()
+    }
+
+    private func traitRow(symbol: String, tint: Color, name: String, count: Int, detail: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol).font(.system(size: 15, weight: .bold))
+                .foregroundStyle(count > 0 ? .white : Theme.inkSoft)
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(count > 0 ? tint : Color.white.opacity(0.08)))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(name).font(.rounded(14, .heavy)).foregroundStyle(.white)
+                    Spacer()
+                    Text("\(count)").font(.rounded(14, .heavy)).foregroundStyle(count > 0 ? .white : Theme.inkSoft)
+                }
+                Text(detail).font(.rounded(12, .semibold)).foregroundStyle(Theme.inkSoft)
+            }
+        }
+    }
+
+    static func types(for job: RanchJob) -> String {
+        PokeType.allCases.filter { RanchJob.of($0) == job }.map(\.displayName).joined(separator: ", ")
+    }
+
+    static func natures(for a: RanchAttribute) -> String {
+        Dex.natures.filter { RanchAttribute.of(nature: $0) == a }.joined(separator: ", ")
     }
 
     // MARK: Materials
