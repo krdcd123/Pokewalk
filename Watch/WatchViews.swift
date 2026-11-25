@@ -845,14 +845,21 @@ struct WorkoutLiveView: View {
                     Label(kind.name, systemImage: kind.symbol).font(.footnote.weight(.semibold))
                         .foregroundStyle(Color(hex: 0x9BE15D))
                     TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        Text(Self.clock(workout.elapsed))
-                            .font(.system(size: 34, weight: .semibold, design: .rounded)).monospacedDigit()
-                            .foregroundStyle(workout.paused ? .yellow : .white)
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Image(systemName: "stopwatch.fill").font(.system(size: 17, weight: .bold))
+                                .foregroundStyle(.yellow).frame(width: 22)
+                            Text(Self.clock(workout.elapsed))
+                                .font(.system(size: 34, weight: .semibold, design: .rounded)).monospacedDigit()
+                                .foregroundStyle(workout.paused ? .yellow : .white)
+                        }
                     }
-                    metric("\(Int(workout.kcal))", "ACTIVE KCAL", .pink)
-                    if let hr = workout.heartRate { metric("\(Int(hr))", "BPM", .red) }
+                    metric("\(Int(workout.kcal))", "ACTIVE KCAL", .pink, icon: "flame.fill")
+                    if let hr = workout.heartRate {
+                        metric("\(Int(hr))", "BPM", .red, icon: "heart.fill", beat: true)
+                    }
                     if kind.tracksDistance {
-                        metric(Self.distance(workout.meters, swim: kind.isSwimming), kind.isSwimming ? "M" : "KM", .cyan)
+                        metric(Self.distance(workout.meters, swim: kind.isSwimming), kind.isSwimming ? "M" : "KM", .cyan,
+                               icon: kind.isSwimming ? "figure.pool.swim" : "point.topleft.down.to.point.bottomright.curvepath.fill")
                     }
                     HStack(spacing: 8) {
                         Button { workout.togglePause() } label: {
@@ -870,8 +877,12 @@ struct WorkoutLiveView: View {
         }
     }
 
-    private func metric(_ value: String, _ unit: String, _ color: Color) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 3) {
+    /// A line like the Workout app's: coloured icon, big number, small unit.
+    private func metric(_ value: String, _ unit: String, _ color: Color, icon: String, beat: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Image(systemName: icon).font(.system(size: 17, weight: .bold)).foregroundStyle(color)
+                .symbolEffect(.pulse, options: .repeating, isActive: beat && !workout.paused)
+                .frame(width: 22)
             Text(value).font(.system(size: 26, weight: .semibold, design: .rounded)).monospacedDigit()
             Text(unit).font(.system(size: 12, weight: .bold)).foregroundStyle(color)
         }

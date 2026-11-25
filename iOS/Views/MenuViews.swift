@@ -13,7 +13,7 @@ struct MainMenuView: View {
     var close: () -> Void = {}
 
     enum Dest: Hashable {
-        case pc, dex, bag, shop, journal, trainer, garden, ranch, settings, summary(UUID)
+        case pc, dex, bag, shop, journal, trainer, garden, ranch, achievements, settings, summary(UUID)
     }
 
     private struct Item: Identifiable { let dest: Dest; let title: String; let symbol: String; var id: String { title } }
@@ -36,6 +36,18 @@ struct MainMenuView: View {
             ToolbarItem(placement: .topBarLeading) { menuTitle }.sharedBackgroundVisibility(.hidden)
         } else {
             ToolbarItem(placement: .topBarLeading) { menuTitle }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            NavigationLink(value: Dest.achievements) {
+                Image(systemName: "trophy.fill").font(.system(size: 17, weight: .bold))
+                    .overlay(alignment: .topTrailing) {
+                        // red dot: achievements ready to collect
+                        if !Achievements.ready(store.state).isEmpty {
+                            Circle().fill(.red).frame(width: 9, height: 9).offset(x: 4, y: -3)
+                        }
+                    }
+            }
+            .accessibilityLabel(Achievements.ready(store.state).isEmpty ? "Achievements" : "Achievements, rewards to collect")
         }
         ToolbarItem(placement: .topBarTrailing) {
             NavigationLink(value: Dest.settings) {
@@ -111,6 +123,7 @@ struct MainMenuView: View {
                 case .trainer: TrainerCardView()
                 case .garden: GardenView()
                 case .ranch: RanchView()
+                case .achievements: AchievementsView()
                 case .settings: SettingsView()
                 case .summary(let id): SummaryView(pokemonID: id)
                 }
@@ -246,7 +259,8 @@ struct BagView: View {
             }
         }
         static func of(_ key: String) -> Pocket {
-            if key == Fishing.rodKey || EvolutionShop.isEvolutionItem(key) || RanchTickets.isTicket(key) { return .key }
+            if key == Fishing.rodKey || EvolutionShop.isEvolutionItem(key) || RanchTickets.isTicket(key)
+                || key == Achievements.shinyCharm { return .key }
             if Fishing.isBait(key) || Fishing.isLure(key) { return .items }
             if ItemCatalog.isBerry(key) { return .berries }
             if key == "rare-candy" || ExpCandy.exp(key) != nil { return .candies }
@@ -1080,7 +1094,7 @@ private struct BagItemRow: View {
                 Text("\(Int(Fishing.biteChance(berries: n) * 100))% chance of a bite · \(Int((w[2] / total * 100).rounded()))% chance of a rare catch")
                     .font(.rounded(12, .heavy)).foregroundStyle(Theme.tealDark)
             } else if expanded {
-                if ItemCatalog.sellPrice[key] == nil {
+                if ItemCatalog.sellPrice[key] == nil && key != Achievements.shinyCharm {
                     Text("Use on…").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
                     ForEach(store.state.party) { mon in
                         let able = GameRules.canUse(key, on: mon)
@@ -1122,7 +1136,8 @@ private struct BagItemRow: View {
             if FieldItems.isField(key) {
                 Button("Use", systemImage: "sparkles") { Task { _ = await store.useFieldItem(key) } }
             }
-            if !Fishing.isBait(key) && !Fishing.isLure(key) && !RanchTickets.isTicket(key) && !FieldItems.isField(key) && ItemCatalog.sellPrice[key] == nil {
+            if !Fishing.isBait(key) && !Fishing.isLure(key) && !RanchTickets.isTicket(key) && !FieldItems.isField(key)
+                && key != Achievements.shinyCharm && ItemCatalog.sellPrice[key] == nil {
                 Menu("Use on…", systemImage: "hand.point.up.left.fill") {
                     ForEach(store.state.party) { mon in
                         Button("\(mon.name) · Lv \(mon.level)") { use(on: mon) }

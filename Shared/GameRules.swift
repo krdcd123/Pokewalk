@@ -231,6 +231,9 @@ enum GameRules {
             s.counters.nextEncounterAt = rollEncounterGap(s.settings)
             var enc = generateEncounter(context: context, lifetimeSteps: s.lifetimeSteps, settings: s.settings, at: date)
             applyBuddyAbility(to: &enc, in: s, context: context, date: date)
+            // Shiny Charm: two extra chances at a shiny
+            if Achievements.hasShinyCharm(s), !enc.isShiny,
+               (0..<2).contains(where: { _ in Int.random(in: 0..<max(1, s.settings.shinyOdds)) == 0 }) { enc.isShiny = true }
             if s.pending.count >= s.settings.maxPendingEncounters {
                 logLeft([s.pending[0]], in: &s)
                 s.pending.removeFirst()
@@ -435,6 +438,7 @@ enum GameRules {
     static func itemDescription(_ item: String) -> String {
         if let t = RanchTickets.ticket(item) { return t.text }
         if let d = FieldItems.description(item) { return d }
+        if item == Achievements.shinyCharm { return "A shiny charm: shiny Pokémon are three times as likely to appear. Never used up." }
         if item == "rare-candy" { return "Raises a Pokémon by one level." }
         if let exp = ExpCandy.exp(item) { return "Gives a Pokémon \(exp.formatted()) Exp." }
         if ItemCatalog.isBerry(item) { return "Makes a Pokémon more friendly (more so if it doesn't like you much yet)." }

@@ -508,6 +508,12 @@ final class GameStore: ObservableObject {
         markOpened(enc.id)
     }
 
+    func claimAchievement(_ a: Achievement) -> Bool {
+        var ok = false
+        mutate { ok = Achievements.claim(a, in: &$0) }
+        return ok
+    }
+
     func buyItem(_ key: String, price: Int) -> Bool {
         guard state.money >= price else { return false }
         mutate { s in s.money -= price; s.bag[key, default: 0] += 1 }
