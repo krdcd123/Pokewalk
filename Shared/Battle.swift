@@ -275,7 +275,10 @@ enum FrontierRules {
         let base = partyLevel(s)
         // seeded per day and battle, so it's the same trainer if you leave and come back
         let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
-        let daySeed = UInt64((c.year ?? 0) * 10_000 + (c.month ?? 0) * 100 + (c.day ?? 0))
+        let y: Int = c.year ?? 0
+        let mo: Int = c.month ?? 0
+        let d: Int = c.day ?? 0
+        let daySeed = UInt64(y * 10_000 + mo * 100 + d)
         var rng = SeededRNG(seed: daySeed &* 31 &+ UInt64(battle))
         if battle == 5 {
             let day = weekday(date)
