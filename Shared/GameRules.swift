@@ -450,6 +450,7 @@ enum GameRules {
     static func itemDescription(_ item: String) -> String {
         if let t = RanchTickets.ticket(item) { return t.text }
         if let d = FieldItems.description(item) { return d }
+        if item == "oval-charm" { return "From the Daycare's Oval Garden: Eggs turn up twice as often. Never used up." }
         if item == Achievements.shinyCharm { return "A shiny charm: shiny Pokémon are three times as likely to appear. Never used up." }
         if item == "rare-candy" { return "Raises a Pokémon by one level." }
         if let exp = ExpCandy.exp(item) { return "Gives a Pokémon \(exp.formatted()) Exp." }

@@ -5,12 +5,31 @@ import SwiftUI
 struct PartyView: View {
     @EnvironmentObject private var store: GameStore
     @State private var open: UUID?
+    @State private var frontier = false
 
     private let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
 
     var body: some View {
+        VStack(spacing: 0) {
+            Picker("View", selection: $frontier) {
+                Label("Party", systemImage: "circle.grid.2x2.fill").tag(false)
+                Label("Battle Frontier", systemImage: "flag.2.crossed.fill").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal).padding(.top, 6)
+            .onChange(of: frontier) { _, _ in SoundKit.shared.play(.select) }
+            if frontier { FrontierView().frame(maxHeight: .infinity) } else { partyGrid }
+        }
+        .navigationTitle(frontier ? "Battle Frontier" : "Party")
+        .glassScreen(transparent: true)
+        .navigationDestination(item: $open) { id in
+            PagedSummaryView(ids: store.state.partyIDs, start: id)
+        }
+    }
+
+    private var partyGrid: some View {
         let party = store.state.party
-        ScrollView {
+        return ScrollView {
             LazyVGrid(columns: columns, spacing: 14) {
                 ForEach(Array(party.enumerated()), id: \.element.id) { i, mon in
                     let isBuddy = mon.id == store.state.buddyID
@@ -47,11 +66,6 @@ struct PartyView: View {
             .padding()
             .opacity(open == nil ? 1 : 0)                      // see-through panel: fade under the summary
             .animation(.easeInOut(duration: 0.22), value: open == nil)
-        }
-        .navigationTitle("Party")
-        .glassScreen(transparent: true)
-        .navigationDestination(item: $open) { id in
-            PagedSummaryView(ids: store.state.partyIDs, start: id)
         }
     }
 }

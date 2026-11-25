@@ -174,6 +174,29 @@ enum Achievements {
             A(id: "decor25", title: "Interior Designer", detail: "Have 25 decorations in your house", symbol: "sofa.fill", tier: 3, category: .ranch, target: 25) { $0.ranch.placed.count },
             A(id: "styles", title: "Redecorator", detail: "Own every room style", symbol: "paintpalette.fill", tier: 4, category: .ranch, target: 6) { $0.ranch.styles.count },
 
+            // Seasons, eggs, Frontier and contests
+            A(id: "swarm1", title: "Swarm Spotter", detail: "Catch a swarm Pokémon", symbol: "ant.fill", tier: 1, category: .catching, target: 1, value: stat("swarmCaught")),
+            A(id: "swarm25", title: "Swarm Chaser", detail: "Catch 25 swarm Pokémon", symbol: "ant.circle.fill", tier: 3, category: .catching, target: 25, value: stat("swarmCaught")),
+            A(id: "daycare", title: "Daycare Open", detail: "Build the Daycare Hut", symbol: "house.fill", tier: 2, category: .ranch, target: 1) { $0.daycare.built },
+            A(id: "daycareDone", title: "Breeding Grounds", detail: "Build everything at the Daycare", symbol: "oval.portrait.fill", tier: 4, category: .ranch, target: DaycareRules.projects.count) { $0.daycare.built },
+            A(id: "egg1", title: "It's Hatching!", detail: "Hatch an Egg", symbol: "oval.portrait.fill", tier: 1, category: .pokemon, target: 1, value: stat("eggsHatched")),
+            A(id: "egg50", title: "Breeder", detail: "Hatch 50 Eggs", symbol: "oval.portrait.fill", tier: 3, category: .pokemon, target: 50, value: stat("eggsHatched")),
+            A(id: "egg250", title: "Master Breeder", detail: "Hatch 250 Eggs", symbol: "oval.portrait.fill", tier: 4, category: .pokemon, target: 250, value: stat("eggsHatched")),
+            A(id: "frontier1", title: "Frontier Debut", detail: "Win a Battle Frontier battle", symbol: "flag.2.crossed.fill", tier: 1, category: .master, target: 1, value: stat("frontierWins")),
+            A(id: "frontier100", title: "Frontier Regular", detail: "Win 100 Battle Frontier battles", symbol: "flag.2.crossed.fill", tier: 3, category: .master, target: 100, value: stat("frontierWins")),
+            A(id: "frontier500", title: "Frontier Legend", detail: "Win 500 Battle Frontier battles", symbol: "flag.checkered", tier: 4, category: .master, target: 500, value: stat("frontierWins")),
+            A(id: "badges", title: "Badge Collector", detail: "Earn all 7 Gym badges", symbol: "seal.fill", tier: 3, category: .master, target: 7) { $0.frontier.badges.count },
+            A(id: "champion", title: "Hoenn Champion", detail: "Beat the Champion or a Frontier Brain", symbol: "crown.fill", tier: 4, category: .master, target: 1, value: stat("championWins")),
+            A(id: "brains", title: "Frontier Brain Buster", detail: "Beat 5 different Champions and Frontier Brains", symbol: "star.square.fill", tier: 5, category: .master, target: 5) { $0.frontier.symbols.count },
+            A(id: "contest1", title: "Showtime", detail: "Win a contest", symbol: "rosette", tier: 1, category: .pokemon, target: 1, value: stat("contestWins")),
+            A(id: "contest25", title: "Star Performer", detail: "Win 25 contests", symbol: "rosette", tier: 3, category: .pokemon, target: 25, value: stat("contestWins")),
+            A(id: "masterRibbon", title: "Master Rank", detail: "Win a Master Rank contest", symbol: "medal.fill", tier: 4, category: .pokemon, target: 1) { s in
+                s.contests.ribbons.values.flatMap { $0 }.filter { $0.hasSuffix("-3") }.count
+            },
+            A(id: "allMaster", title: "Ribbon Master", detail: "Win Master Rank in all 5 categories", symbol: "medal.star.fill", tier: 5, category: .pokemon, target: 5) { s in
+                Set(s.contests.ribbons.values.flatMap { $0 }.filter { $0.hasSuffix("-3") }).count
+            },
+
             // Mastery
             A(id: "ticket", title: "Ticket to Adventure", detail: "Use an event ticket", symbol: "ticket.fill", tier: 3, category: .master, target: 1, value: stat("ticketsUsed")),
             A(id: "legends", title: "Hoenn's Legends", detail: "Catch Mew, Latias or Latios, Deoxys, and Lugia or Ho-Oh", symbol: "star.square.on.square.fill", tier: 5, category: .master, target: 4) { s in

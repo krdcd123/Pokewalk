@@ -84,6 +84,15 @@ struct MapHomeView: View {
                                 WeatherPill(condition: w, isDay: weather.isDay, temperature: weather.temperature)
                                     .transition(.scale.combined(with: .opacity))
                             }
+                            // This season, and this week's swarm
+                            Button {
+                                Haptics.tap()
+                                let sw = Swarm.species()
+                                let left = Calendar.current.dateComponents([.day], from: .now, to: Swarm.ends()).day ?? 0
+                                store.toast = "\(Season.at().name): more \(Season.at().types.map(\.displayName).joined(separator: ", ")) types. Swarm: \(sw.name) for \(max(1, left)) more day\(left == 1 ? "" : "s")!"
+                            } label: { SeasonChip() }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Season and swarm")
                             // Berries growing in the Garden: time until the next ones are ready
                             if let ready = store.nextGardenReady {
                                 Button {
@@ -1144,5 +1153,22 @@ struct WorkoutPickerPopup: View {
             .glassCard(30)
             .padding(18)
         }
+    }
+}
+
+
+/// Season badge with this week's swarm Pokémon.
+struct SeasonChip: View {
+    var body: some View {
+        let season = Season.at()
+        let sw = Swarm.species()
+        HStack(spacing: 6) {
+            Image(systemName: season.symbol).font(.system(size: 14, weight: .bold)).foregroundStyle(Color(hex: season.hex))
+            LocalIcon(speciesID: sw.id, shiny: false).frame(width: 30, height: 30)
+            Text("Swarm").font(.rounded(13, .heavy)).foregroundStyle(.white)
+        }
+        .padding(.horizontal, 12).frame(height: 44)
+        .glassCapsule()
+        .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
     }
 }

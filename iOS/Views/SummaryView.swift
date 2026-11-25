@@ -70,6 +70,17 @@ struct SummaryView: View {
                     }
                     .padding(.horizontal, 14).padding(.vertical, 4)
                     .glassCard(20)
+
+                    let ribbons = store.state.contests.ribbons(mon.id)
+                    if !ribbons.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Ribbons").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
+                            RibbonRow(ribbons: ribbons)
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .glassCard(20)
+                    }
                     .padding(.horizontal)
 
                     if !mon.heldItems.isEmpty {

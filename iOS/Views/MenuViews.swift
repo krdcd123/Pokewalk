@@ -259,7 +259,7 @@ struct BagView: View {
         }
         static func of(_ key: String) -> Pocket {
             if key == Fishing.rodKey || EvolutionShop.isEvolutionItem(key) || RanchTickets.isTicket(key)
-                || key == Achievements.shinyCharm { return .key }
+                || key == Achievements.shinyCharm || key == "oval-charm" { return .key }
             if Fishing.isBait(key) || Fishing.isLure(key) { return .items }
             if ItemCatalog.isBerry(key) { return .berries }
             if key == "rare-candy" || ExpCandy.exp(key) != nil { return .candies }
@@ -1093,7 +1093,7 @@ private struct BagItemRow: View {
                 Text("\(Int(Fishing.biteChance(berries: n) * 100))% chance of a bite · \(Int((w[2] / total * 100).rounded()))% chance of a rare catch")
                     .font(.rounded(12, .heavy)).foregroundStyle(Theme.tealDark)
             } else if expanded {
-                if ItemCatalog.sellPrice[key] == nil && key != Achievements.shinyCharm {
+                if ItemCatalog.sellPrice[key] == nil && key != Achievements.shinyCharm && key != "oval-charm" {
                     Text("Use on…").font(.rounded(12, .heavy)).foregroundStyle(Theme.inkSoft)
                     ForEach(store.state.party) { mon in
                         let able = GameRules.canUse(key, on: mon)
@@ -1136,7 +1136,7 @@ private struct BagItemRow: View {
                 Button("Use", systemImage: "sparkles") { Task { _ = await store.useFieldItem(key) } }
             }
             if !Fishing.isBait(key) && !Fishing.isLure(key) && !RanchTickets.isTicket(key) && !FieldItems.isField(key)
-                && key != Achievements.shinyCharm && ItemCatalog.sellPrice[key] == nil {
+                && key != Achievements.shinyCharm && key != "oval-charm" && ItemCatalog.sellPrice[key] == nil {
                 Menu("Use on…", systemImage: "hand.point.up.left.fill") {
                     ForEach(store.state.party) { mon in
                         Button("\(mon.name) · Lv \(mon.level)") { use(on: mon) }
