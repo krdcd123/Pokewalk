@@ -469,6 +469,30 @@ extension BattleGfx {
         return out
     }
 
+    /// Just the Frontier's striped wall (no platforms), `height` px tall.
+    static func frontierWall(_ scene: UIImage, height: Int, width: Int) -> UIImage? {
+        guard let cg = scene.cgImage, let top = cg.cropping(to: CGRect(x: 0, y: 0, width: cg.width, height: 24)) else { return nil }
+        return extendedUp(UIImage(cgImage: top), rows: max(0, height - 24) + 3)
+    }
+
+    /// The foe's oval platform from the scene, with the wall around it made see-through.
+    static func frontierPlatform(_ scene: UIImage) -> UIImage? {
+        guard let cg = scene.cgImage, let crop = cg.cropping(to: CGRect(x: 112, y: 48, width: 128, height: 32)) else { return nil }
+        let w = crop.width, h = crop.height
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = ctx.data else { return nil }
+        ctx.draw(crop, in: CGRect(x: 0, y: 0, width: w, height: h))
+        // The wall is white / blue-grey (blue ≥ red); the platform is olive (blue < red)
+        let px = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
+        for i in stride(from: 0, to: w * h * 4, by: 4) where px[i + 2] >= px[i] {
+            px[i] = 0; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 0
+        }
+        guard let out = ctx.makeImage() else { return nil }
+        return UIImage(cgImage: out)
+    }
+
     /// Where a Pokémon sprite's feet are (so it stands on its platform).
     static func bounds(_ speciesID: Int, kind: SpriteStore.Kind) async -> SpriteBounds? {
         let load = Task.detached { () -> SpriteBounds? in

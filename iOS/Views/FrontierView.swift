@@ -172,7 +172,6 @@ struct BattleView: View {
 
     // scene
     @State private var scene: UIImage?
-    @State private var tallScene: UIImage?
     @State private var trainerPic: UIImage?
     @State private var backFrames: [UIImage] = []
     @State private var backFrame = 0
@@ -199,38 +198,42 @@ struct BattleView: View {
 
     private var style: TrainerStyle { store.state.trainer.style }
 
-    // Spots on Emerald's 240×112 battle scene
-    private static let foeFeet = CGPoint(x: 176, y: 62)
-    private static let myFeet = CGPoint(x: 64, y: 112)
-    private static let foeTrainerCentre = CGPoint(x: 176, y: 40)
-    private static let playerCentre = CGPoint(x: 78, y: 79)     // whole sprite above the scene's bottom edge
+    // The scene is laid out on a 200 px wide "GBA" canvas as tall as the top half allows (vh), spread out like
+    // Emerald's: foe box top left, foe on its platform to the right, you bottom left, your box bottom right.
+    @State private var vh: CGFloat = 200
+    @State private var wall: UIImage?
+    @State private var platform: UIImage?
+    private static let vw: CGFloat = 200
+    private var foeFeet: CGPoint { CGPoint(x: Self.vw * 0.70, y: vh * 0.47) }
+    private var myFeet: CGPoint { CGPoint(x: Self.vw * 0.27, y: vh - 6) }
+    private var foeTrainerCentre: CGPoint { CGPoint(x: foeFeet.x, y: foeFeet.y - 26) }
+    private var playerCentre: CGPoint { CGPoint(x: Self.vw * 0.29, y: vh - 33) }
+    private var foeBoxCentre: CGPoint { CGPoint(x: Self.vw * 0.28, y: vh * 0.13) }
+    private var myBoxCentre: CGPoint { CGPoint(x: Self.vw * 0.73, y: vh * 0.70) }
 
     var body: some View {
         GeometryReader { geo in
             let sceneW = geo.size.width - 20
             let sceneH = geo.size.height / 2 - 16
-            // Fill the top half: scale up and trim Emerald's 240 px scene to at most its middle 180 px,
-            // and continue the wall's stripes upwards for any height left over.
-            let s = min(sceneH / 112, sceneW / 180)
-            let crop = max(0, (240 - sceneW / s) / 2)
-            let offY = max(0, sceneH - 112 * s)
+            let s = sceneW / Self.vw
             ZStack(alignment: .top) {
                 VStack(spacing: 12) {
                     // Emerald's scene in a glass frame
                     ZStack(alignment: .topLeading) {
                         Color(hex: 0xF6F6FF)
-                        if let tallScene {
-                            Image(uiImage: tallScene).interpolation(.none).resizable()
-                                .frame(width: 240 * s, height: tallScene.size.height * s)
-                                .offset(x: -crop * s, y: offY - (tallScene.size.height - 112) * s)
+                        if let wall {
+                            // Emerald's Frontier wall, its stripes carried down the whole height
+                            Image(uiImage: wall).interpolation(.none).resizable()
+                                .frame(width: sceneW, height: wall.size.height * s)
                         }
-                        battleScene(s, crop: crop)
-                            .offset(x: -crop * s, y: offY)
+                        battleScene(s)
                     }
                         .frame(width: sceneW, height: sceneH, alignment: .topLeading)
-                        .task(id: "\(Int(ceil(offY / s / 4)))-\(scene != nil)") {
-                            let rows = Int(ceil(offY / s / 4)) * 4
-                            tallScene = scene.flatMap { BattleGfx.extendedUp($0, rows: rows) }
+                        .task(id: "\(Int(sceneH / s))-\(scene != nil)") {
+                            vh = sceneH / s
+                            guard let scene else { return }
+                            wall = BattleGfx.frontierWall(scene, height: Int(vh) + 4, width: Int(Self.vw))
+                            platform = BattleGfx.frontierPlatform(scene)
                         }
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                         .padding(4)
@@ -288,19 +291,28 @@ struct BattleView: View {
 
     // MARK: Scene
 
-    private func battleScene(_ s: CGFloat, crop c: CGFloat) -> some View {
+    private func battleScene(_ s: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
-            Color.clear.frame(width: 240 * s, height: 112 * s)
+            Color.clear.frame(width: Self.vw * s, height: vh * s)
+            if let platform {
+                // the same oval as in Emerald for both sides (yours bigger and half off the bottom, like the game)
+                Image(uiImage: platform).interpolation(.none).resizable()
+                    .frame(width: 128 * s, height: 32 * s)
+                    .position(x: foeFeet.x * s, y: (foeFeet.y + 2) * s)
+                Image(uiImage: platform).interpolation(.none).resizable()
+                    .frame(width: 150 * s, height: 38 * s)
+                    .position(x: myFeet.x * s, y: (myFeet.y + 6) * s)
+            }
             foeMon(s)
             foeTrainer(s)
             myMon(s)
             playerTrainer(s)
             if ballRows {
                 partyRow(foes, alignRight: true, s: s)
-                    .position(x: (52 + c) * s, y: 30 * s)
+                    .position(x: foeBoxCentre.x * s, y: foeBoxCentre.y * s)
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 partyRow(mine, alignRight: false, s: s)
-                    .position(x: (190 - c) * s, y: 86 * s)
+                    .position(x: myBoxCentre.x * s, y: myBoxCentre.y * s)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
             TimelineView(.animation(paused: flight == nil)) { tl in
@@ -326,45 +338,45 @@ struct BattleView: View {
             }
             if foeBoxIn, foes.indices.contains(foe) {
                 infoBox(foes[foe], mine: false)
-                    .frame(width: 112 * s)
-                    .position(x: (60 + c) * s, y: 22 * s)
+                    .frame(width: Self.vw * 0.52 * s)
+                    .position(x: foeBoxCentre.x * s, y: foeBoxCentre.y * s)
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
             if meBoxIn, mine.indices.contains(me) {
                 infoBox(mine[me], mine: true)
-                    .frame(width: 112 * s)
-                    .position(x: (182 - c) * s, y: 86 * s)
+                    .frame(width: Self.vw * 0.52 * s)
+                    .position(x: myBoxCentre.x * s, y: myBoxCentre.y * s)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .frame(width: 240 * s, height: 112 * s, alignment: .topLeading)
+        .frame(width: Self.vw * s, height: vh * s, alignment: .topLeading)
     }
 
     @ViewBuilder private func foeMon(_ s: CGFloat) -> some View {
         if foeShown, foes.indices.contains(foe) {
-            let m = foes[foe], b = foeBounds, e = s * 0.72
+            let m = foes[foe], b = foeBounds, e = s * 0.8
             let lift = CGFloat(BattleElevation.pixels(m.speciesID)) * 1.5 * e
-            let cy = Self.foeFeet.y * s - (b.bottom - b.size.height / 2) * e - lift
+            let cy = foeFeet.y * s - (b.bottom - b.size.height / 2) * e - lift
             AnimatedSprite(speciesID: m.speciesID, shiny: m.isShiny)
                 .frame(width: b.size.width * e, height: b.size.height * e)
                 .scaleEffect(foeScale, anchor: .bottom)
                 .opacity(m.fainted ? 0 : (foeFlash ? 0.25 : 1))
                 .offset(y: m.fainted ? 40 * s : 0)
-                .position(x: Self.foeFeet.x * s, y: cy)
+                .position(x: foeFeet.x * s, y: cy)
         }
     }
 
     @ViewBuilder private func myMon(_ s: CGFloat) -> some View {
         if meShown, mine.indices.contains(me) {
-            let m = mine[me], b = meBounds, e = s * 0.8
-            let cy = Self.myFeet.y * s - (b.bottom - b.size.height / 2) * e
+            let m = mine[me], b = meBounds, e = s * 0.95
+            let cy = myFeet.y * s - (b.bottom - b.size.height / 2) * e
             AnimatedSprite(speciesID: m.speciesID, shiny: m.isShiny, kind: m.isShiny ? .backShiny : .back)
                 .frame(width: b.size.width * e, height: b.size.height * e)
                 .colorMultiply(meRecall ? Color(hex: 0xFF5A5A) : .white)
                 .scaleEffect(meScale, anchor: .bottom)
                 .opacity(m.fainted ? 0 : (meFlash ? 0.25 : 1))
                 .offset(y: m.fainted ? 50 * s : 0)
-                .position(x: Self.myFeet.x * s, y: cy)
+                .position(x: myFeet.x * s, y: cy)
         }
     }
 
@@ -372,7 +384,7 @@ struct BattleView: View {
         if let trainerPic {
             Image(uiImage: trainerPic).interpolation(.none).resizable()
                 .frame(width: 64 * s, height: 64 * s)
-                .position(x: (Self.foeTrainerCentre.x + foeTrainerX) * s, y: Self.foeTrainerCentre.y * s)
+                .position(x: (foeTrainerCentre.x + foeTrainerX) * s, y: foeTrainerCentre.y * s)
         }
     }
 
@@ -380,7 +392,7 @@ struct BattleView: View {
         if backFrames.indices.contains(backFrame) {
             Image(uiImage: backFrames[backFrame]).interpolation(.none).resizable()
                 .frame(width: 64 * s, height: 64 * s)
-                .position(x: (Self.playerCentre.x + playerX) * s, y: Self.playerCentre.y * s)
+                .position(x: (playerCentre.x + playerX) * s, y: playerCentre.y * s)
         }
     }
 
@@ -426,33 +438,37 @@ struct BattleView: View {
 
     private func infoBox(_ m: BattleMon, mine isMine: Bool) -> some View {
         let frac = Double(max(0, m.hp)) / Double(max(1, m.maxHP))
-        return VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 4) {
-                Text(m.name).font(.rounded(13, .heavy)).foregroundStyle(Theme.ink).lineLimit(1).minimumScaleFactor(0.6)
-                Spacer(minLength: 2)
-                Text("Lv\(m.level)").font(.rounded(11, .heavy)).foregroundStyle(Theme.tealDark)
+        let bar = frac > 0.5 ? Color(hex: 0x58D068) : frac > 0.2 ? Color(hex: 0xF8C030) : Color(hex: 0xF05838)
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(m.name.uppercased()).font(.rounded(16, .black)).foregroundStyle(Theme.ink)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                if m.isShiny { Text("✨").font(.system(size: 11)) }
+                Spacer(minLength: 4)
+                Text("Lv\(m.level)").font(.rounded(15, .black)).foregroundStyle(Theme.ink)
             }
-            HStack(spacing: 4) {
-                Text("HP").font(.rounded(9, .black)).foregroundStyle(Color(hex: 0xE0A030))
+            HStack(spacing: 6) {
+                Text("HP").font(.rounded(10, .black)).foregroundStyle(Color(hex: 0xF8B030))
+                    .padding(.horizontal, 4).padding(.vertical, 1)
+                    .background(Capsule().fill(Color(hex: 0x40484A)))
                 GeometryReader { g in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(.black.opacity(0.25))
-                        Capsule().fill(frac > 0.5 ? Color(hex: 0x58D068) : frac > 0.2 ? Color(hex: 0xF8C030) : Color(hex: 0xF05838))
-                            .frame(width: g.size.width * frac)
+                        Capsule().fill(.black.opacity(0.28))
+                        Capsule().fill(bar).frame(width: max(0, g.size.width * frac))
                     }
                 }
-                .frame(height: 6)
+                .frame(height: 7)
                 .animation(.easeInOut(duration: 0.5), value: m.hp)
             }
             if isMine {
-                Text("\(max(0, m.hp)) / \(m.maxHP)").font(.rounded(11, .heavy)).monospacedDigit().foregroundStyle(Theme.inkSoft)
+                Text("\(max(0, m.hp))/ \(m.maxHP)").font(.rounded(15, .black)).monospacedDigit().foregroundStyle(Theme.ink)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
-        .padding(.horizontal, 9).padding(.vertical, 6)
-        .glassCard(14)
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.35), lineWidth: 1))
-        .shadow(color: .black.opacity(0.2), radius: 5, y: 2)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .glassCard(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.4), lineWidth: 1.2))
+        .shadow(color: .black.opacity(0.22), radius: 6, y: 3)
     }
 
     // MARK: Controls
@@ -557,7 +573,7 @@ struct BattleView: View {
     private func sendOutFoe() async {
         foeBoxIn = false
         await say("\(trainer.title) \(trainer.name) sent out \(foes[foe].name)!", 350)
-        await throwBall(from: CGPoint(x: 262, y: 6), to: CGPoint(x: Self.foeFeet.x, y: Self.foeFeet.y - 14), arc: 26, foeSide: true)
+        await throwBall(from: CGPoint(x: Self.vw + 16, y: foeFeet.y - 60), to: CGPoint(x: foeFeet.x, y: foeFeet.y - 14), arc: 30, foeSide: true)
         withAnimation(.spring(duration: 0.35)) { foeBoxIn = true }
     }
 
@@ -565,7 +581,7 @@ struct BattleView: View {
     private func sendOutMine(withTrainer: Bool) async {
         meBoxIn = false
         text = "Go! \(mine[me].name)!"
-        var from = CGPoint(x: -14, y: 50)
+        var from = CGPoint(x: -14, y: myFeet.y - 60)
         if withTrainer, !backFrames.isEmpty {
             let anim = style.backThrow
             Task { @MainActor in
@@ -575,10 +591,10 @@ struct BattleView: View {
                 }
             }
             await wait(Int((anim.frames.isEmpty ? 0.1 : anim.release) * 1000))
-            from = CGPoint(x: Self.playerCentre.x + 16, y: Self.playerCentre.y - 22)
+            from = CGPoint(x: playerCentre.x + 16, y: playerCentre.y - 22)
             withAnimation(.easeIn(duration: 0.55)) { playerX = -170 }
         }
-        await throwBall(from: from, to: CGPoint(x: Self.myFeet.x + 4, y: 92), arc: 46, foeSide: false)
+        await throwBall(from: from, to: CGPoint(x: myFeet.x + 4, y: myFeet.y - 22), arc: 50, foeSide: false)
         withAnimation(.spring(duration: 0.35)) { meBoxIn = true }
     }
 
