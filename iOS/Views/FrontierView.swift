@@ -172,6 +172,7 @@ struct BattleView: View {
 
     // scene
     @State private var scene: UIImage?
+    @State private var tallScene: UIImage?
     @State private var trainerPic: UIImage?
     @State private var backFrames: [UIImage] = []
     @State private var backFrame = 0
@@ -207,12 +208,30 @@ struct BattleView: View {
     var body: some View {
         GeometryReader { geo in
             let sceneW = geo.size.width - 20
-            let s = sceneW / 240
+            let sceneH = geo.size.height / 2 - 16
+            // Fill the top half: scale up and trim Emerald's 240 px scene to at most its middle 180 px,
+            // and continue the wall's stripes upwards for any height left over.
+            let s = min(sceneH / 112, sceneW / 180)
+            let crop = max(0, (240 - sceneW / s) / 2)
+            let offY = max(0, sceneH - 112 * s)
             ZStack(alignment: .top) {
                 VStack(spacing: 12) {
                     // Emerald's scene in a glass frame
-                    battleScene(s)
-                        .frame(width: sceneW, height: 112 * s)
+                    ZStack(alignment: .topLeading) {
+                        Color(hex: 0xF6F6FF)
+                        if let tallScene {
+                            Image(uiImage: tallScene).interpolation(.none).resizable()
+                                .frame(width: 240 * s, height: tallScene.size.height * s)
+                                .offset(x: -crop * s, y: offY - (tallScene.size.height - 112) * s)
+                        }
+                        battleScene(s, crop: crop)
+                            .offset(x: -crop * s, y: offY)
+                    }
+                        .frame(width: sceneW, height: sceneH, alignment: .topLeading)
+                        .task(id: "\(Int(ceil(offY / s / 4)))-\(scene != nil)") {
+                            let rows = Int(ceil(offY / s / 4)) * 4
+                            tallScene = scene.flatMap { BattleGfx.extendedUp($0, rows: rows) }
+                        }
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                         .padding(4)
                         .glassCard(26)
@@ -269,23 +288,19 @@ struct BattleView: View {
 
     // MARK: Scene
 
-    private func battleScene(_ s: CGFloat) -> some View {
+    private func battleScene(_ s: CGFloat, crop c: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
-            if let scene {
-                Image(uiImage: scene).interpolation(.none).resizable().frame(width: 240 * s, height: 112 * s)
-            } else {
-                Color(hex: 0xF4F6FC)
-            }
+            Color.clear.frame(width: 240 * s, height: 112 * s)
             foeMon(s)
             foeTrainer(s)
             myMon(s)
             playerTrainer(s)
             if ballRows {
                 partyRow(foes, alignRight: true, s: s)
-                    .position(x: 52 * s, y: 30 * s)
+                    .position(x: (52 + c) * s, y: 30 * s)
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 partyRow(mine, alignRight: false, s: s)
-                    .position(x: 190 * s, y: 86 * s)
+                    .position(x: (190 - c) * s, y: 86 * s)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
             TimelineView(.animation(paused: flight == nil)) { tl in
@@ -312,13 +327,13 @@ struct BattleView: View {
             if foeBoxIn, foes.indices.contains(foe) {
                 infoBox(foes[foe], mine: false)
                     .frame(width: 112 * s)
-                    .position(x: 60 * s, y: 22 * s)
+                    .position(x: (60 + c) * s, y: 22 * s)
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
             if meBoxIn, mine.indices.contains(me) {
                 infoBox(mine[me], mine: true)
                     .frame(width: 112 * s)
-                    .position(x: 182 * s, y: 86 * s)
+                    .position(x: (182 - c) * s, y: 86 * s)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }

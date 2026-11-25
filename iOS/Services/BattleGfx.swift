@@ -449,6 +449,26 @@ extension BattleGfx {
     }
     @MainActor private static var frontierBG: UIImage?
 
+    /// The scene with `rows` more pixels of wall on top: the grey stripes stay at the very top and the
+    /// light 4-pixel stripe below them repeats down to where the scene carries on.
+    static func extendedUp(_ img: UIImage, rows: Int) -> UIImage? {
+        guard let cg = img.cgImage, cg.height >= 24,
+              let head = cg.cropping(to: CGRect(x: 0, y: 0, width: cg.width, height: 16)),
+              let band = cg.cropping(to: CGRect(x: 0, y: 16, width: cg.width, height: 4)),
+              let rest = cg.cropping(to: CGRect(x: 0, y: 16, width: cg.width, height: cg.height - 16)) else { return nil }
+        let extra = rows / 4 * 4
+        let W = cg.width, H = cg.height + extra
+        let fmt = UIGraphicsImageRendererFormat(); fmt.scale = 1
+        let out = UIGraphicsImageRenderer(size: CGSize(width: W, height: H), format: fmt).image { ctx in
+            ctx.cgContext.interpolationQuality = .none
+            UIImage(cgImage: head).draw(in: CGRect(x: 0, y: 0, width: W, height: 16))
+            let b = UIImage(cgImage: band)
+            for k in 0..<(extra / 4) { b.draw(in: CGRect(x: 0, y: 16 + k * 4, width: W, height: 4)) }
+            UIImage(cgImage: rest).draw(in: CGRect(x: 0, y: 16 + extra, width: W, height: cg.height - 16))
+        }
+        return out
+    }
+
     /// Where a Pokémon sprite's feet are (so it stands on its platform).
     static func bounds(_ speciesID: Int, kind: SpriteStore.Kind) async -> SpriteBounds? {
         let load = Task.detached { () -> SpriteBounds? in
