@@ -9,6 +9,7 @@ struct RanchView: View {
     @State private var addingRancher = false
     @State private var builtOpen = false
     @State private var foreman: UIImage?
+    @State private var confirmRecall = false
 
     var body: some View {
         ScrollView {
@@ -37,6 +38,16 @@ struct RanchView: View {
             await gfx.loadOutdoors()
             if foreman == nil { foreman = await PretFiles.sprite("graphics/trainers/front_pics/hiker.png") }
             if let p = store.finishRanchProjectIfDone() { celebrate(p) }
+        }
+        .alert("Recall your ranchers?", isPresented: $confirmRecall) {
+            Button("Recall", role: .destructive) {
+                store.recallRanchShift()
+                SoundKit.shared.play(.select)
+                withAnimation { foremanSays = "Everyone's back. Swap the team around, then start a new shift." }
+            }
+            Button("Keep working", role: .cancel) {}
+        } message: {
+            Text("The shift timer will reset and they won't bring anything back from this shift. You can swap Pokémon in or out, then start a fresh shift.")
         }
         .sheet(isPresented: $addingRancher) {
             WorkerPicker(forRanch: true) { id in store.addRancher(id); SoundKit.shared.play(.select) }
@@ -244,6 +255,15 @@ struct RanchView: View {
                             Text(Self.countdown(left)).font(.rounded(14, .heavy)).monospacedDigit().foregroundStyle(.white)
                         }
                         ProgressView(value: max(0, min(1, 1 - left / max(1, total)))).tint(Theme.teal)
+                        Button {
+                            Haptics.tap()
+                            confirmRecall = true
+                        } label: {
+                            Label("Recall early", systemImage: "arrow.uturn.backward").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                                .frame(maxWidth: .infinity).frame(height: 38)
+                                .glassCapsule(interactive: true)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }

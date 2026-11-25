@@ -1373,6 +1373,16 @@ extension GameStore {
                id: "ranch-shift", category: "ranch", at: end)
     }
 
+    /// Calls the ranchers back early: the shift is cancelled (nothing gathered) so the team can be changed.
+    func recallRanchShift() {
+        guard ranchShiftRunning else { return }
+        mutate { s in
+            s.ranch.shiftStart = nil
+            s.ranch.shiftEnd = nil
+        }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["ranch-shift"])
+    }
+
     /// Collects a finished shift: materials, Pokédollars, friendship and any rare finds.
     func collectRanchShift() -> RanchRules.Haul? {
         guard ranchShiftDone else { return nil }
