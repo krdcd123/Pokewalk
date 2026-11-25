@@ -424,20 +424,27 @@ private struct PlantSprite: View {
     let k: CGFloat
     @ObservedObject private var gfx = GardenGfx.shared
 
+    private var stage: BerryStage { BerryStage.at(progress: GardenRules.progress(plot, bonuses: bonuses, now: now)) }
+    private var image: UIImage? { plot.berry.flatMap { gfx.sprite(berry: $0, stage: stage, frame: frame) } }
+    private var markerLift: CGFloat {
+        let bounce: Double = abs(sin(Double(frame) * Double.pi / 2)) * 3
+        return -32 * k - 4 - CGFloat(bounce)
+    }
+
     var body: some View {
-        let stage = BerryStage.at(progress: GardenRules.progress(plot, bonuses: bonuses, now: now))
         ZStack(alignment: .bottom) {
             Color.clear
-            if let berry = plot.berry, let img = gfx.sprite(berry: berry, stage: stage, frame: frame) {
-                PixelImageView(image: img)
-                    .frame(width: img.size.width * k, height: img.size.height * k)
+            if let img = image {
+                let w: CGFloat = img.size.width * k
+                let h: CGFloat = img.size.height * k
+                PixelImageView(image: img).frame(width: w, height: h)
             }
             if plot.berry != nil && stage == .berries {
                 // a little bouncing marker over plants ready to pick
                 Image(systemName: "exclamationmark.circle.fill")
-                    .font(.system(size: 14 * k / 2, weight: .black))
-                    .foregroundStyle(.white, Color(hex: 0xF5A623))
-                    .offset(y: -32 * k - 4 - abs(sin(Double(frame) * .pi / 2)) * 3)
+                    .font(.system(size: 7 * k, weight: .black))
+                    .foregroundStyle(Color.white, Color(hex: 0xF5A623))
+                    .offset(y: markerLift)
             }
         }
     }
