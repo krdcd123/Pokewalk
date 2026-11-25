@@ -98,11 +98,11 @@ struct GardenView: View {
         let open = store.gardenPlotCount
         return VStack(spacing: 10) {
             GeometryReader { geo in
-                let k = geo.size.width / CGFloat(GardenGfx.fieldTiles * 16)     // points per Emerald pixel
+                let k = geo.size.width / CGFloat(GardenGfx.fieldWidth * 16)     // points per Emerald pixel
                 let tile = 16 * k
                 ZStack(alignment: .topLeading) {
                     if let img = gfx.field(openPlots: open) {
-                        PixelImageView(image: img).frame(width: geo.size.width, height: geo.size.width)
+                        PixelImageView(image: img).frame(width: geo.size.width, height: geo.size.height)
                     } else {
                         Color(red: 0.45, green: 0.77, blue: 0.64)
                         ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -117,19 +117,20 @@ struct GardenView: View {
                                 .frame(width: tile, height: tile * 2)
                                 .contentShape(Rectangle())
                                 .onTapGesture { tap(plot) }
-                                .offset(x: CGFloat(pos.x) * tile, y: CGFloat(pos.y - 1) * tile)
+                                // trunk sits a little into the oval, like in the game
+                                .offset(x: CGFloat(pos.x) * tile, y: CGFloat(pos.y - 1) * tile + 6 * k)
                                 .accessibilityLabel(i >= open ? "Overgrown patch" : plot.berry.map { Dex.itemName($0) } ?? "Empty soil")
                         }
                     }
                     // Workers wander the grass inside the trees
-                    WorkersLayer(workers: store.gardenWorkers, iconSize: tile * 1.25)
-                        .frame(width: tile * 6, height: tile * 6)
-                        .offset(x: tile * 2, y: tile * 2)
+                    WorkersLayer(workers: store.gardenWorkers, iconSize: tile * 1.2)
+                        .frame(width: tile * 8, height: tile * 5.6)
+                        .offset(x: tile * 2, y: tile * 2.4)
                     boostsBadge(b, tile: tile)
-                        .offset(x: geo.size.width - tile * 1.9, y: tile * 0.35)
+                        .offset(x: geo.size.width - tile * 1.75, y: tile * 0.3)
                 }
             }
-            .aspectRatio(1, contentMode: .fit)
+            .aspectRatio(CGFloat(GardenGfx.fieldWidth) / CGFloat(GardenGfx.fieldHeight), contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.18), lineWidth: 1))
             .overlay(alignment: .top) {
@@ -264,7 +265,7 @@ struct GardenView: View {
     private func tap(_ plot: GardenPlot) {
         let b = store.gardenBonuses
         guard plot.id < store.gardenPlotCount else {
-            ladySays = "That soil's too hard. Tillers (Ground, Rock, Steel and Fighting types) can dig more patches."
+            ladySays = "That soil's too hard. Tillers (Ground, Rock, Steel and Fighting types) can clear the overgrown patches."
             Haptics.tap()
             return
         }

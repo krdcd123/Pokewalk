@@ -61,11 +61,12 @@ final class GardenGfx: ObservableObject {
 
         // Overworld tiles: grass = metatile 0x001, soft soil = metatile 0x10C (general tileset)
         if let d = await Self.data("data/tilesets/primary/general/tiles.png"), let png = IndexedPNG(d),
+           let p1 = await Self.palette("data/tilesets/primary/general/palettes/01.pal"),
            let p2 = await Self.palette("data/tilesets/primary/general/palettes/02.pal"),
            let p3 = await Self.palette("data/tilesets/primary/general/palettes/03.pal") {
             grass = Self.metatile(png, palette: p2, tiles: [2, 3, 3, 2])
             soil = Self.metatile(png, palette: p3, tiles: [0x10C, 0x11C, 0x11C, 0x10C])
-            tileSheet = (png, [2: p2, 3: p3])
+            tileSheet = (png, [1: p1, 2: p2, 3: p3])
         }
         if let d = await Self.data("graphics/trainers/front_pics/aroma_lady.png"), let png = IndexedPNG(d), let pal = png.palette {
             aromaLady = png.render(palette: pal, transparentIndex: 0).cropping(CGRect(x: 0, y: 0, width: png.w, height: png.h))
@@ -88,63 +89,86 @@ final class GardenGfx: ObservableObject {
         trees = t
     }
 
-    // MARK: The garden map (Emerald metatiles: 4 bottom-layer tiles + 4 top-layer tiles, palette in the top bits)
+    // MARK: The garden map — Route 123's Berry Master garden (fenced, oval soil patches), tidied into a card.
+    // Emerald metatiles: 4 bottom-layer + 4 top-layer tiles; tile number in the low 10 bits, flips in bits
+    // 10/11, palette in the top 4.
 
-    private static let g: [UInt16] = [0x2002, 0x2003, 0x2003, 0x2002]
-    private static let metatiles: [Character: [UInt16]] = [
-        "g": g + [0, 0, 0, 0],                                  // grass
-        "t": g + [0x2006, 0x2007, 0x2016, 0x2416],              // tree crown
-        "T": g + [0x200C, 0x200D, 0x201C, 0x201D],              // tree, bottom-left
-        "U": g + [0x240D, 0x240C, 0x241D, 0x241C],              // tree, bottom-right
-        "f": g + [0x21FC, 0x21FD, 0x21FE, 0x21FF],              // flowers
-        "s": [0x310C, 0x311C, 0x311C, 0x310C, 0, 0, 0, 0],      // soft soil
-        "h": [0x2010, 0x2011, 0x2020, 0x2021, 0, 0, 0, 0],      // tall grass (patches not dug yet)
+    private static let metatiles: [String: [UInt16]] = [
+        "c6": [0x2002, 0x2402, 0x2003, 0x2403, 0x2004, 0x2404, 0x2014, 0x2414],   // forest
+        "16": [0x200E, 0x240E, 0x201E, 0x241E, 0, 0, 0, 0],                       // forest edge (trunks)
+        "01": [0x2002, 0x2003, 0x2003, 0x2002, 0, 0, 0, 0],                       // grass
+        "04": [0x2002, 0x2003, 0x2003, 0x2002, 0x21FC, 0x21FD, 0x21FE, 0x21FF],   // flowers
+        "0d": [0x2010, 0x2011, 0x2020, 0x2021, 0, 0, 0, 0],                       // tall grass
+        "141": [0x2002, 0x2003, 0x2003, 0x2002, 0, 0x10FF, 0, 0x110F],            // fence corners / sides
+        "149": [0x2002, 0x2003, 0x2003, 0x2002, 0x112F, 0x112F, 0x113F, 0x113F],
+        "139": [0x2002, 0x2003, 0x2003, 0x2002, 0x10FF, 0, 0x110F, 0],
+        "142": [0x2002, 0x2003, 0x2003, 0x2002, 0, 0x110F, 0, 0x110F],
+        "140": [0x2002, 0x2003, 0x2003, 0x2002, 0x110F, 0, 0x110F, 0],
+        "133": [0x2002, 0x2003, 0x2003, 0x2002, 0, 0x110F, 0, 0x118E],
+        "132": [0x2002, 0x2003, 0x2002, 0x2002, 0x110F, 0, 0x118E, 0],
+        "273": [0x392B, 0x392C, 0x391B, 0x311C, 0, 0, 0, 0],                      // oval soil patch (2×2)
+        "275": [0x30FC, 0x34FB, 0x310C, 0x350B, 0, 0, 0, 0],
+        "27b": [0x312B, 0x352C, 0x2003, 0x2002, 0, 0, 0, 0],
+        "27d": [0x3CFC, 0x3CFB, 0x2003, 0x2002, 0, 0, 0, 0],
     ]
-    /// 10×10 metatiles. "1"–"9", "A"–"C" are patches 1–12 (soil if open, tall grass if not).
-    static let layout = [
-        "tttttttttt",
-        "TUTUTUTUTU",
-        "ttgfgggftt",
-        "TUg1234gTU",
-        "ttggggggtt",
-        "TUf5678gTU",
-        "ttgggggftt",
-        "TUg9ABCgTU",
-        "tttttttttt",
-        "TUTUTUTUTU",
-    ]
-    static let fieldTiles = 10
+    /// 12×9 metatiles. "P0"…"P5" are the six oval patches (two plants each); unopened ones are overgrown.
+    static let layout: [[String]] = [
+        "c6 c6 c6 c6 c6 c6 c6 c6 c6 c6 c6 c6",
+        "16 16 16 16 16 16 16 16 16 16 16 16",
+        "01 141 149 149 149 149 149 149 149 149 139 01",
+        "01 142 P0 P0 01 P1 P1 01 P2 P2 140 01",
+        "01 142 P0 P0 01 P1 P1 01 P2 P2 140 01",
+        "01 142 P3 P3 01 P4 P4 01 P5 P5 140 01",
+        "01 142 P3 P3 01 P4 P4 01 P5 P5 140 01",
+        "04 133 149 149 01 01 01 01 149 149 132 04",
+        "01 01 04 01 01 01 01 01 01 04 01 01",
+    ].map { $0.split(separator: " ").map(String.init) }
+    static let fieldWidth = 12, fieldHeight = 9
 
-    /// Where patch `i` is, in metatiles (its soil square).
-    static func plotTile(_ i: Int) -> (x: Int, y: Int) { (3 + i % 4, 3 + 2 * (i / 4)) }
+    /// Top-left metatile of oval patch `j`.
+    static func ovalTile(_ j: Int) -> (x: Int, y: Int) { (2 + 3 * (j % 3), 3 + 2 * (j / 3)) }
+    /// The soil tile plant `i` stands on (two per oval, on its top row).
+    static func plotTile(_ i: Int) -> (x: Int, y: Int) { let o = ovalTile(i / 2); return (o.x + i % 2, o.y) }
+
+    private var sheets: [String: IndexedPNG.Rendered] = [:]
 
     func field(openPlots: Int) -> UIImage? {
         if let f = fields[openPlots] { return f }
         guard let (png, pals) = tileSheet else { return nil }
-        let sheet2 = png.render(palette: pals[2]!, transparentIndex: 255), sheet3 = png.render(palette: pals[3]!, transparentIndex: 255)
-        let top2 = png.render(palette: pals[2]!, transparentIndex: 0), top3 = png.render(palette: pals[3]!, transparentIndex: 0)
+        func sheet(_ pal: Int, top: Bool) -> IndexedPNG.Rendered? {
+            let key = "\(pal)-\(top)"
+            if let r = sheets[key] { return r }
+            guard let p = pals[pal] else { return nil }
+            let r = png.render(palette: p, transparentIndex: top ? 0 : 255)
+            sheets[key] = r
+            return r
+        }
         let perRow = png.w / 8
         let fmt = UIGraphicsImageRendererFormat()
         fmt.scale = 1
-        let n = Self.fieldTiles
-        let img = UIGraphicsImageRenderer(size: CGSize(width: n * 16, height: n * 16), format: fmt).image { ctx in
+        let size = CGSize(width: Self.fieldWidth * 16, height: Self.fieldHeight * 16)
+        let img = UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
             ctx.cgContext.interpolationQuality = .none
+            // which part of each oval a "P" cell is: count P cells seen per oval
+            var seen: [Character: Int] = [:]
             for (y, row) in Self.layout.enumerated() {
-                for (x, ch) in row.enumerated() {
-                    var key = ch
-                    if let i = "123456789ABC".firstIndex(of: ch) {
-                        key = "123456789ABC".distance(from: "123456789ABC".startIndex, to: i) < openPlots ? "s" : "h"
+                for (x, cell) in row.enumerated() {
+                    var key = cell
+                    if cell.hasPrefix("P"), let j = cell.last, let n = Int(String(j)) {
+                        let part = seen[j, default: 0]
+                        seen[j] = part + 1
+                        key = 2 * n < openPlots ? ["273", "275", "27b", "27d"][part % 4] : "0d"
                     }
                     guard let entries = Self.metatiles[key] else { continue }
-                    for (k, e) in entries.enumerated() where k < 4 || e != 0 {
-                        let idx = Int(e & 0x3FF), pal = Int(e >> 12)
-                        let src = k < 4 ? (pal == 3 ? sheet3 : sheet2) : (pal == 3 ? top3 : top2)
-                        guard var tile = src.image.cropping(to: CGRect(x: (idx % perRow) * 8, y: (idx / perRow) * 8, width: 8, height: 8))
+                    for (k, e) in entries.enumerated() {
+                        let idx = Int(e & 0x3FF)
+                        if k >= 4 && idx == 0 { continue }
+                        guard let src = sheet(Int(e >> 12), top: k >= 4),
+                              var tile = src.image.cropping(to: CGRect(x: (idx % perRow) * 8, y: (idx / perRow) * 8, width: 8, height: 8))
                         else { continue }
-                        if e & 0x400 != 0 || e & 0x800 != 0, let flipped = Self.flip(tile, h: e & 0x400 != 0, v: e & 0x800 != 0) { tile = flipped }
+                        if e & 0xC00 != 0, let f = Self.flip(tile, h: e & 0x400 != 0, v: e & 0x800 != 0) { tile = f }
                         let q = k % 4
-                        let rect = CGRect(x: x * 16 + (q % 2) * 8, y: y * 16 + (q / 2) * 8, width: 8, height: 8)
-                        UIImage(cgImage: tile).draw(in: rect)
+                        UIImage(cgImage: tile).draw(in: CGRect(x: x * 16 + (q % 2) * 8, y: y * 16 + (q / 2) * 8, width: 8, height: 8))
                     }
                 }
             }
