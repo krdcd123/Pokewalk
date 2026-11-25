@@ -195,6 +195,9 @@ final class GameStore: ObservableObject {
             mutate { $0.settings.ballSteps = 1_000 }
         }
         migrateGardenToOnePerPatch()
+        // Pokémon working in the Garden / Ranch don't sit in a PC box
+        mutate { s in for id in s.garden.workers + s.ranch.ranchers { GameRules.takeOutOfBox(id, in: &s) } }
+        finishRanchProjectIfDone()
         tracker.onMovement = { [weak self] _ in self?.requestTick(minInterval: 20) }
         tracker.apply(mode: state.settings.trackingMode)
         engine.startLiveUpdates { [weak self] in self?.requestTick(minInterval: 15) }
@@ -766,6 +769,7 @@ final class GameStore: ObservableObject {
         showPendingStamp()
         if evolutionCandidate == nil { checkPendingEvolutions() }
         showWorkoutPopupIfNeeded()
+        if let p = finishRanchProjectIfDone() { toast = "The \(p.name) at your ranch is finished!" }
         // Mornings (5am–1pm, when the good-morning card can appear) check every minute, otherwise every 5
         let hour = Calendar.current.component(.hour, from: .now)
         let every: TimeInterval = (5..<13).contains(hour) ? 60 : 300
@@ -1239,13 +1243,14 @@ extension GameStore {
     }
 
     func addGardenWorker(_ id: UUID) {
-        guard !state.partyIDs.contains(id), gardenWorkers.count < Garden.maxWorkers,
+        guard state.boxedIDs.contains(id), gardenWorkers.count < Garden.maxWorkers,
               !state.garden.workers.contains(id) else { return }
         let h = GardenRules.hoursToGrow(gardenBonuses)
         mutate { s in
             Self.fixTimers(&s, hours: h)
             s.garden.workers = s.garden.workers.filter { w in !s.partyIDs.contains(w) && s.index(of: w) != nil }
             s.garden.workers.append(id)
+            GameRules.takeOutOfBox(id, in: &s)
         }
         rescheduleGardenNotifications()
     }
@@ -1255,6 +1260,7 @@ extension GameStore {
         mutate { s in
             Self.fixTimers(&s, hours: h)
             s.garden.workers.removeAll { $0 == id }
+            GameRules.returnToBox(id, in: &s)
         }
         rescheduleGardenNotifications()
     }
@@ -1320,6 +1326,205 @@ extension GameStore {
             notify(title: "Berries are ready! 🍓", body: "\(what) ready to pick in the Garden.",
                    id: "garden-\(first.id)", category: "garden", at: at)
         }
+    }
+}
+
+// MARK: - Ranch
+
+extension GameStore {
+    var ranch: Ranch { state.ranch }
+    var ranchWorkers: [OwnedPokemon] { state.ranch.ranchers.compactMap { state.mon($0) } }
+    var ranchShiftRunning: Bool { state.ranch.shiftEnd != nil }
+    var ranchShiftDone: Bool { (state.ranch.shiftEnd ?? .distantFuture) <= .now }
+
+    /// The soonest ranch timer, for the map (shift or building).
+    var nextRanchTimer: (date: Date, building: Bool)? {
+        let shift = state.ranch.shiftEnd.map { ($0, false) }
+        let build = state.ranch.building.map { ($0.endsAt, true) }
+        return [shift, build].compactMap { $0 }.min { $0.0 < $1.0 }
+    }
+
+    func addRancher(_ id: UUID) {
+        guard state.boxedIDs.contains(id), ranchWorkers.count < state.ranch.slots, !ranchShiftRunning else { return }
+        mutate { s in
+            s.ranch.ranchers.append(id)
+            GameRules.takeOutOfBox(id, in: &s)
+        }
+    }
+
+    func removeRancher(_ id: UUID) {
+        guard !ranchShiftRunning else { return }
+        mutate { s in
+            s.ranch.ranchers.removeAll { $0 == id }
+            GameRules.returnToBox(id, in: &s)
+        }
+    }
+
+    var ranchShiftHours: Double { RanchRules.shiftHours(ranch: state.ranch, workers: ranchWorkers) }
+
+    func startRanchShift() {
+        guard !ranchWorkers.isEmpty, !ranchShiftRunning else { return }
+        let end = Date().addingTimeInterval(ranchShiftHours * 3600)
+        mutate { s in
+            s.ranch.shiftStart = .now
+            s.ranch.shiftEnd = end
+        }
+        notify(title: "Ranch shift over! 🧺", body: "Your ranchers are back with their haul. Open the Ranch to collect it.",
+               id: "ranch-shift", category: "ranch", at: end)
+    }
+
+    /// Collects a finished shift: materials, Pokédollars, friendship and any rare finds.
+    func collectRanchShift() -> RanchRules.Haul? {
+        guard ranchShiftDone else { return nil }
+        var total = RanchRules.Haul()
+        var gains: [(UUID, Int)] = []
+        for mon in ranchWorkers {
+            let h = RanchRules.haul(for: mon, ranch: state.ranch)
+            for (m, n) in h.materials { total.materials[m, default: 0] += n }
+            total.money += h.money
+            if let t = h.ticket, total.ticket == nil { total.ticket = t }
+            gains.append((mon.id, h.friendship))
+            total.friendship += h.friendship
+        }
+        mutate { s in
+            for (m, n) in total.materials { s.ranch.materials[m.rawValue, default: 0] += n }
+            s.money += total.money
+            if let t = total.ticket { s.bag[t, default: 0] += 1 }
+            for (id, f) in gains {
+                if let i = s.index(of: id) { s.pokemon[i].friendship = min(255, s.pokemon[i].friendship + f) }
+            }
+            s.ranch.shiftStart = nil
+            s.ranch.shiftEnd = nil
+            s.ranch.shiftCount += 1
+        }
+        return total
+    }
+
+    func canAfford(_ p: RanchProject) -> Bool {
+        state.money >= p.money && p.cost.allSatisfy { state.ranch.amount($0.key) >= $0.value }
+    }
+
+    func startRanchProject() -> Bool {
+        guard state.ranch.building == nil, let p = state.ranch.nextProject, canAfford(p) else { return false }
+        let end = Date().addingTimeInterval(p.hours * 3600)
+        mutate { s in
+            s.money -= p.money
+            for (m, n) in p.cost { s.ranch.materials[m.rawValue, default: 0] -= n }
+            s.ranch.building = RanchBuild(project: p.id, startedAt: .now, endsAt: end)
+        }
+        notify(title: "\(p.name) is finished! 🏗️", body: "Come and see the ranch — \(p.reward).",
+               id: "ranch-build", category: "ranch", at: end)
+        return true
+    }
+
+    /// Finishes the building work once its time is up. Returns the project if it just finished.
+    @discardableResult
+    func finishRanchProjectIfDone() -> RanchProject? {
+        guard let b = state.ranch.building, b.endsAt <= .now,
+              let p = RanchProject.all.first(where: { $0.id == b.project }) else { return nil }
+        mutate { s in
+            s.ranch.building = nil
+            s.ranch.built = max(s.ranch.built, p.id + 1)
+            if let t = p.ticket { s.bag[t, default: 0] += 1 }
+        }
+        return p
+    }
+
+    // Furniture
+
+    func buyDecor(_ d: RanchDecor) -> Bool {
+        guard state.ranch.houseBuilt, state.money >= d.price else { return false }
+        mutate { s in
+            s.money -= d.price
+            s.ranch.decor[d.key, default: 0] += 1
+        }
+        return true
+    }
+
+    func placeDecor(_ key: String, x: Int, y: Int) -> Bool {
+        guard (state.ranch.decor[key] ?? 0) > 0, let d = RanchDecor.find(key), RanchHouse.fits(d, x: x, y: y, in: state.ranch) else { return false }
+        mutate { s in
+            s.ranch.decor[key, default: 0] -= 1
+            if s.ranch.decor[key] == 0 { s.ranch.decor[key] = nil }
+            s.ranch.placed.append(PlacedDecor(key: key, x: x, y: y))
+        }
+        return true
+    }
+
+    func pickUpDecor(_ id: UUID) {
+        guard let p = state.ranch.placed.first(where: { $0.id == id }) else { return }
+        mutate { s in
+            s.ranch.placed.removeAll { $0.id == id }
+            s.ranch.decor[p.key, default: 0] += 1
+        }
+    }
+
+    static let roomStylePrice = 10_000
+
+    func setRoomStyle(_ key: String) -> Bool {
+        if state.ranch.styles.contains(key) {
+            mutate { $0.ranch.style = key }
+            return true
+        }
+        guard state.ranch.has(7), state.money >= Self.roomStylePrice else { return false }
+        mutate { s in
+            s.money -= Self.roomStylePrice
+            s.ranch.styles.append(key)
+            s.ranch.style = key
+        }
+        return true
+    }
+
+    // Event tickets
+
+    /// Uses an event ticket: its legendary Pokémon appears in your wild encounters for a day.
+    func useTicket(_ key: String) -> PendingEncounter? {
+        guard (state.bag[key] ?? 0) > 0, let t = RanchTickets.ticket(key), let id = t.species.randomElement() else { return nil }
+        let sp = Dex.species(id)
+        let enc = PendingEncounter(speciesID: id, level: 50, gender: GameRules.rollGender(sp),
+                                   isShiny: Int.random(in: 0..<max(1, state.settings.shinyOdds)) == 0,
+                                   nature: Dex.natures.randomElement()!, personality: .random(in: 0...UInt32.max),
+                                   appearedAt: .now, expiresAt: Date().addingTimeInterval(24 * 3600),
+                                   location: tracker.currentLocation().map {
+                                       MetLocation(latitude: $0.coordinate.latitude, longitude: $0.coordinate.longitude)
+                                   }, habitat: nil)
+        mutate { s in
+            s.bag[key, default: 0] -= 1
+            if s.bag[key] == 0 { s.bag[key] = nil }
+            s.pending.append(enc)
+            s.dexSeen.insert(id)
+        }
+        toast = "\(t.name): a wild \(sp.name) appeared! It's waiting in your encounters for a day."
+        return enc
+    }
+}
+
+/// Where furniture can go in the house.
+enum RanchHouse {
+    /// Floor cells (x, y) in the room; the back wall is row 1.
+    static func floor(_ r: Ranch) -> (x: ClosedRange<Int>, y: ClosedRange<Int>) {
+        let (w, h) = r.roomSize
+        return (2...(w - 3), 2...(h - 2))
+    }
+
+    static func cells(_ d: RanchDecor, x: Int, y: Int) -> [(Int, Int)] {
+        (0..<d.h).flatMap { dy in (0..<d.w).map { dx in (x + dx, y + dy) } }
+    }
+
+    static func fits(_ d: RanchDecor, x: Int, y: Int, in r: Ranch, ignoring: UUID? = nil) -> Bool {
+        let f = floor(r)
+        let mine = cells(d, x: x, y: y)
+        if d.placement == .wall {
+            guard y == 1, mine.allSatisfy({ f.x.contains($0.0) }) else { return false }
+        } else {
+            guard mine.allSatisfy({ f.x.contains($0.0) && f.y.contains($0.1) }) else { return false }
+        }
+        for p in r.placed where p.id != ignoring {
+            guard let other = RanchDecor.find(p.key) else { continue }
+            let theirs = cells(other, x: p.x, y: p.y)
+            if mine.contains(where: { c in theirs.contains { $0 == c } }) { return false }
+        }
+        return true
     }
 }
 

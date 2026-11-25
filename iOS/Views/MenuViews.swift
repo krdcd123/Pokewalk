@@ -13,7 +13,7 @@ struct MainMenuView: View {
     var close: () -> Void = {}
 
     enum Dest: Hashable {
-        case pc, dex, bag, shop, journal, trainer, garden, settings, summary(UUID)
+        case pc, dex, bag, shop, journal, trainer, garden, ranch, settings, summary(UUID)
     }
 
     private struct Item: Identifiable { let dest: Dest; let title: String; let symbol: String; var id: String { title } }
@@ -25,6 +25,7 @@ struct MainMenuView: View {
         .init(dest: .journal, title: "Journal", symbol: "map.fill"),
         .init(dest: .trainer, title: "Trainer", symbol: "person.text.rectangle.fill"),
         .init(dest: .garden, title: "Garden", symbol: "leaf.fill"),
+        .init(dest: .ranch, title: "Ranch", symbol: "house.lodge.fill"),
     ]
 
     @State private var path: [Dest] = []
@@ -109,6 +110,7 @@ struct MainMenuView: View {
                 case .journal: JournalView()
                 case .trainer: TrainerCardView()
                 case .garden: GardenView()
+                case .ranch: RanchView()
                 case .settings: SettingsView()
                 case .summary(let id): SummaryView(pokemonID: id)
                 }
@@ -244,7 +246,7 @@ struct BagView: View {
             }
         }
         static func of(_ key: String) -> Pocket {
-            if key == Fishing.rodKey || EvolutionShop.isEvolutionItem(key) { return .key }
+            if key == Fishing.rodKey || EvolutionShop.isEvolutionItem(key) || RanchTickets.isTicket(key) { return .key }
             if Fishing.isBait(key) || Fishing.isLure(key) { return .items }
             if ItemCatalog.isBerry(key) { return .berries }
             if key == "rare-candy" || ExpCandy.exp(key) != nil { return .candies }
@@ -1030,7 +1032,17 @@ private struct BagItemRow: View {
             }
             .buttonStyle(.plain)
 
-            if expanded, let n = Fishing.lureBerries(key) {
+            if expanded, RanchTickets.isTicket(key) {
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    if store.useTicket(key) != nil { SoundKit.shared.play(.shiny) }
+                } label: {
+                    Text("Use ticket").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity).frame(height: 38)
+                        .background(Theme.teal.opacity(0.8), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            } else if expanded, let n = Fishing.lureBerries(key) {
                 Text("Picks the rarest of \(Fishing.lurePicks(berries: n)) wild Pokémon · +\(Fishing.lureLevelBonus(berries: n)) levels")
                     .font(.rounded(12, .heavy)).foregroundStyle(Theme.tealDark)
                 Button { setLure() } label: {
@@ -1082,7 +1094,10 @@ private struct BagItemRow: View {
             if Fishing.isLure(key) {
                 Button("Use lure", systemImage: "sparkles") { setLure() }.disabled(store.state.activeLure != nil)
             }
-            if !Fishing.isBait(key) && !Fishing.isLure(key) && ItemCatalog.sellPrice[key] == nil {
+            if RanchTickets.isTicket(key) {
+                Button("Use ticket", systemImage: "ticket.fill") { _ = store.useTicket(key) }
+            }
+            if !Fishing.isBait(key) && !Fishing.isLure(key) && !RanchTickets.isTicket(key) && ItemCatalog.sellPrice[key] == nil {
                 Menu("Use on…", systemImage: "hand.point.up.left.fill") {
                     ForEach(store.state.party) { mon in
                         Button("\(mon.name) · Lv \(mon.level)") { use(on: mon) }

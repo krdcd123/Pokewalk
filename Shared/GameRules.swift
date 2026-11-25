@@ -385,6 +385,7 @@ enum GameRules {
 
     /// One line for the Bag explaining what an item does in PokéWalk.
     static func itemDescription(_ item: String) -> String {
+        if let t = RanchTickets.ticket(item) { return t.text }
         if item == "rare-candy" { return "Raises a Pokémon by one level." }
         if let exp = ExpCandy.exp(item) { return "Gives a Pokémon \(exp.formatted()) Exp." }
         if ItemCatalog.isBerry(item) { return "Makes a Pokémon more friendly (more so if it doesn't like you much yet)." }
@@ -529,6 +530,19 @@ enum GameRules {
         s.boxes.append(PCBox(name: "Box \(s.boxes.count + 1)", wallpaper: s.boxes.count % 8))
         s.boxes[s.boxes.count - 1].slots[0] = mon.id
         return .box(s.boxes.count - 1, 0)
+    }
+
+    /// A box Pokémon goes off to work (Garden / Ranch): it leaves its PC slot.
+    static func takeOutOfBox(_ id: UUID, in s: inout GameState) {
+        for b in s.boxes.indices {
+            if let i = s.boxes[b].slots.firstIndex(of: id) { s.boxes[b].slots[i] = nil }
+        }
+    }
+
+    /// Back from work: into the first free PC slot (unless it's somehow already in the party or a box).
+    static func returnToBox(_ id: UUID, in s: inout GameState) {
+        guard let mon = s.mon(id), s.slot(of: id) == nil else { return }
+        storeInBox(mon, in: &s)
     }
 
     static func release(_ id: UUID, in s: inout GameState) {

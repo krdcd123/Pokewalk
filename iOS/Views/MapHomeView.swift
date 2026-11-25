@@ -55,7 +55,7 @@ struct MapHomeView: View {
     @ObservedObject private var weather = WeatherService.shared      // new identity each time a panel opens, so menus start at the top
 
     enum HomeSheet: Hashable, Identifiable {
-        case menu, party, encounters, bag, journal, garden, summary(UUID)
+        case menu, party, encounters, bag, journal, garden, ranch, summary(UUID)
         var id: Self { self }
     }
 
@@ -93,6 +93,16 @@ struct MapHomeView: View {
                                 .buttonStyle(.plain)
                                 .transition(.scale.combined(with: .opacity))
                                 .accessibilityLabel("Garden timer")
+                            }
+                            // Ranch shift / building
+                            if let r = store.nextRanchTimer {
+                                Button {
+                                    Haptics.tap(); SoundKit.shared.play(.menuOpen)
+                                    withAnimation(.spring(duration: 0.4)) { sheet = .ranch }
+                                } label: { RanchTimerChip(date: r.date, building: r.building) }
+                                .buttonStyle(.plain)
+                                .transition(.scale.combined(with: .opacity))
+                                .accessibilityLabel("Ranch timer")
                             }
                         }
                         Spacer()
@@ -147,6 +157,7 @@ struct MapHomeView: View {
                     case .bag: NavigationStack { BagView() }
                     case .journal: NavigationStack { JournalView() }
                     case .garden: NavigationStack { GardenView() }
+                    case .ranch: NavigationStack { RanchView() }
                     case .summary(let id): NavigationStack { SummaryView(pokemonID: id) }
                     }
                 }

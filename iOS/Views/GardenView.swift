@@ -652,20 +652,21 @@ private struct PlantPicker: View {
     }
 }
 
-private struct WorkerPicker: View {
+struct WorkerPicker: View {
+    var forRanch = false
     let choose: (UUID) -> Void
     @EnvironmentObject private var store: GameStore
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        let busy = Set(store.gardenWorkers.map(\.id))
+        let inBox = store.state.boxedIDs
         let boxed = store.state.pokemon
-            .filter { !store.state.partyIDs.contains($0.id) && !busy.contains($0.id) }
+            .filter { inBox.contains($0.id) }
             .sorted { ($0.species.types.first?.rawValue ?? "", $0.speciesID) < ($1.species.types.first?.rawValue ?? "", $1.speciesID) }
         NavigationStack {
             List {
                 if boxed.isEmpty {
-                    Text("No Pokémon in your boxes. Only boxed Pokémon (not your party) can work in the garden.")
+                    Text("No Pokémon in your boxes. Only boxed Pokémon (not your party) can go to work.")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(boxed) { mon in
@@ -678,9 +679,15 @@ private struct WorkerPicker: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("\(mon.name)  Lv. \(mon.level)").font(.rounded(16, .bold))
                                 HStack(spacing: 6) {
-                                    ForEach(Array(Set(mon.species.types.map(GardenTrait.of))).sorted { $0.rawValue < $1.rawValue }) { t in
-                                        Label(t.name, systemImage: t.symbol).font(.rounded(12, .bold))
-                                            .foregroundStyle(Color(hex: t.hex))
+                                    if forRanch {
+                                        let job = RanchJob.of(mon.species.types[0]), attr = RanchAttribute.of(nature: mon.nature)
+                                        Label(job.name, systemImage: job.symbol).font(.rounded(12, .bold)).foregroundStyle(Theme.tealDark)
+                                        Label(attr.name, systemImage: attr.symbol).font(.rounded(12, .bold)).foregroundStyle(.orange)
+                                    } else {
+                                        ForEach(Array(Set(mon.species.types.map(GardenTrait.of))).sorted { $0.rawValue < $1.rawValue }) { t in
+                                            Label(t.name, systemImage: t.symbol).font(.rounded(12, .bold))
+                                                .foregroundStyle(Color(hex: t.hex))
+                                        }
                                     }
                                 }
                             }

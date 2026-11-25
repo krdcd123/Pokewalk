@@ -320,6 +320,7 @@ struct GameState: Codable {
     var workouts: [WorkoutRecord] = []        // finished workouts and what they earned (Journal)
     var unseenWorkouts: [String] = []         // workout ids whose "Workout complete!" popup hasn't shown yet
     var garden = Garden()                     // the berry garden (Menu › Garden)
+    var ranch = Ranch()                       // the ranch (Menu › Ranch)
 
     static let maxParty = 6
 
@@ -343,9 +344,15 @@ struct GameState: Codable {
         switch slot(of: id) {
         case .party(let i): return "Party · slot \(i + 1)"
         case .box(let b, let s): return "\(boxes[b].name) · slot \(s + 1)"
-        case nil: return "—"
+        case nil:
+            if garden.workers.contains(id) { return "Working in the Garden" }
+            if ranch.ranchers.contains(id) { return "Working at the Ranch" }
+            return "—"
         }
     }
+
+    /// Pokémon sitting in a PC box (not the party, not away working).
+    var boxedIDs: Set<UUID> { Set(boxes.flatMap { $0.slots.compactMap { $0 } }) }
 }
 
 
@@ -453,6 +460,7 @@ extension GameState {
         cyclingSkipped = c.value(.cyclingSkipped, [:])
         unseenWorkouts = c.value(.unseenWorkouts, [])
         garden = c.value(.garden, Garden())
+        ranch = c.value(.ranch, Ranch())
     }
 }
 
