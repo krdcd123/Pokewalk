@@ -96,6 +96,14 @@ struct SafariView: View {
             ZStack {
                 background
 
+                // The name box sits behind the Pokémon, so big ones (Tropius, Wailord…) stand in front of it
+                if boxesIn {
+                    nameBox
+                        .frame(maxWidth: L.W * 0.6, alignment: .leading)
+                        .position(x: L.W * 0.6 / 2 + 16, y: L.H * 0.15)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+
                 TimelineView(.animation(paused: !animating)) { tl in
                     let p = introProgress(at: tl.date)
                     ZStack {
@@ -111,13 +119,6 @@ struct SafariView: View {
                 }
 
                 topBar.frame(maxHeight: .infinity, alignment: .top).padding(.top, 8)
-
-                if boxesIn {
-                    nameBox
-                        .frame(maxWidth: L.W * 0.6, alignment: .leading)
-                        .position(x: L.W * 0.6 / 2 + 16, y: L.H * 0.15)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                }
 
                 textBox(L).position(x: L.W / 2, y: L.barCenterY).zIndex(3)
 
