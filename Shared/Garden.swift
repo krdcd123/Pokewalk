@@ -18,9 +18,10 @@ struct Garden: Codable, Equatable, Hashable {
     var lastGiftDay = ""                // the Aroma Lady's daily berry
     var harvests = 0                    // lifetime harvests (just for fun)
     var fields = 1                      // gardens owned (more can be bought once the first is fully cleared)
+    var onePerPatch = false             // saves from when each oval held two plants get moved over once
 
-    static let basePlots = 8
-    static let plotsPerField = 12
+    static let basePlots = 4
+    static let plotsPerField = 6
     static let maxFields = 3
     static let maxPlots = plotsPerField * maxFields
     /// Price of garden number n+1 (index 1 = the second garden).
@@ -37,6 +38,7 @@ struct Garden: Codable, Equatable, Hashable {
         lastGiftDay = (try? c.decodeIfPresent(String.self, forKey: .lastGiftDay)) ?? ""
         harvests = (try? c.decodeIfPresent(Int.self, forKey: .harvests)) ?? 0
         fields = (try? c.decodeIfPresent(Int.self, forKey: .fields)) ?? 1
+        onePerPatch = (try? c.decodeIfPresent(Bool.self, forKey: .onePerPatch)) ?? false
     }
 }
 
@@ -132,7 +134,7 @@ enum GardenTrait: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .greenThumb: return ["Berries grow 15% faster", "35% faster", "60% faster"]
         case .rainmakers: return ["50% chance of +1 berry", "+1 berry every harvest", "+2 berries every harvest"]
-        case .tillers: return ["+2 patches of soil", "+4 patches of soil"]
+        case .tillers: return ["+1 patch of soil", "+2 patches of soil"]
         case .sunshine: return ["Berries grow 10% faster", "25% faster", "40% faster"]
         case .pollinators: return ["20% chance of a bonus different berry", "40% chance", "70% chance"]
         case .helpers: return ["Workers gain double friendship", "…and 50% chance to replant for free"]
@@ -183,7 +185,7 @@ enum GardenRules {
         case 3: b.extraBerries = 2
         default: break
         }
-        b.plots = Garden.basePlots + [0, 2, 4][b.tier(.tillers)]
+        b.plots = Garden.basePlots + [0, 1, 2][b.tier(.tillers)]
         b.bonusBerryChance = [0, 0.2, 0.4, 0.7][b.tier(.pollinators)]
         let h = b.tier(.helpers)
         b.friendshipPerHarvest = h >= 1 ? 6 : 3

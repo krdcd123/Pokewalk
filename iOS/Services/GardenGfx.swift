@@ -111,7 +111,7 @@ final class GardenGfx: ObservableObject {
         "27b": [0x312B, 0x352C, 0x2003, 0x2002, 0, 0, 0, 0],
         "27d": [0x3CFC, 0x3CFB, 0x2003, 0x2002, 0, 0, 0, 0],
     ]
-    /// 12×9 metatiles. "P0"…"P5" are the six oval patches (two plants each); unopened ones are overgrown.
+    /// 12×9 metatiles. "P0"…"P5" are the six oval patches (one plant each); unopened ones are overgrown.
     static let layout: [[String]] = [
         "c6 c6 c6 c6 c6 c6 c6 c6 c6 c6 c6 c6",
         "16 16 16 16 16 16 16 16 16 16 16 16",
@@ -127,8 +127,6 @@ final class GardenGfx: ObservableObject {
 
     /// Top-left metatile of oval patch `j`.
     static func ovalTile(_ j: Int) -> (x: Int, y: Int) { (2 + 3 * (j % 3), 3 + 2 * (j / 3)) }
-    /// The soil tile plant `i` stands on (two per oval, on its top row).
-    static func plotTile(_ i: Int) -> (x: Int, y: Int) { let o = ovalTile(i / 2); return (o.x + i % 2, o.y) }
 
     private var sheets: [String: IndexedPNG.Rendered] = [:]
 
@@ -157,7 +155,7 @@ final class GardenGfx: ObservableObject {
                     if cell.hasPrefix("P"), let j = cell.last, let n = Int(String(j)) {
                         let part = seen[j, default: 0]
                         seen[j] = part + 1
-                        key = 2 * n < openPlots ? ["273", "275", "27b", "27d"][part % 4] : "0d"
+                        key = n < openPlots ? ["273", "275", "27b", "27d"][part % 4] : "0d"
                     }
                     guard let entries = Self.metatiles[key] else { continue }
                     for (k, e) in entries.enumerated() {

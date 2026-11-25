@@ -194,6 +194,7 @@ final class GameStore: ObservableObject {
             UserDefaults.standard.set(true, forKey: "ballSteps1000")
             mutate { $0.settings.ballSteps = 1_000 }
         }
+        migrateGardenToOnePerPatch()
         tracker.onMovement = { [weak self] _ in self?.requestTick(minInterval: 20) }
         tracker.apply(mode: state.settings.trackingMode)
         engine.startLiveUpdates { [weak self] in self?.requestTick(minInterval: 15) }
@@ -1258,6 +1259,29 @@ extension GameStore {
         rescheduleGardenNotifications()
     }
 
+    /// Ovals used to hold two plants each: keep the first plant in each oval (in its middle) and give the
+    /// other one's berry back.
+    func migrateGardenToOnePerPatch() {
+        guard !state.garden.onePerPatch else { return }
+        mutate { s in
+            var new: [GardenPlot] = []
+            var refund: [String] = []
+            for old in s.garden.plots.sorted(by: { $0.id < $1.id }) where old.berry != nil {
+                let field = old.id / 12, oval = (old.id % 12) / 2
+                let id = field * Garden.plotsPerField + oval
+                if new.contains(where: { $0.id == id }) { refund.append(old.berry!) }
+                else { var p = old; p.id = id; new.append(p) }
+            }
+            for id in 0..<(s.garden.fields * Garden.plotsPerField) where !new.contains(where: { $0.id == id }) {
+                new.append(GardenPlot(id: id))
+            }
+            s.garden.plots = new.sorted { $0.id < $1.id }
+            for b in refund { s.bag[b, default: 0] += 1 }
+            s.garden.onePerPatch = true
+        }
+        rescheduleGardenNotifications()
+    }
+
     /// Plants from before each one kept its own timer: fix theirs now, so changing workers doesn't move them.
     private static func fixTimers(_ s: inout GameState, hours: Double) {
         for i in s.garden.plots.indices where s.garden.plots[i].berry != nil && s.garden.plots[i].growHours == nil {
@@ -1280,7 +1304,7 @@ extension GameStore {
 
     /// One "ready to pick" notification per planted patch (re-timed when your workers change).
     func rescheduleGardenNotifications() {
-        let ids = (0..<Garden.maxPlots).map { "garden-\($0)" }
+        let ids = (0..<36).map { "garden-\($0)" }
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
         let b = gardenBonuses
         // patches ready at (about) the same time share one notification

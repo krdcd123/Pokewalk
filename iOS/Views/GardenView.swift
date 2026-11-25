@@ -157,11 +157,11 @@ struct GardenView: View {
                                     .frame(width: tile, height: tile * 2)
                                     .position(x: c.x, y: c.y - tile)        // sprite's bottom = the plant's base
                                     .allowsHitTesting(false)
-                                // tap area: this half of the oval
+                                // tap area: the oval and the plant on it
                                 Color.white.opacity(0.001)
-                                    .frame(width: tile, height: tile * 1.8)
+                                    .frame(width: tile * 2, height: tile * 2)
                                     .contentShape(Rectangle())
-                                    .position(x: c.x, y: c.y - tile * 0.45)
+                                    .position(x: c.x, y: c.y - tile * 0.55)
                                     .onTapGesture { tap(store.gardenPlot(id)) }
                                     .accessibilityLabel(store.gardenPlot(id).berry.map { Dex.itemName($0) } ?? "Empty soil")
                             }
@@ -170,8 +170,8 @@ struct GardenView: View {
                 }
                 // Overgrown patches (the Tillers clear them): a tap just explains
                 if f == 0 {
-                    ForEach(0..<(Garden.plotsPerField / 2), id: \.self) { j in
-                        if 2 * j >= open {
+                    ForEach(0..<Garden.plotsPerField, id: \.self) { j in
+                        if j >= open {
                             let o = GardenGfx.ovalTile(j)
                             Color.white.opacity(0.001)
                                 .frame(width: tile * 2, height: tile * 2)
@@ -190,10 +190,10 @@ struct GardenView: View {
         }
     }
 
-    /// Middle of the soil for plant `i` (in points): two plants side by side in each oval.
+    /// Middle of the soil for plant `i` (in points): one plant in the middle of each oval.
     static func plantCentre(_ i: Int, tile: CGFloat) -> CGPoint {
-        let o = GardenGfx.ovalTile(i / 2)
-        let cx = (CGFloat(o.x) + 1) * tile + (i % 2 == 0 ? -0.46 : 0.46) * tile
+        let o = GardenGfx.ovalTile(i)
+        let cx = (CGFloat(o.x) + 1) * tile
         let base = (CGFloat(o.y) + 1.2) * tile           // the oval is 1½ tiles tall; plants stand just below its middle
         return CGPoint(x: cx, y: base)
     }
@@ -201,7 +201,7 @@ struct GardenView: View {
     private func lockedTapped(oval j: Int) {
         Haptics.tap()
         SoundKit.shared.play(.select)
-        let need = 2 * j - Garden.basePlots + 2 >= 4 ? 4 : 2        // oval 4 → 2 Tillers, oval 5 → 4
+        let need = j > Garden.basePlots ? 4 : 2                     // 5th patch → 2 Tillers, 6th → 4
         let have = store.gardenBonuses.counts[.tillers] ?? 0
         withAnimation {
             ladySays = "This patch is overgrown. Clearing it needs \(need) Tillers working here (Ground, Rock, Steel or Fighting types) — you have \(have)."
@@ -222,7 +222,7 @@ struct GardenView: View {
                 Image(systemName: "lock.fill").font(.system(size: 22, weight: .heavy)).foregroundStyle(.white)
                     .frame(width: 52, height: 52).glassCircle()
                 Text("Garden \(f + 1)").font(.rounded(20, .black)).foregroundStyle(.white)
-                Text("12 patches, all ready to plant").font(.rounded(13, .bold)).foregroundStyle(.white.opacity(0.85))
+                Text("6 patches, all ready to plant").font(.rounded(13, .bold)).foregroundStyle(.white.opacity(0.85))
                 Button {
                     if store.buyGardenField() {
                         Haptics.hold()
@@ -357,7 +357,7 @@ struct GardenView: View {
 
     private func tap(_ plot: GardenPlot) {
         let b = store.gardenBonuses
-        guard store.gardenPlotOpen(plot.id) else { lockedTapped(oval: (plot.id % Garden.plotsPerField) / 2); return }
+        guard store.gardenPlotOpen(plot.id) else { lockedTapped(oval: plot.id % Garden.plotsPerField); return }
         if plot.berry == nil {
             let have = ItemCatalog.berries.contains { (store.state.bag[$0] ?? 0) > 0 }
             if have { SoundKit.shared.play(.select); planting = plot.id }
