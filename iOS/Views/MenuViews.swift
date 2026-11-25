@@ -24,8 +24,7 @@ struct MainMenuView: View {
         .init(dest: .shop, title: "Poké Mart", symbol: "cart.fill"),
         .init(dest: .journal, title: "Journal", symbol: "map.fill"),
         .init(dest: .trainer, title: "Trainer", symbol: "person.text.rectangle.fill"),
-        .init(dest: .garden, title: "Garden", symbol: "leaf.fill"),
-        .init(dest: .ranch, title: "Ranch", symbol: "house.lodge.fill"),
+        .init(dest: .garden, title: "Activities", symbol: "house.lodge.fill"),
     ]
 
     @State private var path: [Dest] = []
@@ -121,8 +120,8 @@ struct MainMenuView: View {
                 case .shop: ShopView()
                 case .journal: JournalView()
                 case .trainer: TrainerCardView()
-                case .garden: GardenView()
-                case .ranch: RanchView()
+                case .garden: ActivitiesView(tab: .garden)
+                case .ranch: ActivitiesView(tab: .ranch)
                 case .achievements: AchievementsView()
                 case .settings: SettingsView()
                 case .summary(let id): SummaryView(pokemonID: id)

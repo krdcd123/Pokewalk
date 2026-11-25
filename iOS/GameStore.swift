@@ -16,6 +16,8 @@ final class GameStore: ObservableObject {
     /// When to rain confetti (the daily stamp).
     @Published var confettiAt: Date?
     @Published var workoutPopup: WorkoutRecord?      // "Workout complete!" card on the map
+    @Published var hatching: OwnedPokemon?           // Egg hatching on the map
+    var hatchQueue: [UUID] = []
     @Published var activeEncounter: PendingEncounter?
     /// Set when a pickup notification is tapped: the map opens the Party panel.
     @Published var openPartyAt: Date?
@@ -196,7 +198,7 @@ final class GameStore: ObservableObject {
         }
         migrateGardenToOnePerPatch()
         // Pokémon working in the Garden / Ranch don't sit in a PC box
-        mutate { s in for id in s.garden.workers + s.ranch.ranchers { GameRules.takeOutOfBox(id, in: &s) } }
+        mutate { s in for id in s.garden.workers + s.ranch.ranchers + s.daycare.parents { GameRules.takeOutOfBox(id, in: &s) } }
         finishRanchProjectIfDone()
         tracker.onMovement = { [weak self] _ in self?.requestTick(minInterval: 20) }
         tracker.apply(mode: state.settings.trackingMode)
@@ -443,6 +445,17 @@ final class GameStore: ObservableObject {
         if !o.itemsFound.isEmpty {
             lines.append("Found " + o.itemsFound.map(Dex.itemName).joined(separator: ", ") + "!")
         }
+        // Daycare
+        if o.eggFound {
+            notify(title: "The Daycare found an Egg! 🥚", body: "Pick it up from the Daycare and carry it to hatch it.",
+                   id: "egg-found-\(Int(Date().timeIntervalSince1970))", category: nil)
+        }
+        for mon in o.hatched {
+            hatchQueue.append(mon.id)
+            notify(title: "Oh? Your Egg is hatching!", body: "Open PokéWalk to see what came out.",
+                   id: "hatch-\(mon.id.uuidString)", category: nil)
+        }
+        if !o.hatched.isEmpty && !background { showHatchIfNeeded() }
         if let evo = o.evolutionReady, let mon = state.mon(evo.id) {
             if background {
                 notify(title: "What? \(mon.name) is evolving!", body: "Open PokéWalk to watch.", id: "evo",
@@ -506,6 +519,152 @@ final class GameStore: ObservableObject {
         guard let uuid = UUID(uuidString: id), let enc = state.pending.first(where: { $0.id == uuid }) else { return }
         activeEncounter = enc
         markOpened(enc.id)
+    }
+
+    // MARK: Battle Frontier
+
+    func refreshFrontier() {
+        var t = state
+        FrontierRules.refresh(&t)
+        if t.frontier != state.frontier { mutate { FrontierRules.refresh(&$0) } }
+    }
+
+    /// Records a Frontier battle. Returns the reward if won.
+    func finishFrontierBattle(_ battle: Int, trainer: FrontierTrainer, won: Bool) -> FrontierRules.Reward? {
+        refreshFrontier()
+        guard state.frontier.won == battle - 1, !state.frontier.lost else { return nil }
+        guard won else {
+            mutate { $0.frontier.lost = true }
+            return nil
+        }
+        let r = FrontierRules.reward(for: battle, champion: trainer.isChampion)
+        let allLeaders = FrontierRules.leaders + [FrontierRules.sundayLeader]
+        let leaderKey: String? = trainer.isLeader ? allLeaders.first(where: { $0.name == trainer.name })?.key : nil
+        mutate { s in
+            s.frontier.won = battle
+            s.frontier.totalWins += 1
+            s.stats["frontierWins", default: 0] += 1
+            s.money += r.money
+            for (b, n) in r.balls { s.balls[b, default: 0] += n }
+            for (k, n) in r.items { s.bag[k, default: 0] += n }
+            if let key = leaderKey {
+                if !s.frontier.leadersBeaten.contains(key) { s.frontier.leadersBeaten.append(key) }
+                if !s.frontier.badges.contains(key) { s.frontier.badges.append(key) }
+            }
+            if trainer.isChampion, !s.frontier.symbols.contains(trainer.name) { s.frontier.symbols.append(trainer.name) }
+            if trainer.isChampion { s.stats["championWins", default: 0] += 1 }
+            // battling raises friendship a little
+            for id in s.partyIDs { if let i = s.index(of: id) { s.pokemon[i].friendship = min(255, s.pokemon[i].friendship + 1) } }
+        }
+        return r
+    }
+
+    // MARK: Contests
+
+    func blend(_ c: ContestCategory?) -> Bool {
+        var ok = false
+        mutate { ok = ContestRules.blend(c, in: &$0) }
+        return ok
+    }
+
+    func feedBlock(_ block: String, to id: UUID) -> Bool {
+        var ok = false
+        mutate { ok = ContestRules.feed(block, to: id, in: &$0) }
+        return ok
+    }
+
+    /// Records a contest result (place 1–4). Returns the prize text if it won.
+    func finishContest(_ mon: UUID, _ c: ContestCategory, _ r: ContestRank, place: Int) -> String? {
+        var prize: String?
+        mutate { s in
+            s.contests.entered += 1
+            s.stats["contestsEntered", default: 0] += 1
+            guard place == 1 else { return }
+            s.contests.wins += 1
+            s.stats["contestWins", default: 0] += 1
+            let ribbon = "\(c.rawValue)-\(r.rawValue)"
+            let firstMaster = r == .master && !s.contests.ribbons.values.contains { $0.contains(ribbon) }
+            if !s.contests.ribbons(mon).contains(ribbon) { s.contests.ribbons[mon.uuidString, default: []].append(ribbon) }
+            s.money += r.prize
+            var text = "\(c.name) Ribbon (\(r.name) Rank) · ₽\(r.prize.formatted())"
+            if firstMaster, let doll = ContestRules.masterPrizes[c] {
+                s.ranch.decor[doll, default: 0] += 1
+                text += " · \(RanchDecor.find(doll)?.name ?? "a doll") for your house"
+            }
+            prize = text
+        }
+        return prize
+    }
+
+    // MARK: Daycare
+
+    func showHatchIfNeeded() {
+        guard hatching == nil, workoutPopup == nil, evolutionCandidate == nil, !hatchQueue.isEmpty else { return }
+        let id = hatchQueue.removeFirst()
+        hatching = state.mon(id)
+    }
+
+    func dismissHatch() {
+        hatching = nil
+        SoundKit.shared.play(.select)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(700))
+            showHatchIfNeeded()
+        }
+    }
+
+    var daycareParents: [OwnedPokemon] { state.daycare.parents.compactMap { state.mon($0) } }
+
+    func leaveAtDaycare(_ id: UUID) {
+        guard state.daycare.open, state.boxedIDs.contains(id), state.daycare.parents.count < 2 else { return }
+        mutate { s in
+            s.daycare.parents.append(id)
+            s.daycare.eggProgress = 0
+            GameRules.takeOutOfBox(id, in: &s)
+        }
+    }
+
+    func takeFromDaycare(_ id: UUID) {
+        mutate { s in
+            s.daycare.parents.removeAll { $0 == id }
+            GameRules.returnToBox(id, in: &s)
+        }
+    }
+
+    /// Picks up the waiting Egg into your basket.
+    func collectEgg() -> Bool {
+        guard let egg = state.daycare.waiting, state.daycare.basket.count < Daycare.basketSize else { return false }
+        mutate { s in
+            s.daycare.basket.append(egg)
+            s.daycare.waiting = nil
+        }
+        return true
+    }
+
+    func startDaycareProject() -> Bool {
+        guard DaycareRules.canStart(state), state.daycare.building == nil, let p = state.daycare.nextProject,
+              canAfford(p) else { return false }
+        let end = Date().addingTimeInterval(p.hours * 3600)
+        mutate { s in
+            s.money -= p.money
+            for (m, n) in p.cost { s.ranch.materials[m.rawValue, default: 0] -= n }
+            s.daycare.building = RanchBuild(project: p.id, startedAt: .now, endsAt: end)
+        }
+        notify(title: "\(p.name) is finished! 🥚", body: "Come and see the Daycare — \(p.reward).",
+               id: "daycare-build", category: nil, at: end)
+        return true
+    }
+
+    @discardableResult
+    func finishDaycareProjectIfDone() -> RanchProject? {
+        guard let b = state.daycare.building, b.endsAt <= .now,
+              let p = DaycareRules.projects.first(where: { $0.id == b.project }) else { return nil }
+        mutate { s in
+            s.daycare.building = nil
+            s.daycare.built = max(s.daycare.built, p.id + 1)
+            if p.id == 3 { s.bag["oval-charm", default: 0] += 1 }
+        }
+        return p
     }
 
     func claimAchievement(_ a: Achievement) -> Bool {
@@ -586,6 +745,7 @@ final class GameStore: ObservableObject {
                 mon.metLocation = MetLocation(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude)
             }
             GameRules.store(mon, in: &s)
+            if w.speciesID == Swarm.species(w.appearedAt).id { s.stats["swarmCaught", default: 0] += 1 }
             entry.caughtID = mon.id
             entry.location = mon.metLocation
             caught = mon
@@ -813,7 +973,9 @@ final class GameStore: ObservableObject {
         showPendingStamp()
         if evolutionCandidate == nil { checkPendingEvolutions() }
         showWorkoutPopupIfNeeded()
+        showHatchIfNeeded()
         if let p = finishRanchProjectIfDone() { toast = "The \(p.name) at your ranch is finished!" }
+        if let p = finishDaycareProjectIfDone() { toast = "The \(p.name) at the Daycare is finished!" }
         // Mornings (5am–1pm, when the good-morning card can appear) check every minute, otherwise every 5
         let hour = Calendar.current.component(.hour, from: .now)
         let every: TimeInterval = (5..<13).contains(hour) ? 60 : 300

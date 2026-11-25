@@ -27,9 +27,6 @@ struct GardenView: View {
             }
             .padding()
         }
-        .navigationTitle("Garden")
-        .navigationBarTitleDisplayMode(.inline)
-        .glassScreen(transparent: true)
         .task { await gfx.load() }
         .sheet(item: Binding(get: { planting.map { PlotID(id: $0) } }, set: { planting = $0?.id })) { p in
             PlantPicker(plotID: p.id) { berry in
@@ -670,6 +667,7 @@ private struct PlantPicker: View {
 
 struct WorkerPicker: View {
     var forRanch = false
+    var forDaycare = false
     let choose: (UUID) -> Void
     @EnvironmentObject private var store: GameStore
     @Environment(\.dismiss) private var dismiss
@@ -695,7 +693,12 @@ struct WorkerPicker: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("\(mon.name)  Lv. \(mon.level)").font(.rounded(16, .bold))
                                 HStack(spacing: 6) {
-                                    if forRanch {
+                                    if forDaycare {
+                                        Text(mon.gender == .male ? "♂" : mon.gender == .female ? "♀" : "Genderless")
+                                            .font(.rounded(12, .heavy)).foregroundStyle(mon.gender == .female ? .pink : .blue)
+                                        Text(SpeciesData.eggGroups(mon.speciesID).contains(15) ? "Can't breed" : "Egg groups: " + SpeciesData.eggGroups(mon.speciesID).map(EggGroups.name).joined(separator: ", "))
+                                            .font(.rounded(12, .bold)).foregroundStyle(Theme.inkSoft)
+                                    } else if forRanch {
                                         let job = RanchJob.of(mon.species.types[0]), attr = RanchAttribute.of(nature: mon.nature)
                                         Label(job.name, systemImage: job.symbol).font(.rounded(12, .bold)).foregroundStyle(Theme.tealDark)
                                         Label(attr.name, systemImage: attr.symbol).font(.rounded(12, .bold)).foregroundStyle(.orange)

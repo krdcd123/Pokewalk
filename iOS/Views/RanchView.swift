@@ -33,9 +33,6 @@ struct RanchView: View {
             }
             .padding()
         }
-        .navigationTitle("Ranch")
-        .navigationBarTitleDisplayMode(.inline)
-        .glassScreen(transparent: true)
         .task {
             await gfx.loadOutdoors()
             if foreman == nil { foreman = await PretFiles.sprite("graphics/trainers/front_pics/hiker.png") }

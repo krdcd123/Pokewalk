@@ -156,8 +156,8 @@ struct MapHomeView: View {
                     case .party: NavigationStack { PartyView() }
                     case .bag: NavigationStack { BagView() }
                     case .journal: NavigationStack { JournalView() }
-                    case .garden: NavigationStack { GardenView() }
-                    case .ranch: NavigationStack { RanchView() }
+                    case .garden: NavigationStack { ActivitiesView(tab: .garden) }
+                    case .ranch: NavigationStack { ActivitiesView(tab: .ranch) }
                     case .summary(let id): NavigationStack { SummaryView(pokemonID: id) }
                     }
                 }
@@ -202,6 +202,17 @@ struct MapHomeView: View {
             }
         }
         .animation(.spring(duration: 0.4), value: store.workoutPopup)
+        .overlay {
+            if let mon = store.hatching {
+                ZStack {
+                    Color.black.opacity(0.4).ignoresSafeArea()
+                    HatchCard(mon: mon) { store.dismissHatch() }
+                        .padding(24)
+                        .transition(.scale(scale: 0.85).combined(with: .opacity))
+                }
+            }
+        }
+        .animation(.spring(duration: 0.4), value: store.hatching?.id)
         .overlay {
             if let n = sleepSvc.popup {
                 ZStack {

@@ -323,6 +323,9 @@ struct GameState: Codable {
     var garden = Garden()                     // the berry garden (Menu › Garden)
     var ranch = Ranch()                       // the ranch (Menu › Ranch)
     var effects: [ActiveEffect] = []          // items in effect (Repel, Energy Root, Lucky Egg…)
+    var daycare = Daycare()
+    var frontier = Frontier()
+    var contests = ContestRecord()
     var stats: [String: Int] = [:]            // running totals for achievements
     var achievementsClaimed: [String] = []
 
@@ -350,6 +353,7 @@ struct GameState: Codable {
         case .box(let b, let s): return "\(boxes[b].name) · slot \(s + 1)"
         case nil:
             if garden.workers.contains(id) { return "Working in the Garden" }
+            if daycare.parents.contains(id) { return "Staying at the Daycare" }
             if ranch.ranchers.contains(id) { return "Working at the Ranch" }
             return "—"
         }
@@ -467,6 +471,9 @@ extension GameState {
         garden = c.value(.garden, Garden())
         ranch = c.value(.ranch, Ranch())
         effects = c.value(.effects, [])
+        daycare = c.value(.daycare, Daycare())
+        frontier = c.value(.frontier, Frontier())
+        contests = c.value(.contests, ContestRecord())
         stats = c.value(.stats, [:])
         achievementsClaimed = c.value(.achievementsClaimed, [])
     }

@@ -18,6 +18,8 @@ struct StepOutcome {
     var newEncounters: [PendingEncounter] = []
     var evolutionReady: (id: UUID, into: Int)?
     var partyLevelUps: [(id: UUID, level: Int)] = []
+    var eggFound = false
+    var hatched: [OwnedPokemon] = []
 
     var isEmpty: Bool { steps == 0 }
 }
@@ -226,6 +228,9 @@ enum GameRules {
         if case .moreEncounters(let x) = ability { encRate *= x }
         s.counters.encounterProgress += Int((Double(steps) * encRate).rounded())
         FieldItems.spend(steps: steps, in: &s, at: date)
+        let daycare = DaycareRules.walk(steps, in: &s, at: date)
+        out.eggFound = daycare.found
+        out.hatched = daycare.hatched
         while s.counters.encounterProgress >= s.counters.nextEncounterAt {
             s.counters.encounterProgress -= s.counters.nextEncounterAt
             s.counters.nextEncounterAt = rollEncounterGap(s.settings)
@@ -313,7 +318,14 @@ enum GameRules {
             let pool = Dex.all.filter { $0.isLegendary || $0.isMythical }.map { ($0, $0.isMythical ? 0.25 : 1.0) }
             return weightedPick(pool)
         }
-        let options = Dex.all.map { ($0, encounterWeight($0, context: context, lifetimeSteps: lifetimeSteps)) }
+        // This week's swarm
+        if Double.random(in: 0..<1) < Swarm.share { return Swarm.species() }
+        // The season brings out some types more often
+        let season = Season.at()
+        let options = Dex.all.map { sp -> (Species, Double) in
+            let w = encounterWeight(sp, context: context, lifetimeSteps: lifetimeSteps)
+            return (sp, sp.types.contains(where: season.types.contains) ? w * Season.boost : w)
+        }
         return weightedPick(options.filter { $0.1 > 0 })
     }
 

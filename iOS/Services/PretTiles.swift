@@ -31,11 +31,17 @@ enum PretFiles {
         return rows.count >= 16 ? rows : nil
     }
 
-    /// An object sprite (doll, cushion…) with its own palette; colour 0 is see-through.
-    static func sprite(_ path: String) async -> UIImage? {
-        guard let d = await data(path), let png = IndexedPNG(d), let pal = png.palette else { return nil }
+    /// An object sprite (doll, cushion…) with its own palette (or a separate .pal); colour 0 is see-through.
+    static func sprite(_ path: String, palette palPath: String? = nil) async -> UIImage? {
+        guard let d = await data(path), let png = IndexedPNG(d) else { return nil }
+        var pal = png.palette
+        if let palPath { pal = await palette(palPath) ?? pal }
+        guard let pal else { return nil }
         return png.render(palette: pal, transparentIndex: 0).cropping(CGRect(x: 0, y: 0, width: png.w, height: png.h))
     }
+
+    /// Emerald's Egg.
+    static func egg() async -> UIImage? { await sprite("graphics/pokemon/egg/front.png", palette: "graphics/pokemon/egg/normal.pal") }
 }
 
 @MainActor
