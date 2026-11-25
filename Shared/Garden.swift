@@ -24,10 +24,10 @@ struct Garden: Codable, Equatable, Hashable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = Garden()
-        plots = c.value(.plots, d.plots)
-        workers = c.value(.workers, [])
-        lastGiftDay = c.value(.lastGiftDay, "")
-        harvests = c.value(.harvests, 0)
+        plots = (try? c.decodeIfPresent([GardenPlot].self, forKey: .plots)) ?? d.plots
+        workers = (try? c.decodeIfPresent([UUID].self, forKey: .workers)) ?? []
+        lastGiftDay = (try? c.decodeIfPresent(String.self, forKey: .lastGiftDay)) ?? ""
+        harvests = (try? c.decodeIfPresent(Int.self, forKey: .harvests)) ?? 0
     }
 }
 
