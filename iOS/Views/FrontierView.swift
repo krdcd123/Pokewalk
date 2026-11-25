@@ -148,6 +148,9 @@ struct FrontierView: View {
 
 // MARK: - The battle
 
+/// A Battle Frontier battle laid out like Emerald's: the Frontier background and platforms, the trainer's front
+/// sprite and your back sprite sliding in, the party ball rows, then the foe sends out first and you throw your
+/// ball after — with Liquid Glass health boxes, text box and move buttons.
 struct BattleView: View {
     let number: Int
     let trainer: FrontierTrainer
@@ -163,80 +166,273 @@ struct BattleView: View {
     @State private var choosingSwitch = false
     @State private var forcedSwitch = false
     @State private var outcome: Bool?
-    @State private var trainerPic: UIImage?
-    @State private var showTrainer = true
     @State private var foeFlash = false
     @State private var meFlash = false
     @State private var confetti: Date?
 
+    // scene
+    @State private var scene: UIImage?
+    @State private var trainerPic: UIImage?
+    @State private var backFrames: [UIImage] = []
+    @State private var backFrame = 0
+    @State private var ballFrames: [UIImage] = []
+    @State private var foeTrainerX: CGFloat = -260      // GBA pixels from its spot (0 = standing on the platform)
+    @State private var playerX: CGFloat = 260
+    @State private var ballRows = false
+    @State private var foeShown = false
+    @State private var meShown = false
+    @State private var foeScale: CGFloat = 0.1
+    @State private var meScale: CGFloat = 0.1
+    @State private var meRecall = false
+    @State private var foeBoxIn = false
+    @State private var meBoxIn = false
+    @State private var foeBounds = SpriteBounds.fallback
+    @State private var meBounds = SpriteBounds.fallback
+    @State private var flight: Flight?
+    @State private var ballAt: CGPoint?
+    @State private var ballOpen = false
+    @State private var openFX: (start: Date, at: CGPoint)?
+    @State private var flash: (CGPoint, Double) = (.zero, 0)
+
+    private struct Flight { let from: CGPoint; let to: CGPoint; let arc: CGFloat; let start: Date; let duration: Double }
+
+    private var style: TrainerStyle { store.state.trainer.style }
+
+    // Spots on Emerald's 240×112 battle scene
+    private static let foeFeet = CGPoint(x: 176, y: 62)
+    private static let myFeet = CGPoint(x: 64, y: 118)
+    private static let foeTrainerCentre = CGPoint(x: 176, y: 40)
+    private static let playerCentre = CGPoint(x: 80, y: 96)
+
     var body: some View {
         GeometryReader { geo in
-            ZStack {
-                LinearGradient(colors: [Color(hex: 0x2E5E4E), Color(hex: 0x16302A), .black], startPoint: .top, endPoint: .bottom)
-                    .ignoresSafeArea()
+            let s = geo.size.width / 240
+            ZStack(alignment: .top) {
+                backdrop.ignoresSafeArea()
                 VStack(spacing: 10) {
-                    // foe
-                    HStack(alignment: .top) {
-                        if foes.indices.contains(foe) { infoBox(foes[foe], showHP: false) }
-                        Spacer()
-                        ZStack {
-                            if showTrainer, let trainerPic {
-                                PixelImageView(image: trainerPic).frame(width: 128, height: 128).transition(.move(edge: .trailing).combined(with: .opacity))
-                            } else if foes.indices.contains(foe) {
-                                AnimatedSprite(speciesID: foes[foe].speciesID, shiny: foes[foe].isShiny)
-                                    .frame(width: 130, height: 130)
-                                    .opacity(foes[foe].fainted ? 0 : (foeFlash ? 0.3 : 1))
-                                    .offset(y: foes[foe].fainted ? 40 : 0)
-                            }
+                    battleScene(s)
+                        .frame(width: geo.size.width, height: 112 * s)
+                        .clipped()
+                        .overlay(alignment: .bottom) {
+                            LinearGradient(colors: [.clear, .black.opacity(0.18)], startPoint: .top, endPoint: .bottom).frame(height: 10)
                         }
-                        .frame(width: 140, height: 140)
+                    VStack(spacing: 10) {
+                        Text(text).font(.rounded(17, .heavy)).foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, minHeight: 68, alignment: .topLeading)
+                            .padding(14)
+                            .glassCard(20, tint: Color(hex: 0x2E6F86).opacity(0.55))
+                            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color(hex: 0xE0703A).opacity(0.85), lineWidth: 3))
+                            .animation(nil, value: text)
+                        controls
+                        Spacer(minLength: 0)
+                        Text("Battle \(number) of 5").font(.rounded(12, .heavy)).foregroundStyle(.white.opacity(0.7))
                     }
-                    Spacer(minLength: 0)
-                    // you
-                    HStack(alignment: .bottom) {
-                        if mine.indices.contains(me) {
-                            AnimatedSprite(speciesID: mine[me].speciesID, shiny: mine[me].isShiny, kind: mine[me].isShiny ? .backShiny : .back)
-                                .frame(width: 150, height: 150)
-                                .opacity(mine[me].fainted ? 0 : (meFlash ? 0.3 : 1))
-                                .offset(y: mine[me].fainted ? 40 : 0)
-                        }
-                        Spacer()
-                        if mine.indices.contains(me) { infoBox(mine[me], showHP: true) }
-                    }
-                    // text
-                    Text(text).font(.rounded(16, .heavy)).foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
-                        .padding(14)
-                        .glassCard(18)
-                    controls
+                    .padding(.horizontal, 14)
                 }
-                .padding()
-                .frame(width: geo.size.width, height: geo.size.height)
                 ConfettiRain(start: confetti).allowsHitTesting(false).ignoresSafeArea()
             }
         }
         .task { await begin() }
+        .task(id: foes.indices.contains(foe) ? foes[foe].speciesID : 0) {
+            guard foes.indices.contains(foe) else { return }
+            let m = foes[foe]
+            foeBounds = await BattleGfx.bounds(m.speciesID, kind: m.isShiny ? .shiny : .front) ?? .fallback
+        }
+        .task(id: mine.indices.contains(me) ? mine[me].speciesID : 0) {
+            guard mine.indices.contains(me) else { return }
+            let m = mine[me]
+            meBounds = await BattleGfx.bounds(m.speciesID, kind: m.isShiny ? .backShiny : .back) ?? .fallback
+        }
+        .onAppear { SoundKit.shared.setScene(.battle) }
+        .onDisappear { SoundKit.shared.setScene(.map) }
         .sheet(isPresented: $choosingSwitch) { switchSheet.presentationDetents([.medium]).interactiveDismissDisabled(forcedSwitch) }
     }
 
-    private func infoBox(_ m: BattleMon, showHP: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(m.name).font(.rounded(15, .heavy)).foregroundStyle(.white)
-                Spacer()
-                Text("Lv\(m.level)").font(.rounded(13, .heavy)).foregroundStyle(Theme.tealDark)
+    /// The whole screen behind the glass: Emerald's scene, blown up and blurred.
+    private var backdrop: some View {
+        ZStack {
+            Color(hex: 0x24414A)
+            if let scene {
+                Image(uiImage: scene).resizable().scaledToFill().blur(radius: 26).opacity(0.55)
             }
-            let frac = Double(max(0, m.hp)) / Double(max(1, m.maxHP))
-            ProgressView(value: frac).tint(frac > 0.5 ? .green : frac > 0.2 ? .yellow : .red)
-                .animation(.easeInOut(duration: 0.5), value: m.hp)
-            if showHP {
-                Text("\(max(0, m.hp)) / \(m.maxHP)").font(.rounded(12, .heavy)).monospacedDigit().foregroundStyle(Theme.inkSoft)
+            LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
+        }
+    }
+
+    // MARK: Scene
+
+    private func battleScene(_ s: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            if let scene {
+                Image(uiImage: scene).interpolation(.none).resizable().frame(width: 240 * s, height: 112 * s)
+            } else {
+                Color(hex: 0xF4F6FC)
+            }
+            foeMon(s)
+            foeTrainer(s)
+            myMon(s)
+            playerTrainer(s)
+            if ballRows {
+                partyRow(foes, alignRight: true, s: s)
+                    .position(x: 52 * s, y: 30 * s)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                partyRow(mine, alignRight: false, s: s)
+                    .position(x: 190 * s, y: 86 * s)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+            TimelineView(.animation(paused: flight == nil)) { tl in
+                if let p = ballPoint(tl.date) {
+                    Group {
+                        if ballFrames.count >= 2 {
+                            Image(uiImage: ballFrames[ballOpen ? 1 : 0]).interpolation(.none).resizable()
+                        } else {
+                            BallGlyph(kind: .poke)
+                        }
+                    }
+                    .frame(width: 14 * s, height: 14 * s)
+                    .rotationEffect(.degrees(flightSpin(tl.date)))
+                    .position(x: p.x * s, y: p.y * s)
+                }
+            }
+            Circle().fill(.white).frame(width: 70 * s, height: 70 * s).blur(radius: 12 * s)
+                .opacity(flash.1).position(x: flash.0.x * s, y: flash.0.y * s).allowsHitTesting(false)
+            if let fx = openFX {
+                BallOpenFX(kind: .poke, gameBoy: false, start: fx.start, px: s)
+                    .id(fx.start)
+                    .position(x: fx.at.x * s, y: fx.at.y * s)
+            }
+            if foeBoxIn, foes.indices.contains(foe) {
+                infoBox(foes[foe], mine: false)
+                    .frame(width: 112 * s)
+                    .position(x: 60 * s, y: 22 * s)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+            if meBoxIn, mine.indices.contains(me) {
+                infoBox(mine[me], mine: true)
+                    .frame(width: 112 * s)
+                    .position(x: 182 * s, y: 86 * s)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .padding(10)
-        .frame(width: 170)
-        .glassCard(16)
+        .frame(width: 240 * s, height: 112 * s, alignment: .topLeading)
     }
+
+    @ViewBuilder private func foeMon(_ s: CGFloat) -> some View {
+        if foeShown, foes.indices.contains(foe) {
+            let m = foes[foe], b = foeBounds, e = s * 0.72
+            let lift = CGFloat(BattleElevation.pixels(m.speciesID)) * 1.5 * e
+            let cy = Self.foeFeet.y * s - (b.bottom - b.size.height / 2) * e - lift
+            AnimatedSprite(speciesID: m.speciesID, shiny: m.isShiny)
+                .frame(width: b.size.width * e, height: b.size.height * e)
+                .scaleEffect(foeScale, anchor: .bottom)
+                .opacity(m.fainted ? 0 : (foeFlash ? 0.25 : 1))
+                .offset(y: m.fainted ? 40 * s : 0)
+                .position(x: Self.foeFeet.x * s, y: cy)
+        }
+    }
+
+    @ViewBuilder private func myMon(_ s: CGFloat) -> some View {
+        if meShown, mine.indices.contains(me) {
+            let m = mine[me], b = meBounds, e = s * 0.8
+            let cy = Self.myFeet.y * s - (b.bottom - b.size.height / 2) * e
+            AnimatedSprite(speciesID: m.speciesID, shiny: m.isShiny, kind: m.isShiny ? .backShiny : .back)
+                .frame(width: b.size.width * e, height: b.size.height * e)
+                .colorMultiply(meRecall ? Color(hex: 0xFF5A5A) : .white)
+                .scaleEffect(meScale, anchor: .bottom)
+                .opacity(m.fainted ? 0 : (meFlash ? 0.25 : 1))
+                .offset(y: m.fainted ? 50 * s : 0)
+                .position(x: Self.myFeet.x * s, y: cy)
+        }
+    }
+
+    @ViewBuilder private func foeTrainer(_ s: CGFloat) -> some View {
+        if let trainerPic {
+            Image(uiImage: trainerPic).interpolation(.none).resizable()
+                .frame(width: 64 * s, height: 64 * s)
+                .position(x: (Self.foeTrainerCentre.x + foeTrainerX) * s, y: Self.foeTrainerCentre.y * s)
+        }
+    }
+
+    @ViewBuilder private func playerTrainer(_ s: CGFloat) -> some View {
+        if backFrames.indices.contains(backFrame) {
+            Image(uiImage: backFrames[backFrame]).interpolation(.none).resizable()
+                .frame(width: 64 * s, height: 64 * s)
+                .position(x: (Self.playerCentre.x + playerX) * s, y: Self.playerCentre.y * s)
+        }
+    }
+
+    /// The six-ball party line from the intro: full balls for Pokémon still standing, dark ones for fainted, empty slots.
+    private func partyRow(_ team: [BattleMon], alignRight: Bool, s: CGFloat) -> some View {
+        let slots: [BattleMon?] = (0..<6).map { team.indices.contains($0) ? team[$0] : nil }
+        let ordered = alignRight ? Array(slots.reversed()) : slots
+        return VStack(spacing: 1 * s) {
+            HStack(spacing: 1.5 * s) {
+                ForEach(0..<6, id: \.self) { i in
+                    if let m = ordered[i] {
+                        Group {
+                            if let img = ballFrames.first { Image(uiImage: img).interpolation(.none).resizable() }
+                            else { BallGlyph(kind: .poke) }
+                        }
+                        .frame(width: 9 * s, height: 9 * s)
+                        .saturation(m.fainted ? 0 : 1).brightness(m.fainted ? -0.35 : 0)
+                    } else {
+                        Circle().strokeBorder(Color(hex: 0x505860), lineWidth: 0.9 * s)
+                            .background(Circle().fill(.white.opacity(0.8)))
+                            .frame(width: 8 * s, height: 8 * s).padding(0.5 * s)
+                    }
+                }
+            }
+            Capsule().fill(Color(hex: 0x2F4A2A)).frame(width: 74 * s, height: 1.6 * s)
+        }
+        .padding(.horizontal, 5 * s).padding(.vertical, 3 * s)
+        .glassCapsule()
+    }
+
+    private func ballPoint(_ now: Date) -> CGPoint? {
+        guard let f = flight else { return ballAt }
+        let t = min(1, max(0, now.timeIntervalSince(f.start) / f.duration))
+        let x = f.from.x + (f.to.x - f.from.x) * t
+        let y = f.from.y + (f.to.y - f.from.y) * t - 4 * t * (1 - t) * f.arc
+        return CGPoint(x: x, y: y)
+    }
+
+    private func flightSpin(_ now: Date) -> Double {
+        guard let f = flight else { return 0 }
+        return min(1, now.timeIntervalSince(f.start) / f.duration) * 720
+    }
+
+    private func infoBox(_ m: BattleMon, mine isMine: Bool) -> some View {
+        let frac = Double(max(0, m.hp)) / Double(max(1, m.maxHP))
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Text(m.name).font(.rounded(13, .heavy)).foregroundStyle(Theme.ink).lineLimit(1).minimumScaleFactor(0.6)
+                Spacer(minLength: 2)
+                Text("Lv\(m.level)").font(.rounded(11, .heavy)).foregroundStyle(Theme.tealDark)
+            }
+            HStack(spacing: 4) {
+                Text("HP").font(.rounded(9, .black)).foregroundStyle(Color(hex: 0xE0A030))
+                GeometryReader { g in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.black.opacity(0.25))
+                        Capsule().fill(frac > 0.5 ? Color(hex: 0x58D068) : frac > 0.2 ? Color(hex: 0xF8C030) : Color(hex: 0xF05838))
+                            .frame(width: g.size.width * frac)
+                    }
+                }
+                .frame(height: 6)
+                .animation(.easeInOut(duration: 0.5), value: m.hp)
+            }
+            if isMine {
+                Text("\(max(0, m.hp)) / \(m.maxHP)").font(.rounded(11, .heavy)).monospacedDigit().foregroundStyle(Theme.inkSoft)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+        .padding(.horizontal, 9).padding(.vertical, 6)
+        .glassCard(14)
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.35), lineWidth: 1))
+        .shadow(color: .black.opacity(0.2), radius: 5, y: 2)
+    }
+
+    // MARK: Controls
 
     @ViewBuilder private var controls: some View {
         if let outcome {
@@ -263,11 +459,12 @@ struct BattleView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
+                    .opacity(busy ? 0.55 : 1)
                 }
             }
             HStack(spacing: 10) {
                 Button { forcedSwitch = false; choosingSwitch = true } label: {
-                    Label("Switch", systemImage: "arrow.left.arrow.right").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                    Label("Pokémon", systemImage: "arrow.left.arrow.right").font(.rounded(14, .heavy)).foregroundStyle(.white)
                         .frame(maxWidth: .infinity).frame(height: 40).glassCapsule(interactive: true)
                 }
                 .buttonStyle(.plain)
@@ -305,6 +502,73 @@ struct BattleView: View {
         }
     }
 
+    // MARK: Sending out
+
+    private func wait(_ ms: Int) async { try? await Task.sleep(for: .milliseconds(ms)) }
+
+    /// A ball arcs to `to`, pops open with Emerald's particles and a flash, and the Pokémon grows out of it.
+    private func throwBall(from: CGPoint, to: CGPoint, arc: CGFloat, foeSide: Bool) async {
+        ballOpen = false
+        ballAt = from
+        SoundKit.shared.play(.ballThrow)
+        flight = Flight(from: from, to: to, arc: arc, start: .now, duration: 0.55)
+        await wait(550)
+        flight = nil
+        ballAt = to
+        SoundKit.shared.play(.ballOpen)
+        ballOpen = true
+        openFX = (Date(), to)
+        flash = (to, 0)
+        withAnimation(.easeOut(duration: 0.12)) { flash = (to, 0.8) }
+        if foeSide { foeScale = 0.1; foeShown = true } else { meScale = 0.1; meRecall = false; meShown = true }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+            if foeSide { foeScale = 1 } else { meScale = 1 }
+        }
+        await wait(160)
+        ballAt = nil
+        withAnimation(.easeOut(duration: 0.35)) { flash = (to, 0) }
+        CryPlayer.shared.play(foeSide ? foes[foe].speciesID : mine[me].speciesID)
+        await wait(450)
+    }
+
+    private func sendOutFoe() async {
+        foeBoxIn = false
+        await say("\(trainer.title) \(trainer.name) sent out \(foes[foe].name)!", 350)
+        await throwBall(from: CGPoint(x: 262, y: 6), to: CGPoint(x: Self.foeFeet.x, y: Self.foeFeet.y - 14), arc: 26, foeSide: true)
+        withAnimation(.spring(duration: 0.35)) { foeBoxIn = true }
+    }
+
+    /// `withTrainer`: the opening send-out, where you wind up and throw (then slide away).
+    private func sendOutMine(withTrainer: Bool) async {
+        meBoxIn = false
+        text = "Go! \(mine[me].name)!"
+        var from = CGPoint(x: -14, y: 50)
+        if withTrainer, !backFrames.isEmpty {
+            let anim = style.backThrow
+            Task { @MainActor in
+                for (f, d) in anim.frames {
+                    if backFrames.indices.contains(f) { backFrame = f }
+                    if d > 0 { try? await Task.sleep(for: .seconds(d)) }
+                }
+            }
+            await wait(Int((anim.frames.isEmpty ? 0.1 : anim.release) * 1000))
+            from = CGPoint(x: Self.playerCentre.x + 16, y: Self.playerCentre.y - 22)
+            withAnimation(.easeIn(duration: 0.55)) { playerX = -170 }
+        }
+        await throwBall(from: from, to: CGPoint(x: Self.myFeet.x + 4, y: 92), arc: 46, foeSide: false)
+        withAnimation(.spring(duration: 0.35)) { meBoxIn = true }
+    }
+
+    private func recallMine() async {
+        meBoxIn = false
+        withAnimation(.easeIn(duration: 0.12)) { meRecall = true }
+        withAnimation(.easeIn(duration: 0.35)) { meScale = 0.05 }
+        SoundKit.shared.play(.ballOpen)
+        await wait(380)
+        meShown = false
+        meRecall = false
+    }
+
     // MARK: Flow
 
     private func say(_ t: String, _ ms: Int = 1_100) async {
@@ -316,13 +580,30 @@ struct BattleView: View {
         guard mine.isEmpty else { return }
         mine = store.state.party.map(BattleMon.init(owned:))
         foes = trainer.team
-        trainerPic = await PretFiles.sprite("graphics/trainers/front_pics/\(trainer.pic).png")
-        await say("\(trainer.title) \(trainer.name) would like to battle!", 1_500)
-        if !trainer.intro.isEmpty { await say(trainer.intro, 1_400) }
-        withAnimation(.easeOut(duration: 0.4)) { showTrainer = false }
-        CryPlayer.shared.play(foes[0].speciesID)
-        await say("\(trainer.name) sent out \(foes[0].name)!")
-        await say("Go! \(mine[0].name)!")
+        async let bg = BattleGfx.frontierBackground()
+        async let pic = PretFiles.sprite("graphics/trainers/front_pics/\(trainer.pic).png")
+        async let back = BattleGfx.trainerBack(style)
+        async let balls = BattleGfx.ball(.poke)
+        scene = await bg
+        trainerPic = await pic
+        backFrames = await back
+        ballFrames = await balls
+        backFrame = style.backIdleFrame
+        await wait(150)
+
+        // Both trainers slide in (the foe from the left, you from the right), then the party lines appear
+        withAnimation(.easeOut(duration: 1.0)) { foeTrainerX = 0; playerX = 0 }
+        await wait(1_000)
+        withAnimation(.spring(duration: 0.4)) { ballRows = true }
+        await say("\(trainer.title) \(trainer.name) would like to battle!", 1_600)
+        if !trainer.intro.isEmpty { await say(trainer.intro, 1_500) }
+
+        // The foe goes first: the trainer steps off and throws
+        withAnimation(.easeIn(duration: 0.45)) { foeTrainerX = 110; ballRows = false }
+        await wait(300)
+        await sendOutFoe()
+        // …then you
+        await sendOutMine(withTrainer: true)
         busy = false
         text = "What will \(mine[me].name) do?"
     }
@@ -370,15 +651,17 @@ struct BattleView: View {
 
     private func foeFainted() async {
         CryPlayer.shared.play(foes[foe].speciesID)
+        withAnimation(.easeIn(duration: 0.3)) { foeBoxIn = false }
         await say("The foe's \(foes[foe].name) fainted!")
+        foeShown = false
         if let next = foes.indices.first(where: { !foes[$0].fainted }) {
             foe = next
-            CryPlayer.shared.play(foes[foe].speciesID)
-            await say("\(trainer.name) sent out \(foes[foe].name)!")
+            await sendOutFoe()
             text = "What will \(mine[me].name) do?"
             busy = false
         } else {
-            withAnimation { showTrainer = true }
+            withAnimation(.easeOut(duration: 0.6)) { foeTrainerX = 0 }
+            await wait(600)
             await say("You defeated \(trainer.title) \(trainer.name)!", 1_400)
             if let badge = trainer.badge { await say("You received the \(badge)!", 1_400) }
             if trainer.isChampion { await say("A legendary victory!", 1_400) }
@@ -390,14 +673,17 @@ struct BattleView: View {
     }
 
     private func myFainted() async {
+        withAnimation(.easeIn(duration: 0.3)) { meBoxIn = false }
         await say("\(mine[me].name) fainted!")
+        meShown = false
         if mine.contains(where: { !$0.fainted }) {
             forcedSwitch = true
             choosingSwitch = true
             text = "Choose your next Pokémon."
         } else {
             await say("You're out of usable Pokémon…", 1_200)
-            withAnimation { showTrainer = true }
+            withAnimation(.easeOut(duration: 0.6)) { foeShown = false; foeBoxIn = false; foeTrainerX = 0 }
+            await wait(600)
             await say("You lost to \(trainer.title) \(trainer.name).", 1_400)
             outcome = false
         }
@@ -407,9 +693,12 @@ struct BattleView: View {
         busy = true
         let wasForced = forcedSwitch
         forcedSwitch = false
-        if !wasForced { await say("Come back, \(mine[me].name)!", 800) }
+        if !wasForced {
+            await say("Come back, \(mine[me].name)!", 500)
+            await recallMine()
+        }
         me = i
-        await say("Go! \(mine[me].name)!", 900)
+        await sendOutMine(withTrainer: false)
         if !wasForced {
             // switching uses your turn
             await attack(mineAttacks: false, BattleMath.aiMove(foes[foe], vs: mine[me]))

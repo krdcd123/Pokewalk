@@ -401,3 +401,62 @@ struct IndexedPNG {
         return Rendered(image: img)
     }
 }
+
+// MARK: - Battle Frontier scene
+
+extension BattleGfx {
+    /// Emerald's Battle Frontier battle background (the "building" environment with the Frontier palette):
+    /// the 240×112 part above the text box, drawn from tiles.png + map.bin like the GBA does.
+    @MainActor static func frontierBackground() async -> UIImage? {
+        if let cached = frontierBG { return cached }
+        guard let tilesData = await PretFiles.data("graphics/battle_environment/building/tiles.png"),
+              let tiles = IndexedPNG(tilesData),
+              let mapData = await PretFiles.data("graphics/battle_environment/building/map.bin"),
+              let pal = await PretFiles.palette("graphics/battle_environment/stadium/battle_frontier.pal") else { return nil }
+        let map = [UInt8](mapData)
+        let W = 240, H = 112, cols = 32
+        let perRow = tiles.w / 8
+        var px = [UInt8](repeating: 255, count: W * H * 4)
+        for ty in 0..<(H / 8) {
+            for tx in 0..<(W / 8) {
+                let o = (ty * cols + tx) * 2
+                guard o + 1 < map.count else { continue }
+                let e = Int(map[o]) | Int(map[o + 1]) << 8
+                let t = e & 0x3FF, hf = e & 0x400 != 0, vf = e & 0x800 != 0
+                let p = max(0, (e >> 12) - 2)              // loaded at BG palette 2
+                for y in 0..<8 {
+                    for x in 0..<8 {
+                        let sx = hf ? 7 - x : x, sy = vf ? 7 - y : y
+                        let ix = (t / perRow) * 8 + sy, iy = (t % perRow) * 8 + sx
+                        guard ix < tiles.h, iy < tiles.w else { continue }
+                        let c = Int(tiles.indices[ix * tiles.w + iy])
+                        let k = min(pal.count - 1, p * 16 + c)
+                        let d = ((ty * 8 + y) * W + tx * 8 + x) * 4
+                        px[d] = pal[k].0; px[d + 1] = pal[k].1; px[d + 2] = pal[k].2; px[d + 3] = 255
+                    }
+                }
+            }
+        }
+        guard let provider = CGDataProvider(data: Data(px) as CFData),
+              let cg = CGImage(width: W, height: H, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: W * 4,
+                               space: CGColorSpaceCreateDeviceRGB(),
+                               bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                               provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        else { return nil }
+        let img = UIImage(cgImage: cg)
+        frontierBG = img
+        return img
+    }
+    @MainActor private static var frontierBG: UIImage?
+
+    /// Where a Pokémon sprite's feet are (so it stands on its platform).
+    static func bounds(_ speciesID: Int, kind: SpriteStore.Kind) async -> SpriteBounds? {
+        let load = Task.detached { () -> SpriteBounds? in
+            guard let u = await SpriteStore.shared.url(kind, speciesID: speciesID), let img = GIFCache.shared.image(at: u) else { return nil }
+            return SpriteBounds(img)
+        }
+        let timeout = Task { try? await Task.sleep(for: .milliseconds(2_500)); load.cancel() }
+        defer { timeout.cancel() }
+        return await load.value
+    }
+}
