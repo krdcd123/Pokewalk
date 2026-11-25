@@ -14,9 +14,14 @@ struct Garden: Codable, Equatable, Hashable {
     var workers: [UUID] = []            // box Pokémon working in the garden
     var lastGiftDay = ""                // the Aroma Lady's daily berry
     var harvests = 0                    // lifetime harvests (just for fun)
+    var fields = 1                      // gardens owned (more can be bought once the first is fully cleared)
 
     static let basePlots = 8
-    static let maxPlots = 12
+    static let plotsPerField = 12
+    static let maxFields = 3
+    static let maxPlots = plotsPerField * maxFields
+    /// Price of garden number n+1 (index 1 = the second garden).
+    static func fieldPrice(_ index: Int) -> Int { index == 1 ? 25_000 : 60_000 }
     static let maxWorkers = 6
     static let growHours: Double = 24
 
@@ -28,6 +33,7 @@ struct Garden: Codable, Equatable, Hashable {
         workers = (try? c.decodeIfPresent([UUID].self, forKey: .workers)) ?? []
         lastGiftDay = (try? c.decodeIfPresent(String.self, forKey: .lastGiftDay)) ?? ""
         harvests = (try? c.decodeIfPresent(Int.self, forKey: .harvests)) ?? 0
+        fields = (try? c.decodeIfPresent(Int.self, forKey: .fields)) ?? 1
     }
 }
 

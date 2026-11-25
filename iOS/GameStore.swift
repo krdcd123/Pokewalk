@@ -1144,7 +1144,28 @@ extension GameStore {
         state.garden.workers.compactMap { state.mon($0) }.filter { !state.partyIDs.contains($0.id) }
     }
     var gardenBonuses: GardenBonuses { GardenRules.bonuses(workers: gardenWorkers) }
-    var gardenPlotCount: Int { min(Garden.maxPlots, gardenBonuses.plots) }
+    /// Open patches in the first garden (8, or more with Tillers).
+    var gardenPlotCount: Int { min(Garden.plotsPerField, gardenBonuses.plots) }
+    var gardenFirstFieldCleared: Bool { gardenPlotCount >= Garden.plotsPerField }
+    /// Can this patch be planted? First garden: the ones the Tillers have cleared. Bought gardens: all of them.
+    func gardenPlotOpen(_ id: Int) -> Bool {
+        let field = id / Garden.plotsPerField
+        guard field < state.garden.fields else { return false }
+        return field > 0 || id < gardenPlotCount
+    }
+    func gardenPlot(_ id: Int) -> GardenPlot { state.garden.plots.first { $0.id == id } ?? GardenPlot(id: id) }
+
+    /// Buys the next garden with Pokédollars (only once the first one is fully cleared).
+    @discardableResult
+    func buyGardenField() -> Bool {
+        let next = state.garden.fields
+        guard next < Garden.maxFields, gardenFirstFieldCleared, state.money >= Garden.fieldPrice(next) else { return false }
+        mutate { s in
+            s.money -= Garden.fieldPrice(next)
+            s.garden.fields = next + 1
+        }
+        return true
+    }
 
     /// When the next planted berry is ready (for the map's timer).
     var nextGardenReady: Date? {
@@ -1159,7 +1180,7 @@ extension GameStore {
 
     @discardableResult
     func plant(_ berry: String, in plotID: Int) -> Bool {
-        guard (state.bag[berry] ?? 0) > 0, plotID < gardenPlotCount else { return false }
+        guard (state.bag[berry] ?? 0) > 0, gardenPlotOpen(plotID) else { return false }
         var ok = false
         mutate { s in
             ensurePlots(&s)

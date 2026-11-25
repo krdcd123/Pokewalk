@@ -93,43 +93,23 @@ struct GardenView: View {
 
     // MARK: The field
 
+    @State private var page = 0
+
     private var field: some View {
         let b = store.gardenBonuses
-        let open = store.gardenPlotCount
+        let owned = store.state.garden.fields
+        // a page to buy the next garden appears once the first is fully cleared
+        let pages = owned + (owned < Garden.maxFields && store.gardenFirstFieldCleared ? 1 : 0)
         return VStack(spacing: 10) {
-            GeometryReader { geo in
-                let k = geo.size.width / CGFloat(GardenGfx.fieldWidth * 16)     // points per Emerald pixel
-                let tile = 16 * k
-                ZStack(alignment: .topLeading) {
-                    if let img = gfx.field(openPlots: open) {
-                        PixelImageView(image: img).frame(width: geo.size.width, height: geo.size.height)
-                    } else {
-                        Color(red: 0.45, green: 0.77, blue: 0.64)
-                        ProgressView().tint(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
+            TabView(selection: $page) {
+                ForEach(0..<pages, id: \.self) { f in
+                    Group {
+                        if f < owned { fieldPage(f, bonuses: b) } else { buyPage(f) }
                     }
-                    // Berry plants stand on their soil, rising a tile above it (16×32, as in Emerald)
-                    TimelineView(.periodic(from: .now, by: 0.6)) { tl in
-                        let frame = Int(tl.date.timeIntervalSince1970 / 0.6)
-                        ForEach(0..<Garden.maxPlots, id: \.self) { i in
-                            let pos = GardenGfx.plotTile(i)
-                            let plot = store.state.garden.plots.first { $0.id == i } ?? GardenPlot(id: i)
-                            PlantSprite(plot: plot, bonuses: b, frame: frame, now: tl.date, k: k)
-                                .frame(width: tile, height: tile * 2)
-                                .contentShape(Rectangle())
-                                .onTapGesture { tap(plot) }
-                                // trunk sits a little into the oval, like in the game
-                                .offset(x: CGFloat(pos.x) * tile, y: CGFloat(pos.y - 1) * tile + 6 * k)
-                                .accessibilityLabel(i >= open ? "Overgrown patch" : plot.berry.map { Dex.itemName($0) } ?? "Empty soil")
-                        }
-                    }
-                    // Workers wander the grass inside the trees
-                    WorkersLayer(workers: store.gardenWorkers, iconSize: tile * 1.2)
-                        .frame(width: tile * 8, height: tile * 5.6)
-                        .offset(x: tile * 2, y: tile * 2.4)
-                    boostsBadge(b, tile: tile)
-                        .offset(x: geo.size.width - tile * 1.75, y: tile * 0.3)
+                    .tag(f)
                 }
             }
+            .tabViewStyle(.page(indexDisplayMode: pages > 1 ? .always : .never))
             .aspectRatio(CGFloat(GardenGfx.fieldWidth) / CGFloat(GardenGfx.fieldHeight), contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.18), lineWidth: 1))
@@ -137,6 +117,7 @@ struct GardenView: View {
                 if showingBoosts { boostsCard(b).padding(.top, 52).padding(.horizontal, 12).transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .topTrailing))) }
             }
             .animation(.spring(duration: 0.25), value: showingBoosts)
+            .onChange(of: page) { _, _ in SoundKit.shared.play(.select); info = nil }
 
             if let i = info, let plot = store.state.garden.plots.first(where: { $0.id == i }), let berry = plot.berry {
                 plotInfo(plot, berry: berry, bonuses: b)
@@ -148,6 +129,123 @@ struct GardenView: View {
         .padding(8)
         .glassCard(24)
         .animation(.spring(duration: 0.3), value: info)
+    }
+
+    /// One garden: the map, its plants (two per oval patch, standing in the middle of the soil), lock badges on
+    /// patches still to clear, and the workers.
+    private func fieldPage(_ f: Int, bonuses b: GardenBonuses) -> some View {
+        let open = f == 0 ? store.gardenPlotCount : Garden.plotsPerField
+        return GeometryReader { geo in
+            let k = geo.size.width / CGFloat(GardenGfx.fieldWidth * 16)     // points per Emerald pixel
+            let tile = 16 * k
+            ZStack(alignment: .topLeading) {
+                if let img = gfx.field(openPlots: open) {
+                    PixelImageView(image: img).frame(width: geo.size.width, height: geo.size.height)
+                } else {
+                    Color(red: 0.45, green: 0.77, blue: 0.64)
+                    ProgressView().tint(.white).frame(width: geo.size.width, height: geo.size.height)
+                }
+                TimelineView(.periodic(from: .now, by: 0.6)) { tl in
+                    let frame = Int(tl.date.timeIntervalSince1970 / 0.6)
+                    ZStack(alignment: .topLeading) {
+                        Color.clear.frame(width: geo.size.width, height: geo.size.height)
+                        ForEach(0..<Garden.plotsPerField, id: \.self) { i in
+                            if i < open {
+                                let id = f * Garden.plotsPerField + i
+                                let c = Self.plantCentre(i, tile: tile)
+                                PlantSprite(plot: store.gardenPlot(id), bonuses: b, frame: frame, now: tl.date, k: k)
+                                    .frame(width: tile, height: tile * 2)
+                                    .position(x: c.x, y: c.y - tile)        // sprite's bottom = the plant's base
+                                    .allowsHitTesting(false)
+                                // tap area: this half of the oval
+                                Color.white.opacity(0.001)
+                                    .frame(width: tile, height: tile * 1.8)
+                                    .contentShape(Rectangle())
+                                    .position(x: c.x, y: c.y - tile * 0.45)
+                                    .onTapGesture { tap(store.gardenPlot(id)) }
+                                    .accessibilityLabel(store.gardenPlot(id).berry.map { Dex.itemName($0) } ?? "Empty soil")
+                            }
+                        }
+                    }
+                }
+                // Glass locks on the overgrown patches, with what's needed to clear them
+                if f == 0 {
+                    ForEach(0..<(Garden.plotsPerField / 2), id: \.self) { j in
+                        if 2 * j >= open {
+                            let o = GardenGfx.ovalTile(j)
+                            Button { lockedTapped(oval: j) } label: {
+                                Image(systemName: "lock.fill").font(.system(size: tile * 0.42, weight: .heavy))
+                                    .foregroundStyle(.white)
+                                    .frame(width: tile * 1.05, height: tile * 1.05)
+                                    .glassCircle(interactive: true)
+                                    .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+                            }
+                            .buttonStyle(.plain)
+                            .position(x: CGFloat(o.x + 1) * tile, y: CGFloat(o.y + 1) * tile)
+                            .accessibilityLabel("Locked patch")
+                        }
+                    }
+                }
+                WorkersLayer(workers: store.gardenWorkers, iconSize: tile * 1.2)
+                    .frame(width: tile * 8, height: tile * 5.6)
+                    .offset(x: tile * 2, y: tile * 2.4)
+                boostsBadge(b, tile: tile)
+                    .offset(x: geo.size.width - tile * 1.75, y: tile * 0.3)
+            }
+        }
+    }
+
+    /// Middle of the soil for plant `i` (in points): two plants side by side in each oval.
+    static func plantCentre(_ i: Int, tile: CGFloat) -> CGPoint {
+        let o = GardenGfx.ovalTile(i / 2)
+        let cx = (CGFloat(o.x) + 1) * tile + (i % 2 == 0 ? -0.46 : 0.46) * tile
+        let base = (CGFloat(o.y) + 1.2) * tile           // the oval is 1½ tiles tall; plants stand just below its middle
+        return CGPoint(x: cx, y: base)
+    }
+
+    private func lockedTapped(oval j: Int) {
+        Haptics.tap()
+        SoundKit.shared.play(.select)
+        let need = 2 * j - Garden.basePlots + 2 >= 4 ? 4 : 2        // oval 4 → 2 Tillers, oval 5 → 4
+        let have = store.gardenBonuses.counts[.tillers] ?? 0
+        withAnimation {
+            ladySays = "This patch is overgrown. Clearing it needs \(need) Tillers working here (Ground, Rock, Steel or Fighting types) — you have \(have)."
+        }
+    }
+
+    /// The next garden, for sale.
+    private func buyPage(_ f: Int) -> some View {
+        let price = Garden.fieldPrice(f)
+        let money = store.state.money
+        return ZStack {
+            if let img = gfx.field(openPlots: 0) {
+                PixelImageView(image: img).blur(radius: 3).overlay(Color.black.opacity(0.25))
+            } else {
+                Color(red: 0.45, green: 0.77, blue: 0.64)
+            }
+            VStack(spacing: 10) {
+                Image(systemName: "lock.fill").font(.system(size: 22, weight: .heavy)).foregroundStyle(.white)
+                    .frame(width: 52, height: 52).glassCircle()
+                Text("Garden \(f + 1)").font(.rounded(20, .black)).foregroundStyle(.white)
+                Text("12 patches, all ready to plant").font(.rounded(13, .bold)).foregroundStyle(.white.opacity(0.85))
+                Button {
+                    if store.buyGardenField() {
+                        Haptics.hold()
+                        SoundKit.shared.play(.useItem)
+                        withAnimation { ladySays = "Garden \(f + 1) is yours! Plenty of room for more berries." }
+                    } else {
+                        Haptics.tap()
+                        withAnimation { ladySays = "That garden costs ₽\(price.formatted()). You have ₽\(money.formatted())." }
+                    }
+                } label: {
+                    Text("Buy for ₽\(price.formatted())").font(.rounded(16, .heavy)).foregroundStyle(.white)
+                        .padding(.horizontal, 18).padding(.vertical, 10)
+                        .glassCapsule(tint: money >= price ? Theme.teal : nil, interactive: true)
+                }
+                .buttonStyle(.plain)
+                Text("You have ₽\(money.formatted())").font(.rounded(12, .bold)).foregroundStyle(.white.opacity(0.8))
+            }
+        }
     }
 
     /// "3 growing · next ready in 4h 12m" under the garden.
@@ -164,7 +262,7 @@ struct GardenView: View {
                      : "\(growing.count) growing · next ready in \(countdown((next ?? tl.date).timeIntervalSince(tl.date)))")
                     .font(.rounded(14, .heavy)).foregroundStyle(.white).monospacedDigit()
                 Spacer()
-                Text("\(store.gardenPlanted)/\(store.gardenPlotCount)").font(.rounded(13, .bold)).foregroundStyle(Theme.inkSoft)
+                Text("\(store.gardenPlanted)/\(store.gardenPlotCount + (store.state.garden.fields - 1) * Garden.plotsPerField)").font(.rounded(13, .bold)).foregroundStyle(Theme.inkSoft)
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
         }
@@ -264,11 +362,7 @@ struct GardenView: View {
 
     private func tap(_ plot: GardenPlot) {
         let b = store.gardenBonuses
-        guard plot.id < store.gardenPlotCount else {
-            ladySays = "That soil's too hard. Tillers (Ground, Rock, Steel and Fighting types) can clear the overgrown patches."
-            Haptics.tap()
-            return
-        }
+        guard store.gardenPlotOpen(plot.id) else { lockedTapped(oval: (plot.id % Garden.plotsPerField) / 2); return }
         if plot.berry == nil {
             let have = ItemCatalog.berries.contains { (store.state.bag[$0] ?? 0) > 0 }
             if have { SoundKit.shared.play(.select); planting = plot.id }
