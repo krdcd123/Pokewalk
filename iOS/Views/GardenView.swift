@@ -168,21 +168,16 @@ struct GardenView: View {
                         }
                     }
                 }
-                // Glass locks on the overgrown patches, with what's needed to clear them
+                // Overgrown patches (the Tillers clear them): a tap just explains
                 if f == 0 {
                     ForEach(0..<(Garden.plotsPerField / 2), id: \.self) { j in
                         if 2 * j >= open {
                             let o = GardenGfx.ovalTile(j)
-                            Button { lockedTapped(oval: j) } label: {
-                                Image(systemName: "lock.fill").font(.system(size: tile * 0.42, weight: .heavy))
-                                    .foregroundStyle(.white)
-                                    .frame(width: tile * 1.05, height: tile * 1.05)
-                                    .glassCircle(interactive: true)
-                                    .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
-                            }
-                            .buttonStyle(.plain)
-                            .position(x: CGFloat(o.x + 1) * tile, y: CGFloat(o.y + 1) * tile)
-                            .accessibilityLabel("Locked patch")
+                            Color.white.opacity(0.001)
+                                .frame(width: tile * 2, height: tile * 2)
+                                .contentShape(Rectangle())
+                                .position(x: CGFloat(o.x + 1) * tile, y: CGFloat(o.y + 1) * tile)
+                                .onTapGesture { lockedTapped(oval: j) }
                         }
                     }
                 }
