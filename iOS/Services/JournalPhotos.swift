@@ -177,6 +177,6 @@ private struct FullPhoto: View {
     }
 }
 
-private extension Array {
+extension Array {
     subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }

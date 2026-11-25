@@ -173,14 +173,7 @@ enum GameRules {
             out.itemsFound.append(item)
         }
 
-        // Berries: their own, more frequent find (Settings › Berry every N steps)
-        s.counters.berryProgress += steps
-        while s.counters.berryProgress >= max(50, s.settings.berrySteps) {
-            s.counters.berryProgress -= max(50, s.settings.berrySteps)
-            let berry = ItemCatalog.berries.randomElement()!
-            s.bag[berry, default: 0] += 1
-            out.itemsFound.append(berry)
-        }
+        // (Berries aren't found on walks any more — they're grown in the Garden, or picked up by your party.)
 
         // Pocket money: ₽0.01 per step
         s.counters.moneyProgress += steps
@@ -304,8 +297,7 @@ enum GameRules {
             ("fire-stone", 4), ("water-stone", 4), ("thunder-stone", 4), ("leaf-stone", 4), ("moon-stone", 3.5), ("sun-stone", 2),
             ("linking-cord", 0.8),                                 // Link Cable: trade evolutions — rare
         ]
-        // Friendship berries (common) and bitter herbs
-        for k in ItemCatalog.berries { table.append((k, 6)) }
+        // Bitter herbs (berries come from the Garden now, not walks)
         for k in ItemCatalog.herbs.keys { table.append((k, 2.5)) }
         // Valuables to sell — the cheaper, the more common
         for (k, price) in ItemCatalog.sellPrice { table.append((k, price <= 50 ? 6 : price <= 250 ? 3.5 : price <= 500 ? 1.5 : 0.6)) }
@@ -576,7 +568,7 @@ enum GameRules {
         static let berry = "#berry", evolution = "#evolution"
         /// Ordered from common to valuable. A tier finds items [tier ... tier+8] here…
         static let common: [String] = [
-            berry, "exp-candy-xs", "tiny-mushroom", "pearl", "exp-candy-s", "heart-scale", "stardust", "exp-candy-m",
+            "exp-candy-xs", "exp-candy-xs", "tiny-mushroom", "pearl", "exp-candy-s", "heart-scale", "stardust", "exp-candy-m",
             "big-mushroom", "big-pearl", "exp-candy-m", "rare-candy", "star-piece", "exp-candy-l", "rare-candy",
             "nugget", "exp-candy-xl", "nugget",
         ]
@@ -592,7 +584,14 @@ enum GameRules {
             return (0..<9).map { (common[b + $0], commonWeights[$0]) } + [(rare[b], 1), (rare[b + 1], 1)]
         }
 
+        /// Berries (seeds for the Garden) can turn up at any level, but less often the higher the level:
+        /// 30% at Lv. 1, about 17% at Lv. 50, 4% at Lv. 100.
+        static func berryChance(level: Int) -> Double {
+            max(0.04, 0.30 - Double(max(1, min(100, level)) - 1) * 0.0026)
+        }
+
         static func roll(level: Int, friendship: Int) -> String {
+            if Double.random(in: 0..<1) < berryChance(level: level) { return ItemCatalog.berries.randomElement()! }
             let pick = GameRules.weightedPick(pool(level: level, friendship: friendship))
             switch pick {
             case berry: return ItemCatalog.berries.randomElement()!

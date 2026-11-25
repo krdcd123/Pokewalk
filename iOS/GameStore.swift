@@ -1136,6 +1136,122 @@ final class GameStore: ObservableObject {
     }
 }
 
+// MARK: - Berry Garden
+
+extension GameStore {
+    /// Box Pokémon working in the garden (anyone moved into your party stops working).
+    var gardenWorkers: [OwnedPokemon] {
+        state.garden.workers.compactMap { state.mon($0) }.filter { !state.partyIDs.contains($0.id) }
+    }
+    var gardenBonuses: GardenBonuses { GardenRules.bonuses(workers: gardenWorkers) }
+    var gardenPlotCount: Int { min(Garden.maxPlots, gardenBonuses.plots) }
+
+    /// When the next planted berry is ready (for the map's timer).
+    var nextGardenReady: Date? {
+        let b = gardenBonuses
+        return state.garden.plots.compactMap { GardenRules.readyAt($0, bonuses: b) }.min()
+    }
+    var gardenPlanted: Int { state.garden.plots.filter { $0.berry != nil }.count }
+
+    private func ensurePlots(_ s: inout GameState) {
+        while s.garden.plots.count < Garden.maxPlots { s.garden.plots.append(GardenPlot(id: s.garden.plots.count)) }
+    }
+
+    @discardableResult
+    func plant(_ berry: String, in plotID: Int) -> Bool {
+        guard (state.bag[berry] ?? 0) > 0, plotID < gardenPlotCount else { return false }
+        var ok = false
+        mutate { s in
+            ensurePlots(&s)
+            guard let i = s.garden.plots.firstIndex(where: { $0.id == plotID }), s.garden.plots[i].berry == nil else { return }
+            s.bag[berry, default: 0] -= 1
+            if s.bag[berry] == 0 { s.bag[berry] = nil }
+            s.garden.plots[i].berry = berry
+            s.garden.plots[i].plantedAt = .now
+            ok = true
+        }
+        if ok { rescheduleGardenNotifications() }
+        return ok
+    }
+
+    struct HarvestResult { let berry: String; let count: Int; let bonus: String?; let replanted: Bool }
+
+    func harvest(_ plotID: Int) -> HarvestResult? {
+        let b = gardenBonuses
+        guard let plot = state.garden.plots.first(where: { $0.id == plotID }), let berry = plot.berry,
+              GardenRules.progress(plot, bonuses: b) >= 1 else { return nil }
+        let count = GardenRules.yield(b)
+        var bonus: String?
+        if Double.random(in: 0..<1) < b.bonusBerryChance {
+            bonus = ItemCatalog.berries.filter { $0 != berry }.randomElement()
+        }
+        let replant = Double.random(in: 0..<1) < b.replantChance
+        let workerIDs = gardenWorkers.map(\.id)
+        mutate { s in
+            guard let i = s.garden.plots.firstIndex(where: { $0.id == plotID }) else { return }
+            s.bag[berry, default: 0] += count
+            if let bonus { s.bag[bonus, default: 0] += 1 }
+            s.garden.plots[i].berry = replant ? berry : nil
+            s.garden.plots[i].plantedAt = replant ? .now : nil
+            s.garden.harvests += 1
+            for id in workerIDs {
+                guard let m = s.index(of: id) else { continue }
+                s.pokemon[m].friendship = min(255, s.pokemon[m].friendship + b.friendshipPerHarvest)
+            }
+        }
+        rescheduleGardenNotifications()
+        return HarvestResult(berry: berry, count: count, bonus: bonus, replanted: replant)
+    }
+
+    func addGardenWorker(_ id: UUID) {
+        guard !state.partyIDs.contains(id), gardenWorkers.count < Garden.maxWorkers,
+              !state.garden.workers.contains(id) else { return }
+        mutate { s in
+            s.garden.workers = s.garden.workers.filter { w in !s.partyIDs.contains(w) && s.index(of: w) != nil }
+            s.garden.workers.append(id)
+        }
+        rescheduleGardenNotifications()
+    }
+
+    func removeGardenWorker(_ id: UUID) {
+        mutate { $0.garden.workers.removeAll { $0 == id } }
+        rescheduleGardenNotifications()
+    }
+
+    /// The Aroma Lady's present: one berry a day.
+    func claimGardenGift() -> String? {
+        let day = DailyStampsKey.key(DailyStamps.clock)
+        guard state.garden.lastGiftDay != day else { return nil }
+        let berry = ItemCatalog.berries.randomElement()!
+        mutate { s in
+            s.garden.lastGiftDay = day
+            s.bag[berry, default: 0] += 1
+        }
+        return berry
+    }
+    var gardenGiftWaiting: Bool { state.garden.lastGiftDay != DailyStampsKey.key(DailyStamps.clock) }
+
+    /// One "ready to pick" notification per planted patch (re-timed when your workers change).
+    func rescheduleGardenNotifications() {
+        let ids = (0..<Garden.maxPlots).map { "garden-\($0)" }
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
+        let b = gardenBonuses
+        // patches ready at (about) the same time share one notification
+        var groups: [Int: [GardenPlot]] = [:]
+        for p in state.garden.plots {
+            guard let at = GardenRules.readyAt(p, bonuses: b), at > .now else { continue }
+            groups[Int(at.timeIntervalSince1970 / 300), default: []].append(p)
+        }
+        for (_, plots) in groups {
+            guard let first = plots.first, let at = plots.compactMap({ GardenRules.readyAt($0, bonuses: b) }).max(),
+                  let berry = first.berry else { continue }
+            let what = plots.count == 1 ? "Your \(Dex.itemName(berry)) is" : "\(plots.count) berry plants are"
+            notify(title: "Berries are ready! 🍓", body: "\(what) ready to pick in the Garden.",
+                   id: "garden-\(first.id)", category: "garden", at: at)
+        }
+    }
+}
+
 private extension UIApplication.State {
     @MainActor static var current: UIApplication.State { UIApplication.shared.applicationState }
 }

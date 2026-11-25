@@ -55,7 +55,7 @@ struct MapHomeView: View {
     @ObservedObject private var weather = WeatherService.shared      // new identity each time a panel opens, so menus start at the top
 
     enum HomeSheet: Hashable, Identifiable {
-        case menu, party, encounters, bag, journal, summary(UUID)
+        case menu, party, encounters, bag, journal, garden, summary(UUID)
         var id: Self { self }
     }
 
@@ -79,9 +79,21 @@ struct MapHomeView: View {
                     topCards
                     if let toast = store.toast { toastView(toast) }
                     HStack(alignment: .top) {
-                        if let w = weather.condition {
-                            WeatherPill(condition: w, isDay: weather.isDay, temperature: weather.temperature)
+                        VStack(alignment: .leading, spacing: 10) {
+                            if let w = weather.condition {
+                                WeatherPill(condition: w, isDay: weather.isDay, temperature: weather.temperature)
+                                    .transition(.scale.combined(with: .opacity))
+                            }
+                            // Berries growing in the Garden: time until the next ones are ready
+                            if let ready = store.nextGardenReady {
+                                Button {
+                                    Haptics.tap(); SoundKit.shared.play(.menuOpen)
+                                    withAnimation(.spring(duration: 0.4)) { sheet = .garden }
+                                } label: { GardenTimerChip(readyAt: ready) }
+                                .buttonStyle(.plain)
                                 .transition(.scale.combined(with: .opacity))
+                                .accessibilityLabel("Garden timer")
+                            }
                         }
                         Spacer()
                         Button { withAnimation(.snappy) { showCaught.toggle() } } label: {
@@ -134,6 +146,7 @@ struct MapHomeView: View {
                     case .party: NavigationStack { PartyView() }
                     case .bag: NavigationStack { BagView() }
                     case .journal: NavigationStack { JournalView() }
+                    case .garden: NavigationStack { GardenView() }
                     case .summary(let id): NavigationStack { SummaryView(pokemonID: id) }
                     }
                 }

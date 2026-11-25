@@ -312,7 +312,7 @@ extension BattleGfx {
 
 /// A tiny decoder for the decomp projects' indexed / greyscale PNGs, keeping the colour *indices*
 /// (needed to apply the game's own palettes). Handles 1/2/4/8-bit, colour type 0 or 3, not interlaced.
-private struct IndexedPNG {
+struct IndexedPNG {
     let w: Int, h: Int
     let indices: [UInt8]
     let palette: [(UInt8, UInt8, UInt8)]?

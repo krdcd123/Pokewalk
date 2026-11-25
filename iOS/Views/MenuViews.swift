@@ -13,7 +13,7 @@ struct MainMenuView: View {
     var close: () -> Void = {}
 
     enum Dest: Hashable {
-        case pc, dex, bag, shop, journal, trainer, settings, summary(UUID)
+        case pc, dex, bag, shop, journal, trainer, garden, settings, summary(UUID)
     }
 
     private struct Item: Identifiable { let dest: Dest; let title: String; let symbol: String; var id: String { title } }
@@ -24,6 +24,7 @@ struct MainMenuView: View {
         .init(dest: .shop, title: "Poké Mart", symbol: "cart.fill"),
         .init(dest: .journal, title: "Journal", symbol: "map.fill"),
         .init(dest: .trainer, title: "Trainer", symbol: "person.text.rectangle.fill"),
+        .init(dest: .garden, title: "Garden", symbol: "leaf.fill"),
     ]
 
     @State private var path: [Dest] = []
@@ -107,6 +108,7 @@ struct MainMenuView: View {
                 case .shop: ShopView()
                 case .journal: JournalView()
                 case .trainer: TrainerCardView()
+                case .garden: GardenView()
                 case .settings: SettingsView()
                 case .summary(let id): SummaryView(pokemonID: id)
                 }
@@ -355,7 +357,7 @@ struct BagView: View {
 
     private var emptyText: String {
         switch pocket {
-        case .berries: return "No berries yet — they're the most common thing you find on walks."
+        case .berries: return "No berries yet. Grow them in the Garden (Menu › Garden) — the Aroma Lady gives you one a day to start."
         case .candies: return "No candies yet. Your buddy picks up Exp. Candies as you walk; take them from its Summary."
         case .key: return "No key items yet. A Fishing Rod is sold at the Poké Mart."
         default: return "Nothing yet — keep walking!"
@@ -364,7 +366,7 @@ struct BagView: View {
 
     private var footerText: String {
         switch pocket {
-        case .berries: return "You find a berry every \(store.state.settings.berrySteps.formatted()) steps (change it in Settings). Throw them in wild encounters so the Pokémon stays longer, or give one to a Pokémon to make it friendlier."
+        case .berries: return "Grow more in the Garden: plant one and pick 1–3 a day later. Your party can also pick them up on walks. Throw them in wild encounters so the Pokémon stays longer, or give one to a Pokémon to make it friendlier."
         case .candies: return "Rare Candies raise a level; Exp. Candies give Exp. Each party Pokémon tries to pick something up every 1,500 steps."
         case .key: return "Key items are never used up."
         default: return "An item every \(store.state.settings.itemSteps.formatted()) steps: evolution stones, Link Cables, held items, bitter herbs and valuables to sell. Tap one to use or sell it."
@@ -738,7 +740,6 @@ struct SettingsView: View {
                 bigStepper("Encounter every ~", \.encounterSteps, min: 100, max: 10_000)
                 bigStepper("Ball every ", \.ballSteps, min: 50, max: 10_000)
                 Stepper("Item every \(store.state.settings.itemSteps.formatted()) steps", value: binding(\.itemSteps), in: 250...5_000, step: 250).glassRow()
-                Stepper("Berry every \(store.state.settings.berrySteps.formatted()) steps", value: binding(\.berrySteps), in: 100...2_000, step: 50).glassRow()
                 Picker("Wild shiny chance", selection: binding(\.shinyOdds)) {
                     Text("1 in 8192 (Gen 3)").tag(8192); Text("1 in 4096").tag(4096); Text("1 in 1000").tag(1000); Text("1 in 512").tag(512); Text("1 in 128").tag(128)
                 }

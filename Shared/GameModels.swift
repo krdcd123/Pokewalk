@@ -319,6 +319,7 @@ struct GameState: Codable {
     var cyclingSkipped: [String: Int] = [:]   // day → steps left out because you were cycling at the time         // wild Pokémon you opened (saw up close) — the Journal shows the rest as silhouettes
     var workouts: [WorkoutRecord] = []        // finished workouts and what they earned (Journal)
     var unseenWorkouts: [String] = []         // workout ids whose "Workout complete!" popup hasn't shown yet
+    var garden = Garden()                     // the berry garden (Menu › Garden)
 
     static let maxParty = 6
 
@@ -451,6 +452,7 @@ extension GameState {
         openedEncounters = c.value(.openedEncounters, [])
         cyclingSkipped = c.value(.cyclingSkipped, [:])
         unseenWorkouts = c.value(.unseenWorkouts, [])
+        garden = c.value(.garden, Garden())
     }
 }
 
