@@ -1306,7 +1306,39 @@ final class GameStore: ObservableObject {
             longitude: tracker.currentLocation()?.coordinate.longitude,
             money: state.money,
             trail: watchTrail,
-            garden: watchGarden)
+            garden: watchGarden,
+            activities: watchActivities)
+    }
+
+    /// Ranch / Daycare / Frontier / Contests summary for the watch.
+    private var watchActivities: WatchSnapshot.Activities {
+        let s = state
+        var a = WatchSnapshot.Activities()
+        a.ranchBuilt = s.ranch.built
+        a.ranchTotal = RanchProject.all.count
+        a.materials = s.ranch.materials
+        a.ranchers = ranchWorkers.map(\.speciesID)
+        a.slots = s.ranch.slots
+        a.shiftStart = s.ranch.shiftStart
+        a.shiftEnd = s.ranch.shiftEnd
+        if let b = s.ranch.building { a.buildName = RanchProject.all.first { $0.id == b.project }?.name; a.buildEnds = b.endsAt }
+        a.nextProject = s.ranch.nextProject?.name
+        a.daycareOpen = s.daycare.open
+        let parents = daycareParents
+        a.parents = parents.map(\.speciesID)
+        if parents.count == 2 { a.compatibility = DaycareRules.compatibilityText(DaycareRules.compatibility(parents[0], parents[1])) }
+        a.eggWaiting = s.daycare.waiting != nil
+        a.eggs = s.daycare.basket.map { [max(0, $0.stepsLeft), $0.total] }
+        a.hatched = s.daycare.hatched
+        a.frontierWon = s.frontier.day == FrontierRules.today() ? s.frontier.won : 0
+        a.frontierLost = s.frontier.day == FrontierRules.today() && s.frontier.lost
+        a.badges = s.frontier.badges.count
+        a.leaderToday = FrontierRules.weekday() == 7 ? "Sunday special" : FrontierRules.leaders[FrontierRules.weekday() - 1].name
+        a.contestWins = s.contests.wins
+        a.ribbons = s.contests.ribbons.values.reduce(0) { $0 + $1.count }
+        a.season = Season.at().name
+        a.swarm = Swarm.species().id
+        return a
     }
 
     /// Open garden patches for the watch.

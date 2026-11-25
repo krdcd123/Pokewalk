@@ -18,6 +18,34 @@ struct WatchSnapshot: Codable, Equatable {
     }
 
     /// One row of the Bag (balls, berries, items) for the watch's condensed list.
+    /// Ranch, Daycare, Frontier and Contests at a glance (watch Activities page).
+    struct Activities: Codable, Equatable {
+        var ranchBuilt = 0
+        var ranchTotal = 10
+        var materials: [String: Int] = [:]
+        var ranchers: [Int] = []
+        var slots = 3
+        var shiftStart: Date?
+        var shiftEnd: Date?
+        var buildName: String?
+        var buildEnds: Date?
+        var nextProject: String?
+        var daycareOpen = false
+        var parents: [Int] = []
+        var compatibility: String?
+        var eggWaiting = false
+        var eggs: [[Int]] = []            // [stepsLeft, total]
+        var hatched = 0
+        var frontierWon = 0
+        var frontierLost = false
+        var badges = 0
+        var leaderToday = ""
+        var contestWins = 0
+        var ribbons = 0
+        var season = ""
+        var swarm = 1
+    }
+
     /// One open garden patch (for the watch's Garden page).
     struct GardenSpot: Codable, Equatable, Identifiable {
         var id: Int
@@ -71,6 +99,7 @@ struct WatchSnapshot: Codable, Equatable {
     var money: Int = 0
     var trail: [TrailSegment] = []  // today's walks (and drives), thinned out for the watch map
     var garden: [GardenSpot] = []   // open garden patches
+    var activities: Activities?
 
     var buddy: Member? { party.first { $0.isBuddy } }
 
@@ -267,5 +296,6 @@ extension WatchSnapshot {
         money = (try? c.decodeIfPresent(Int.self, forKey: .money)) ?? 0
         trail = (try? c.decodeIfPresent([TrailSegment].self, forKey: .trail)) ?? []
         garden = (try? c.decodeIfPresent([GardenSpot].self, forKey: .garden)) ?? []
+        activities = try? c.decodeIfPresent(Activities.self, forKey: .activities)
     }
 }

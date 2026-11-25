@@ -83,16 +83,9 @@ struct MapHomeView: View {
                             if let w = weather.condition {
                                 WeatherPill(condition: w, isDay: weather.isDay, temperature: weather.temperature)
                                     .transition(.scale.combined(with: .opacity))
+                            } else {
+                                SeasonChip()
                             }
-                            // This season, and this week's swarm
-                            Button {
-                                Haptics.tap()
-                                let sw = Swarm.species()
-                                let left = Calendar.current.dateComponents([.day], from: .now, to: Swarm.ends()).day ?? 0
-                                store.toast = "\(Season.at().name): more \(Season.at().types.map(\.displayName).joined(separator: ", ")) types. Swarm: \(sw.name) for \(max(1, left)) more day\(left == 1 ? "" : "s")!"
-                            } label: { SeasonChip() }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Season and swarm")
                             // Berries growing in the Garden: time until the next ones are ready
                             if let ready = store.nextGardenReady {
                                 Button {
@@ -918,8 +911,22 @@ struct WeatherPill: View {
                         Text(condition.name).font(.rounded(11, .heavy)).foregroundStyle(.white.opacity(0.8))
                         Text("More " + condition.boostedTypes.map(\.rawValue.capitalized).sorted().joined(separator: ", ") + " types")
                             .font(.rounded(11)).foregroundStyle(.white.opacity(0.7))
+                        // the season and this week's swarm
+                        Text(Season.at().name + ": more " + Season.at().types.map(\.displayName).joined(separator: ", "))
+                            .font(.rounded(11)).foregroundStyle(Color(hex: Season.at().hex))
+                        Text("Swarm: \(Swarm.species().name) · \(swarmDaysLeft) day\(swarmDaysLeft == 1 ? "" : "s") left")
+                            .font(.rounded(11, .heavy)).foregroundStyle(.white.opacity(0.85))
                     }
                 }
+                // this week's swarm Pokémon, right in the weather badge
+                LocalIcon(speciesID: Swarm.species().id, shiny: false)
+                    .frame(width: 30, height: 30)
+                    .overlay(alignment: .bottomTrailing) {
+                        Image(systemName: Season.at().symbol).font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(Color(hex: Season.at().hex))
+                            .padding(2).background(Circle().fill(.black.opacity(0.4)))
+                    }
+                    .accessibilityLabel("Swarm: \(Swarm.species().name)")
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 12).padding(.vertical, 8)
@@ -935,6 +942,8 @@ struct WeatherPill: View {
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel("Weather: \(condition.name)")
     }
+
+    private var swarmDaysLeft: Int { max(1, Calendar.current.dateComponents([.day], from: .now, to: Swarm.ends()).day ?? 0) }
 
     @ViewBuilder private var icon: some View {
         let img = Image(systemName: symbol)

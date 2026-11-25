@@ -287,6 +287,14 @@ final class WatchModel: NSObject, ObservableObject {
         return reply["message"] as? String ?? ""
     }
 
+    /// Ranch shift start/collect or Egg pick-up, done on the iPhone.
+    func activity(_ request: String) async -> String {
+        guard let reply = await ask(["request": request]) else { return "Couldn't reach your iPhone." }
+        ingest(reply["snapshot"] as? Data)
+        WKInterfaceDevice.current().play(.success)
+        return reply["message"] as? String ?? ""
+    }
+
     struct BattleReply {
         var message: String
         var shakes = 0

@@ -120,6 +120,24 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
         case "battle":
             Task { @MainActor in replyHandler(WatchBattles.handle(message)) }
             return
+        case "ranchShift", "collectEgg":
+            Task { @MainActor in
+                let store = GameStore.shared
+                var text = ""
+                if message["request"] as? String == "collectEgg" {
+                    text = store.collectEgg() ? "Egg picked up! Walk to hatch it." : "No room — you're carrying 6 Eggs."
+                } else if store.ranchShiftDone, let h = store.collectRanchShift() {
+                    text = "Haul: " + RanchMaterial.allCases.compactMap { m in h.materials[m].flatMap { $0 > 0 ? "\($0) \(m.name)" : nil } }.joined(separator: ", ")
+                    if h.money > 0 { text += ", ₽\(h.money)" }
+                } else if !store.ranchShiftRunning, !store.ranchWorkers.isEmpty {
+                    store.startRanchShift()
+                    text = "Shift started!"
+                } else {
+                    text = store.ranchWorkers.isEmpty ? "Add ranchers on your iPhone first." : "Still on shift."
+                }
+                replyHandler(["snapshot": (try? JSONEncoder().encode(store.snapshot)) ?? Data(), "message": text])
+            }
+            return
         case "gardenPlant", "gardenPick":
             Task { @MainActor in
                 let store = GameStore.shared

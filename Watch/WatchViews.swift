@@ -5,7 +5,7 @@ import WatchKit
 
 /// Screens in the watch app (also where a tapped notification can jump to).
 enum WatchRoute: Hashable {
-    case party, bag, wild, map, workout, garden
+    case party, bag, wild, map, workout, garden, activities
     case summary(String)    // party member id
     case battle(String)     // wild Pokémon id
 }
@@ -52,6 +52,7 @@ struct WatchRootView: View {
                     case .map: WatchMapPage()
                     case .workout: WorkoutPickerPage()
                     case .garden: GardenPage()
+                    case .activities: ActivitiesPage()
                     case .summary(let id): SummaryPage(memberID: id)
                     case .battle(let id): BattlePage(wildID: id)
                     }
@@ -81,9 +82,8 @@ struct MenuPage: View {
                          tint: Color(hex: 0xE8A23A), badge: 0, route: .bag)
                 MenuTile(title: "Wild", subtitle: model.snapshot.wild.isEmpty ? "\(model.liveStepsToEncounter) steps to go" : "Waiting to be caught",
                          system: "leaf.fill", tint: Color(hex: 0x4CC76E), badge: model.snapshot.wild.count, route: .wild)
-                MenuTile(title: "Garden", subtitle: GardenPage.subtitle(model.snapshot.garden), system: "camera.macro",
-                         tint: Color(hex: 0xE86FB0),
-                         badge: model.snapshot.garden.filter { ($0.readyAt ?? .distantFuture) <= .now }.count, route: .garden)
+                MenuTile(title: "Activities", subtitle: ActivitiesPage.subtitle(model.snapshot), system: "tent.2.fill",
+                         tint: Color(hex: 0xE86FB0), badge: ActivitiesPage.badge(model.snapshot), route: .activities)
                 MenuTile(title: "Map", subtitle: "Where you are", system: "map.fill",
                          tint: Color(hex: 0x3FB8AF), badge: 0, route: .map)
                 if let status = model.syncStatus {
@@ -899,6 +899,167 @@ struct WorkoutLiveView: View {
     }
 }
 
+
+// MARK: - Activities
+
+/// Garden, Ranch, Daycare, Battle Frontier and Contests at a glance.
+struct ActivitiesPage: View {
+    @ObservedObject private var model = WatchModel.shared
+    @State private var message: String?
+    @State private var busy = false
+
+    static func badge(_ snap: WatchSnapshot) -> Int {
+        let berries = snap.garden.filter { ($0.readyAt ?? .distantFuture) <= .now }.count
+        guard let a = snap.activities else { return berries }
+        let shift = (a.shiftEnd ?? .distantFuture) <= .now ? 1 : 0
+        return berries + shift + (a.eggWaiting ? 1 : 0)
+    }
+
+    static func subtitle(_ snap: WatchSnapshot) -> String {
+        let n = badge(snap)
+        return n > 0 ? "\(n) thing\(n == 1 ? "" : "s") ready" : "Garden, Ranch, Daycare…"
+    }
+
+    var body: some View {
+        let a = model.snapshot.activities ?? WatchSnapshot.Activities()
+        ScrollView {
+            VStack(spacing: 8) {
+                if let message {
+                    Text(message).font(.footnote.weight(.semibold)).multilineTextAlignment(.center)
+                        .transition(.opacity)
+                }
+                MenuTile(title: "Garden", subtitle: GardenPage.subtitle(model.snapshot.garden), system: "camera.macro",
+                         tint: Color(hex: 0xE86FB0),
+                         badge: model.snapshot.garden.filter { ($0.readyAt ?? .distantFuture) <= .now }.count, route: .garden)
+                TimelineView(.periodic(from: .now, by: 30)) { tl in
+                    VStack(spacing: 8) {
+                        ranchCard(a, now: tl.date)
+                        daycareCard(a)
+                    }
+                }
+                frontierCard(a)
+                contestCard(a)
+                if !a.season.isEmpty {
+                    HStack(spacing: 6) {
+                        BoxIcon(speciesID: a.swarm).frame(width: 26, height: 26)
+                        Text("\(a.season) · swarm this week").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+        .navigationTitle("Activities")
+        .animation(.easeInOut, value: message)
+    }
+
+    private func card<C: View>(_ title: String, _ system: String, _ tint: Color, @ViewBuilder content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: system).font(.headline).foregroundStyle(tint)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func send(_ request: String) {
+        guard !busy else { return }
+        busy = true
+        Task { message = await model.activity(request); busy = false }
+    }
+
+    private func ranchCard(_ a: WatchSnapshot.Activities, now: Date) -> some View {
+        let done = (a.shiftEnd ?? .distantFuture) <= now
+        let running = a.shiftEnd != nil
+        return card("Ranch", "house.lodge.fill", Color(hex: 0xC98A4B)) {
+            if a.ranchers.isEmpty {
+                Text("Add ranchers on your iPhone.").font(.caption2).foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 2) {
+                    ForEach(Array(a.ranchers.enumerated()), id: \.offset) { _, id in
+                        BoxIcon(speciesID: id).frame(width: 24, height: 24)
+                    }
+                }
+                Text("\(a.ranchers.count)/\(a.slots) ranchers").font(.caption2).foregroundStyle(.secondary)
+            }
+            if running, !done, let end = a.shiftEnd {
+                let total = max(1, end.timeIntervalSince(a.shiftStart ?? now))
+                ProgressView(value: min(1, max(0, 1 - end.timeIntervalSince(now) / total)))
+                    .tint(Color(hex: 0xC98A4B))
+                Text("On shift · \(GardenPage.short(end.timeIntervalSince(now))) left").font(.caption2)
+            }
+            if done || (!running && !a.ranchers.isEmpty) {
+                Button(done ? "Collect haul" : "Start shift") { send("ranchShift") }
+                    .font(.footnote.weight(.semibold)).tint(done ? .yellow : Color(hex: 0xC98A4B))
+            }
+            HStack(spacing: 6) {
+                ForEach(["wood", "stone", "clay", "fibre"], id: \.self) { m in
+                    Text("\(m.prefix(1).uppercased())\(a.materials[m] ?? 0)")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded)).monospacedDigit()
+                }
+            }
+            .foregroundStyle(.secondary)
+            if let b = a.buildName, let end = a.buildEnds {
+                Text(end <= now ? "\(b) ready — finish on iPhone" : "Building \(b) · \(GardenPage.short(end.timeIntervalSince(now)))")
+                    .font(.caption2)
+            } else {
+                Text("\(a.ranchBuilt)/\(a.ranchTotal) built" + (a.nextProject.map { " · next: \($0)" } ?? ""))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func daycareCard(_ a: WatchSnapshot.Activities) -> some View {
+        card("Daycare", "heart.circle.fill", Color(hex: 0xF29BB2)) {
+            if !a.daycareOpen {
+                Text("Build the Daycare at the Ranch on your iPhone.").font(.caption2).foregroundStyle(.secondary)
+            } else {
+                if a.parents.isEmpty {
+                    Text("No Pokémon left here.").font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    HStack(spacing: 4) {
+                        ForEach(Array(a.parents.enumerated()), id: \.offset) { _, id in
+                            BoxIcon(speciesID: id).frame(width: 26, height: 26)
+                        }
+                    }
+                    if let c = a.compatibility { Text(c).font(.caption2).foregroundStyle(.secondary) }
+                }
+                if a.eggWaiting {
+                    Button("Pick up Egg") { send("collectEgg") }.font(.footnote.weight(.semibold)).tint(.yellow)
+                }
+                ForEach(Array(a.eggs.enumerated()), id: \.offset) { _, e in
+                    let left = e.first ?? 0, total = max(1, e.count > 1 ? e[1] : 1)
+                    HStack(spacing: 6) {
+                        Image(systemName: "oval.portrait.fill").foregroundStyle(.white.opacity(0.8))
+                        ProgressView(value: Double(total - left) / Double(total)).tint(Color(hex: 0xF29BB2))
+                        Text("\(left)").font(.system(size: 10, design: .rounded)).monospacedDigit()
+                    }
+                }
+                if a.hatched > 0 { Text("\(a.hatched) hatched").font(.caption2).foregroundStyle(.secondary) }
+            }
+        }
+    }
+
+    private func frontierCard(_ a: WatchSnapshot.Activities) -> some View {
+        card("Battle Frontier", "trophy.fill", Color(hex: 0xF2C94C)) {
+            HStack(spacing: 3) {
+                ForEach(0..<5, id: \.self) { i in
+                    Circle().fill(i < a.frontierWon ? Color(hex: 0xF2C94C) : .white.opacity(0.15))
+                        .frame(width: 10, height: 10)
+                }
+            }
+            Text(a.frontierLost ? "Lost today — back tomorrow" : a.frontierWon >= 5 ? "Cleared today!" : "\(a.frontierWon)/5 won · \(a.leaderToday)")
+                .font(.caption2)
+            Text("\(a.badges) badge\(a.badges == 1 ? "" : "s") · battle on iPhone").font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    private func contestCard(_ a: WatchSnapshot.Activities) -> some View {
+        card("Contests", "rosette", Color(hex: 0x9B8CF2)) {
+            Text("\(a.contestWins) win\(a.contestWins == 1 ? "" : "s") · \(a.ribbons) ribbon\(a.ribbons == 1 ? "" : "s")").font(.caption2)
+        }
+    }
+}
 
 // MARK: - Garden
 
