@@ -247,6 +247,13 @@ struct MapHomeView: View {
         }
         .onAppear {
             if store.openPartyAt != nil { store.openPartyAt = nil; sheet = .party }
+            if let a = store.openActivity { store.openActivity = nil; sheet = a == "ranch" ? .ranch : .garden }
+        }
+        // A Garden / Ranch notification was tapped
+        .onChange(of: store.openActivity) { _, a in
+            guard let a else { return }
+            store.openActivity = nil
+            withAnimation(.spring(duration: 0.4)) { sheet = a == "ranch" ? .ranch : .garden }
         }
         .fullScreenCover(item: $store.activeEncounter) { SafariView(wild: $0) }
         .animation(.spring(duration: 0.4), value: store.toast)

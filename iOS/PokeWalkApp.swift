@@ -20,8 +20,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        if (response.notification.request.content.userInfo["open"] as? String) == "pickup" {
+        let open = response.notification.request.content.userInfo["open"] as? String
+        if open == "pickup" {
             Task { @MainActor in GameStore.shared.openPartyAt = .now }
+        } else if open == "garden" || open == "ranch" {
+            Task { @MainActor in GameStore.shared.openActivity = open }
         } else if let id = response.notification.request.content.userInfo["encounterID"] as? String {
             Task { @MainActor in GameStore.shared.openEncounter(id: id) }
         }
@@ -54,6 +57,7 @@ struct PokeWalkApp: App {
                         store.pruneExpiredEncounters()
                         TrackStore.shared.refreshDay()
                         store.startPopupChecks()
+                        store.rescheduleTimerNotifications()
                         Task {
                             await store.checkPopups(forceSleep: true)          // straight away, before the slower step sync
                             await store.tick()

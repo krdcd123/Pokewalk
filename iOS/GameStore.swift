@@ -21,6 +21,8 @@ final class GameStore: ObservableObject {
     @Published var activeEncounter: PendingEncounter?
     /// Set when a pickup notification is tapped: the map opens the Party panel.
     @Published var openPartyAt: Date?
+    /// A Garden or Ranch notification was tapped: open that tab of Activities.
+    @Published var openActivity: String?
     @Published var evolutionCandidate: EvolutionCandidate?
     @Published var healthError: String?
 
@@ -1563,12 +1565,16 @@ extension GameStore {
             guard let at = GardenRules.readyAt(p, bonuses: b), at > .now else { continue }
             groups[Int(at.timeIntervalSince1970 / 300), default: []].append(p)
         }
+        if !groups.isEmpty { ensureNotificationPermission() }
+        let helper = state.garden.workers.compactMap { state.mon($0) }.first
         for (_, plots) in groups {
             guard let first = plots.first, let at = plots.compactMap({ GardenRules.readyAt($0, bonuses: b) }).max(),
                   let berry = first.berry else { continue }
-            let what = plots.count == 1 ? "Your \(Dex.itemName(berry)) is" : "\(plots.count) berry plants are"
+            let kinds = Array(Set(plots.compactMap(\.berry))).sorted().map { Dex.itemName($0) }
+            let what = plots.count == 1 ? "Your \(Dex.itemName(berry)) is"
+                : kinds.count == 1 ? "\(plots.count) \(kinds[0]) plants are" : "\(plots.count) berry plants (\(kinds.joined(separator: ", "))) are"
             notify(title: "Berries are ready! 🍓", body: "\(what) ready to pick in the Garden.",
-                   id: "garden-\(first.id)", category: "garden", at: at)
+                   id: "garden-\(first.id)", category: "garden", icon: helper.map { ($0.speciesID, $0.isShiny) }, at: at)
         }
     }
 }
@@ -1613,8 +1619,40 @@ extension GameStore {
             s.ranch.shiftStart = .now
             s.ranch.shiftEnd = end
         }
-        notify(title: "Ranch shift over! 🧺", body: "Your ranchers are back with their haul. Open the Ranch to collect it.",
-               id: "ranch-shift", category: "ranch", at: end)
+        rescheduleRanchNotification()
+    }
+
+    /// "Your Pokémon are back from the Ranch", at the end of the shift, with the first rancher's picture.
+    func rescheduleRanchNotification() {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["ranch-shift"])
+        guard let end = state.ranch.shiftEnd, end > .now else { return }
+        ensureNotificationPermission()
+        let names = ranchWorkers.map(\.name)
+        let who: String
+        switch names.count {
+        case 0: who = "Your ranchers are"
+        case 1: who = "\(names[0]) is"
+        case 2: who = "\(names[0]) and \(names[1]) are"
+        default: who = names.dropLast().joined(separator: ", ") + " and \(names.last!) are"
+        }
+        notify(title: "Back from the Ranch! 🧺", body: "\(who) back with their haul. Tap to collect it.",
+               id: "ranch-shift", category: "ranch", icon: ranchWorkers.first.map { ($0.speciesID, $0.isShiny) }, at: end)
+    }
+
+    /// Re-books the Garden and Ranch reminders (after a reinstall, a restore, or anything that dropped them).
+    func rescheduleTimerNotifications() {
+        rescheduleGardenNotifications()
+        rescheduleRanchNotification()
+    }
+
+    /// Asks for notification permission if it was never asked (e.g. it was skipped at the start).
+    func ensureNotificationPermission() {
+        Task {
+            let center = UNUserNotificationCenter.current()
+            if await center.notificationSettings().authorizationStatus == .notDetermined {
+                _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+            }
+        }
     }
 
     /// Calls the ranchers back early: the shift is cancelled (nothing gathered) so the team can be changed.
