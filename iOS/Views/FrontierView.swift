@@ -63,9 +63,14 @@ struct FrontierView: View {
                 let won = n <= f.won
                 HStack(spacing: 12) {
                     ZStack {
-                        Circle().fill(won ? Color.green : isNext ? Color.orange : Color.white.opacity(0.08)).frame(width: 40, height: 40)
-                        if won { Image(systemName: "checkmark").font(.system(size: 16, weight: .black)).foregroundStyle(.white) }
-                        else { Text("\(n)").font(.rounded(17, .black)).foregroundStyle(.white) }
+                        Circle().fill(won ? Color.green.opacity(0.55) : isNext ? Color.orange.opacity(0.55) : Color.white.opacity(0.08))
+                            .frame(width: 44, height: 44)
+                        TrainerOverworld(pic: t.pic, gen: BattleGen.of(store.state.trainer.style), hidden: !(won || isNext || n == 5))
+                            .frame(width: 34, height: 40)
+                        if won {
+                            Image(systemName: "checkmark.circle.fill").font(.system(size: 15, weight: .black))
+                                .foregroundStyle(.white, .green).offset(x: 15, y: 15)
+                        }
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         Text(won || isNext || n == 5 ? "\(t.title) \(t.name)" : "???").font(.rounded(15, .heavy)).foregroundStyle(.white)
@@ -146,6 +151,27 @@ struct FrontierView: View {
     }
 }
 
+/// A trainer's overworld sprite in the ladder (a dark silhouette until you've reached them).
+struct TrainerOverworld: View {
+    let pic: String
+    let gen: BattleGen
+    var hidden = false
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image).interpolation(.none).resizable().scaledToFit()
+                    .colorMultiply(hidden ? .black : .white)
+                    .opacity(hidden ? 0.6 : 1)
+            } else {
+                Image(systemName: "person.fill").foregroundStyle(.white.opacity(0.5))
+            }
+        }
+        .task(id: pic + gen.rawValue) { image = await BattleHUD.overworld(pic, gen: gen) }
+    }
+}
+
 // MARK: - The battle
 
 /// A Battle Frontier battle laid out like Emerald's: the Frontier background and platforms, the trainer's front
@@ -201,6 +227,8 @@ struct BattleView: View {
     private var gen: BattleGen { BattleGen.of(style) }
     @State private var shownHP: [UUID: Int] = [:]
     @State private var anim: MoveAnim?
+    @State private var field = BattleField()
+    @State private var pendingDrag: BattleSide?
     @State private var meLunge: CGFloat = 0
     @State private var foeLunge: CGFloat = 0
     @State private var shake: CGFloat = 0      // what the HP bars show (they drain smoothly)
@@ -509,8 +537,8 @@ struct BattleView: View {
                             .glassCapsule(tint: Color(hex: m.type.hex), interactive: true)
                         }
                         .buttonStyle(.plain)
-                        .disabled(busy || m.pp == 0)
-                        .opacity(busy || m.pp == 0 ? 0.55 : 1)
+                        .disabled(busy || !my.canSelect(i))
+                        .opacity(busy || !my.canSelect(i) ? 0.55 : 1)
                     }
                 } else {
                     // no PP left anywhere: Struggle
@@ -526,6 +554,17 @@ struct BattleView: View {
         }
     }
 
+    /// Mean Look, Spider Web, Block, Ingrain, Shadow Tag, Arena Trap and Magnet Pull keep you in.
+    private var cantEscape: Bool {
+        guard mine.indices.contains(me), foes.indices.contains(foe) else { return false }
+        let m = mine[me], f = foes[foe]
+        if m.trapped { return true }
+        if f.has("Shadow Tag") { return true }
+        if f.has("Arena Trap"), !m.types.contains(.flying), !m.has("Levitate") { return true }
+        if f.has("Magnet Pull"), m.types.contains(.steel) { return true }
+        return false
+    }
+
     /// Switch and give up sit lower down, away from the moves.
     @ViewBuilder private var sideButtons: some View {
         if outcome == nil, mine.indices.contains(me), foes.indices.contains(foe) {
@@ -536,7 +575,7 @@ struct BattleView: View {
                         .glassCapsule(tint: Color(hex: 0xF5C542), interactive: true)
                 }
                 .buttonStyle(.plain)
-                .disabled(busy || mine.filter { !$0.fainted }.count < 2)
+                .disabled(busy || mine.filter { !$0.fainted }.count < 2 || cantEscape)
                 Button { Task { await forfeit() } } label: {
                     Label("Give up", systemImage: "flag.fill").font(.rounded(15, .heavy)).foregroundStyle(.white)
                         .frame(maxWidth: .infinity).frame(height: 46)
@@ -600,11 +639,12 @@ struct BattleView: View {
         await wait(450)
     }
 
-    private func sendOutFoe() async {
+    private func sendOutFoe(thrown: Bool = true) async {
         foeBoxIn = false
-        await say("\(trainer.title) \(trainer.name) sent out \(foes[foe].name)!", 350)
+        if thrown { await say("\(trainer.title) \(trainer.name) sent out \(foes[foe].name)!", 350) }
         await throwBall(from: CGPoint(x: vw + 16, y: foeFeet.y - 60), to: CGPoint(x: foeFeet.x, y: foeFeet.y - 14), arc: 30, foeSide: true)
         withAnimation(.spring(duration: 0.35)) { foeBoxIn = true }
+        if meShown { await switchedIn(.foe) }
     }
 
     /// `withTrainer`: the opening send-out, where you wind up and throw (then slide away).
@@ -676,6 +716,8 @@ struct BattleView: View {
         await sendOutFoe()
         // …then you
         await sendOutMine(withTrainer: true)
+        await switchedIn(.foe)
+        await switchedIn(.mine)
         busy = false
         text = "What will \(mine[me].name) do?"
     }
@@ -697,27 +739,73 @@ struct BattleView: View {
     /// One turn through the Gen 3 engine; then its events are played out in order.
     private func turn(_ move: Int?) async {
         busy = true
-        let foeMove = BattleEngine.aiMove(foes[foe], vs: mine[me])
-        var a = mine[me], b = foes[foe]
-        let events = BattleEngine.turn(mine: &a, foe: &b, myMove: move, foeMove: foeMove)
-        let myHP = a.hp, foeHP = b.hp
-        // everything but HP applies now (PP, status, stat stages…); the bars follow the events
-        mine[me] = a; foes[foe] = b
-        mine[me].hp = shownHP[a.id] ?? myHP; foes[foe].hp = shownHP[b.id] ?? foeHP
-        await play(events)
-        mine[me].hp = myHP; foes[foe].hp = foeHP
-        shownHP[a.id] = myHP; shownHP[b.id] = foeHP
-
-        if foes[foe].fainted { await foeFainted(); return }
-        if mine[me].fainted { await myFainted(); return }
-        // Two-turn moves and recharging carry on by themselves
-        if mine[me].charging != nil || mine[me].mustRecharge {
+        await runTurn(myMove: move)
+        if await settle() { return }
+        // Two-turn moves, recharging, Thrash, Rollout and Bide carry on by themselves
+        if mine[me].actsAlone, !foes[foe].fainted {
             await wait(400)
             await turn(0)
             return
         }
         text = "What will \(mine[me].name) do?"
         busy = false
+    }
+
+    /// Runs the engine for one turn (`myMove` nil = you switched, so only the foe acts) and plays it out.
+    private func runTurn(myMove: Int?) async {
+        let foeMove = BattleEngine.aiMove(foes[foe], vs: mine[me], field: field)
+        var a = mine[me], b = foes[foe], f = field
+        let events = BattleEngine.turn(mine: &a, foe: &b, field: &f, myMove: myMove, foeMove: foeMove)
+        await apply(a, b, f, events)
+    }
+
+    /// Puts the engine's results in place, with the HP bars following the events.
+    private func apply(_ a: BattleMon, _ b: BattleMon, _ f: BattleField, _ events: [BattleEvent]) async {
+        let myHP = a.hp, foeHP = b.hp
+        mine[me] = a; foes[foe] = b; field = f
+        mine[me].hp = shownHP[a.id] ?? myHP; foes[foe].hp = shownHP[b.id] ?? foeHP
+        await play(events)
+        mine[me].hp = myHP; foes[foe].hp = foeHP
+        shownHP[a.id] = myHP; shownHP[b.id] = foeHP
+    }
+
+    /// Fainting and Roar/Whirlwind after a turn. Returns true when the battle has moved on (or ended).
+    private func settle() async -> Bool {
+        if let side = pendingDrag {
+            pendingDrag = nil
+            if side == .foe, !foes[foe].fainted, let next = foes.indices.filter({ $0 != foe && !foes[$0].fainted }).randomElement() {
+                foes[foe].switchedOut()
+                withAnimation(.easeIn(duration: 0.3)) { foeBoxIn = false; foeShown = false }
+                await wait(350)
+                foe = next
+                shownHP[foes[foe].id] = foes[foe].hp
+                await say("The foe's \(foes[foe].name) was dragged out!", 500)
+                await sendOutFoe(thrown: false)
+            } else if side == .mine, !mine[me].fainted, let next = mine.indices.filter({ $0 != me && !mine[$0].fainted }).randomElement() {
+                await recallMine()
+                mine[me].switchedOut()
+                me = next
+                shownHP[mine[me].id] = mine[me].hp
+                await say("\(mine[me].name) was dragged out!", 500)
+                await sendOutMine(withTrainer: false)
+                await switchedIn(.mine)
+            } else {
+                await say("But it failed!", 700)
+            }
+        }
+        if foes[foe].fainted { await foeFainted(); if mine[me].fainted, outcome == nil { await myFainted() }; return true }
+        if mine[me].fainted { await myFainted(); return true }
+        return false
+    }
+
+    /// Spikes, Intimidate, Trace and weather abilities as a Pokémon comes out.
+    private func switchedIn(_ side: BattleSide) async {
+        guard mine.indices.contains(me), foes.indices.contains(foe) else { return }
+        var a = mine[me], b = foes[foe], f = field
+        let ev = side == .mine ? BattleEngine.switchIn(&a, side: .mine, other: &b, field: &f)
+                               : BattleEngine.switchIn(&b, side: .foe, other: &a, field: &f)
+        guard !ev.isEmpty else { return }
+        await apply(a, b, f, ev)
     }
 
     /// The move's animation, in the style of your trainer's generation.
@@ -785,6 +873,10 @@ struct BattleView: View {
                 BattleAudio.shared.playStat(up: up)
             case .status:
                 break
+            case .forceSwitch(let side):
+                pendingDrag = side
+            case .transform:
+                CryPlayer.shared.play(mine[me].speciesID)
             }
         }
     }
@@ -798,6 +890,7 @@ struct BattleView: View {
             foe = next
             shownHP[foes[foe].id] = foes[foe].hp
             await sendOutFoe()
+            if mine[me].fainted { return }          // you choose your next one first
             text = "What will \(mine[me].name) do?"
             busy = false
         } else {
@@ -842,21 +935,12 @@ struct BattleView: View {
         me = i
         shownHP[mine[me].id] = mine[me].hp
         await sendOutMine(withTrainer: false)
+        await switchedIn(.mine)
         if !wasForced {
             // switching uses your turn: only the foe moves
-            busy = true
-            let foeMove = BattleEngine.aiMove(foes[foe], vs: mine[me])
-            var a = mine[me], b = foes[foe]
-            let events = BattleEngine.turn(mine: &a, foe: &b, myMove: nil, foeMove: foeMove)
-            let myHP = a.hp, foeHP = b.hp
-            mine[me] = a; foes[foe] = b
-            mine[me].hp = shownHP[a.id] ?? myHP; foes[foe].hp = shownHP[b.id] ?? foeHP
-            await play(events)
-            mine[me].hp = myHP; foes[foe].hp = foeHP
-            shownHP[a.id] = myHP; shownHP[b.id] = foeHP
-            if foes[foe].fainted { await foeFainted(); return }
-            if mine[me].fainted { await myFainted(); return }
+            await runTurn(myMove: nil)
         }
+        if await settle() { return }
         text = "What will \(mine[me].name) do?"
         busy = false
     }

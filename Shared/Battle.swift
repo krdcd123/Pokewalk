@@ -136,15 +136,19 @@ enum FrontierRules {
         return sp.id
     }
 
-    /// Your strongest Pokémon set the pace.
+    /// Your strongest Pokémon sets the pace.
     static func partyLevel(_ s: GameState) -> Int {
-        let levels = s.party.map(\.level).sorted(by: >).prefix(6)
-        guard !levels.isEmpty else { return 5 }
-        return levels.reduce(0, +) / levels.count
+        s.party.map(\.level).max() ?? 5
+    }
+
+    /// Frontier trainers raise their Pokémon properly: perfect IVs and effort that grows with each battle.
+    private static func mon<R: RandomNumberGenerator>(_ id: Int, _ lv: Int, battle: Int, rng: inout R) -> BattleMon {
+        BattleMon(speciesID: id, level: max(2, min(100, lv)), nature: Dex.natures.randomElement(using: &rng)!,
+                  iv: 31, ev: [0, 40, 85, 128, 170, 252, 252][min(6, battle)], trainer: true, rng: &rng)
     }
 
     static func trainer(for battle: Int, in s: GameState, date: Date = .now) -> FrontierTrainer {
-        let base = partyLevel(s)
+        let top = partyLevel(s)
         // seeded per day and battle, so it's the same trainer if you leave and come back
         let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
         let y: Int = c.year ?? 0
@@ -158,29 +162,46 @@ enum FrontierRules {
                 let allSix = s.frontier.week == Swarm.week(date) && Set(s.frontier.leadersBeaten).isSuperset(of: leaders.map(\.key))
                 if allSix {
                     let pick = Int.random(in: 0..<3, using: &rng) == 0 ? champion : brains.randomElement(using: &rng)!
-                    let lv = min(100, base + (pick.key == "wallace" ? 7 : 8))
-                    let team = pick.team.map { BattleMon(speciesID: $0, level: lv, nature: Dex.natures.randomElement(using: &rng)!) }
+                    let lv = top + (pick.key == "wallace" ? 5 : 6)
+                    let team = pick.team.enumerated().map { i, id in mon(id, lv - (i == pick.team.count - 1 ? 0 : Int.random(in: 0...2, using: &rng)), battle: 6, rng: &rng) }
                     return FrontierTrainer(name: pick.name, title: pick.title, pic: pick.pic, team: team, isLeader: false,
                                            isChampion: true, badge: nil,
                                            intro: pick.key == "wallace" ? "You beat every Gym Leader this week. Now face the Champion!"
                                                                          : "A legendary trainer has heard of you…")
                 }
             }
+            // Gym Leaders: a full team above your best, with their ace last
             let l = day == 7 ? sundayLeader : leaders[day - 1]
-            let lv = min(100, base + 4)
-            let team = l.team.map { BattleMon(speciesID: evolve($0, level: lv), level: lv - Int.random(in: 0...2, using: &rng),
-                                              nature: Dex.natures.randomElement(using: &rng)!) }
+            let size = max(l.team.count, min(6, 4 + (s.party.count >= 5 ? 1 : 0) + (top >= 40 ? 1 : 0)))
+            var ids = l.team
+            while ids.count < size, let extra = l.team.randomElement(using: &rng) { ids.insert(extra, at: 0) }
+            let team = ids.enumerated().map { i, id -> BattleMon in
+                let ace = i == ids.count - 1
+                let lv = top + (ace ? 3 : Int.random(in: 1...2, using: &rng))
+                return mon(evolve(id, level: lv), lv, battle: 5, rng: &rng)
+            }
             return FrontierTrainer(name: l.name, title: "Gym Leader", pic: "leader_" + l.key, team: team, isLeader: true,
                                    isChampion: false, badge: l.badge, intro: "\(l.name) uses \(l.type.displayName)-type Pokémon.")
         }
+        // Battles 1–4 get harder: battle 3 always has one at your best level, battle 4 one above it
         let cls = classes.randomElement(using: &rng)!
-        let lv = max(3, min(100, base + [-5, -3, -1, 1][battle - 1]))
-        let size = [2, 3, 3, 4][battle - 1]
-        let pool = Dex.all.filter { !$0.isLegendary && !$0.isMythical && $0.generation <= 4 && !$0.isBaby }
-        let team = (0..<size).map { _ -> BattleMon in
+        let size = [3, 3, 4, 5][battle - 1]
+        let spread: [ClosedRange<Int>] = [(-5)...(-3), (-3)...(-1), (-2)...0, (-1)...1]
+        let ace = [-2, -1, 0, 1][battle - 1]
+        // stronger species as the battles go on
+        let all = Dex.all.filter { !$0.isLegendary && !$0.isMythical && $0.generation <= 3 && !$0.isBaby }
+        let byPower = all.sorted { SpeciesData.stats($0.id).reduce(0, +) < SpeciesData.stats($1.id).reduce(0, +) }
+        let from = [0.0, 0.25, 0.4, 0.55][battle - 1]
+        let pool = Array(byPower[Int(Double(byPower.count) * from)...])
+        var team: [BattleMon] = []
+        for i in 0..<size {
+            let isAce = i == size - 1
+            let lv = top + (isAce ? ace : Int.random(in: spread[battle - 1], using: &rng))
             let sp = pool.randomElement(using: &rng)!
-            return BattleMon(speciesID: evolve(GardenRules.familyRoot(sp.id), level: lv), level: lv,
-                             nature: Dex.natures.randomElement(using: &rng)!)
+            var id = evolve(GardenRules.familyRoot(sp.id), level: lv)
+            // no babies on a trainer's team: start from the next stage
+            if Dex.species(id).isBaby, let next = Dex.species(id).evolutions.first?.into { id = evolve(next, level: lv) }
+            team.append(mon(id, lv, battle: battle, rng: &rng))
         }
         return FrontierTrainer(name: cls.names.randomElement(using: &rng)!, title: cls.title, pic: cls.pic, team: team,
                                isLeader: false, isChampion: false, badge: nil, intro: "")

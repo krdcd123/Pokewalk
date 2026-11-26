@@ -19,6 +19,9 @@ changes = collections.defaultdict(list)
 for r in rows("move_changelog"): changes[r["move_id"]].append(r)
 EMERALD = 6
 
+flags = collections.defaultdict(set)
+for r in rows("move_flag_map"): flags[int(r["move_id"])].add(int(r["move_flag_id"]))
+
 moves = {}
 for r in rows("moves"):
     if int(r["id"]) > 354: continue          # Gen 1-3 moves only
@@ -39,6 +42,7 @@ for r in rows("moves"):
         "drain": num(m.get("drain")) or 0, "healing": num(m.get("healing")) or 0, "crit": num(m.get("crit_rate")) or 0,
         "ailmentChance": num(m.get("ailment_chance")) or 0, "flinch": num(m.get("flinch_chance")) or 0,
         "statChance": num(m.get("stat_chance")) or 0, "stats": stats.get(r["id"], []),
+        "contact": 1 in flags[int(r["id"])], "soundMove": 9 in flags[int(r["id"])],
     }
 
 # Level-up learnsets in Emerald for #1-386
@@ -76,6 +80,9 @@ for m in moves.values():
         pool = sorted(by_type[m["type"]]); sound[m["key"]] = by_slug[pool[m["id"] % len(pool)]]
 for m in moves.values(): m["sound"] = sound.get(m["key"])
 
-json.dump({"moves": list(moves.values()), "learnsets": learnsets, "gen3Types": gen3types},
+# Weights (hectograms) for Low Kick
+weights = {r["id"]: int(r["weight"]) for r in rows("pokemon") if int(r["id"]) <= 386}
+
+json.dump({"moves": list(moves.values()), "learnsets": learnsets, "gen3Types": gen3types, "weights": weights},
           open(out, "w"), separators=(",", ":"))
 print(len(moves), "moves;", sum(1 for m in moves.values() if m["key"] in by_slug), "exact sounds;", len(gen3types), "gen3 type fixes")

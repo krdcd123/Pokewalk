@@ -41,6 +41,39 @@ enum BattleGen: String {
         }
     }
 
+    /// The trainer's overworld sprite (standing, facing you) from the same generation.
+    func overworldPath(_ emeraldPic: String) -> (url: URL, colour: UInt32)? {
+        switch self {
+        case .rse:
+            let map: [String: String] = [
+                "cooltrainer_m": "man_3", "cooltrainer_f": "woman_5", "dragon_tamer": "man_5", "champion_wallace": "wallace",
+            ]
+            var path = map[emeraldPic] ?? emeraldPic
+            if emeraldPic.hasPrefix("leader_") {
+                let who = emeraldPic.dropFirst(7)
+                path = "gym_leaders/" + (who == "tate_and_liza" ? "tate" : String(who))
+            } else if ["salon_maiden_anabel", "dome_ace_tucker", "palace_maven_spenser", "arena_tycoon_greta",
+                       "factory_head_noland", "pike_queen_lucy", "pyramid_king_brandon"].contains(emeraldPic) {
+                path = "frontier_brains/" + (emeraldPic.split(separator: "_").last.map(String.init) ?? "")
+            }
+            return URL(string: "https://raw.githubusercontent.com/pret/pokeemerald/master/graphics/object_events/pics/people/\(path).png").map { ($0, 0) }
+        case .gsc, .rby:
+            let map: [String: (String, UInt32)] = [
+                "youngster": ("youngster", 0x3870E0), "lass": ("lass", 0xE04040), "hiker": ("pokefan_m", 0x9A6A3A),
+                "bug_catcher": ("bug_catcher", 0x40A040), "swimmer_f": ("swimmer_girl", 0x3870E0), "black_belt": ("black_belt", 0x9A6A3A),
+                "psychic_m": ("youngster", 0xB060C0), "beauty": ("beauty", 0xE060A0), "cooltrainer_m": ("cooltrainer_m", 0x3870E0),
+                "cooltrainer_f": ("cooltrainer_f", 0xE04040), "expert_m": ("gentleman", 0x9A6A3A), "dragon_tamer": ("cooltrainer_m", 0x6040C0),
+                "leader_roxanne": ("brock", 0x9A6A3A), "leader_brawly": (self == .rby ? "bruno" : "chuck", 0x9A6A3A),
+                "leader_wattson": ("surge", 0x40A040), "leader_flannery": ("blaine", 0xE04040),
+                "leader_norman": (self == .rby ? "rocket" : "whitney", 0xE060A0), "leader_winona": (self == .rby ? "koga" : "falkner", 0x3870E0),
+                "leader_tate_and_liza": ("sabrina", 0xE04040), "champion_wallace": (self == .rby ? "blue" : "lance", 0xE04040),
+                "steven": (self == .rby ? "lance" : "blue", 0x3870E0),
+            ]
+            let e = map[emeraldPic] ?? ("red", 0xE04040)
+            return URL(string: "https://raw.githubusercontent.com/pret/pokecrystal/master/gfx/sprites/\(e.0).png").map { ($0, e.1) }
+        }
+    }
+
     /// The Game Boy games had a plain white battle background.
     var isGameBoy: Bool { self != .rse }
 }
@@ -102,6 +135,32 @@ final class BattleHUD {
         guard let data, let png = IndexedPNG(data) else { return nil }
         let pal = png.palette ?? Self.grey(png.depth)
         return png.render(palette: pal, transparentIndex: 255).cropping(CGRect(x: 0, y: 0, width: png.w, height: png.h))
+    }
+
+    /// The first (standing, facing down) frame of a trainer's overworld sprite.
+    static func overworld(_ pic: String, gen: BattleGen) async -> UIImage? {
+        guard let (url, colour) = gen.overworldPath(pic) else { return nil }
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("sprite-cache/pret", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("ow_" + url.pathComponents.suffix(3).joined(separator: "_"))
+        var data = try? Data(contentsOf: file)
+        if data == nil, let (d, r) = try? await URLSession.shared.data(from: url), (r as? HTTPURLResponse)?.statusCode == 200 {
+            try? d.write(to: file, options: .atomic); data = d
+        }
+        guard let data, let png = IndexedPNG(data) else { return nil }
+        if gen == .rse, let pal = png.palette {
+            let fw = png.h >= 32 && png.w % 9 == 0 && png.w / 9 <= 32 ? png.w / 9 : 16
+            return png.render(palette: pal, transparentIndex: 0).cropping(CGRect(x: 0, y: 0, width: fw, height: png.h))
+        }
+        // Game Boy: white is see-through, light grey skin, dark grey the trainer's colour, black outlines
+        let maxV = png.depth >= 8 ? 255 : (1 << png.depth) - 1
+        let c = (UInt8((colour >> 16) & 0xFF), UInt8((colour >> 8) & 0xFF), UInt8(colour & 0xFF))
+        var pal: [(UInt8, UInt8, UInt8)] = []
+        for i in 0...maxV {
+            let v = Double(i) / Double(max(1, maxV))
+            pal.append(v < 0.17 ? (16, 16, 24) : v < 0.5 ? c : (248, 208, 152))
+        }
+        return png.render(palette: pal, transparentIndex: UInt8(maxV)).cropping(CGRect(x: 0, y: 0, width: min(16, png.w), height: min(16, png.h)))
     }
 
     private static func grey(_ depth: Int) -> [(UInt8, UInt8, UInt8)] {
