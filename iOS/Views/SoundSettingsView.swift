@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 /// Turn sounds/music on or off and use your own audio files (mp3, m4a, wav…) for any of them.
 struct SoundSettingsView: View {
     @ObservedObject private var sound = SoundKit.shared
+    @ObservedObject private var other = ExternalMusic.shared
     @State private var importing = false
     @State private var slot = ""
 
@@ -15,6 +16,48 @@ struct SoundSettingsView: View {
                 Toggle("Route music on the map", isOn: $sound.routeMusicOn).glassRow()
             } footer: {
                 Text("Sounds follow your silent switch. Route music pauses itself if you're already playing your own music or a podcast.")
+            }
+
+            Section {
+                HStack {
+                    Image(systemName: "music.note").foregroundStyle(.pink).frame(width: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Apple Music").font(.rounded(15, .heavy))
+                        Text(other.appleMusicAllowed ? "Shown on the map" : "Allow PokéWalk to see the Music app's song")
+                            .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                    }
+                    Spacer()
+                    if !other.appleMusicAllowed {
+                        Button("Allow") { Task { await other.requestAppleMusic() } }.buttonStyle(.borderless)
+                    }
+                }
+                .glassRow()
+                HStack {
+                    Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(Color(hex: 0x1DB954)).frame(width: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Spotify").font(.rounded(15, .heavy))
+                        Text(other.spotifyConnected ? "Connected — shown on the map" : "Not connected")
+                            .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                    }
+                    Spacer()
+                    if other.spotifyConnected {
+                        Button("Disconnect") { other.disconnectSpotify() }.buttonStyle(.borderless).tint(.red)
+                    } else {
+                        Button("Connect") { other.connectSpotify() }.buttonStyle(.borderless)
+                    }
+                }
+                .glassRow()
+                if !other.spotifyConnected {
+                    TextField("Spotify Client ID", text: $other.spotifyClientID)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .font(.rounded(14, .semibold).monospaced())
+                        .glassRow()
+                }
+                if let e = other.spotifyError {
+                    Text(e).font(.rounded(12, .semibold)).foregroundStyle(.orange).glassRow()
+                }
+            } header: { Text("Your music on the map") } footer: {
+                Text("iOS doesn't let apps see each other's songs, so Spotify needs a one-time setup: at developer.spotify.com › Dashboard, create an app (any name), add the redirect URI \(ExternalMusic.redirectURI), tick Web API, then paste its Client ID here and tap Connect.")
             }
 
             Section {

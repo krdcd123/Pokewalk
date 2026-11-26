@@ -52,6 +52,7 @@ struct MapHomeView: View {
     @State private var infoID: UUID?
     @State private var panelSession = 0
     @ObservedObject private var sound = SoundKit.shared
+    @ObservedObject private var otherMusic = ExternalMusic.shared
     @ObservedObject private var weather = WeatherService.shared      // new identity each time a panel opens, so menus start at the top
 
     enum HomeSheet: Hashable, Identifiable {
@@ -245,6 +246,8 @@ struct MapHomeView: View {
             store.openPartyAt = nil
             withAnimation(.spring(duration: 0.4)) { sheet = .party }
         }
+        .onAppear { otherMusic.start() }
+        .onDisappear { otherMusic.stop() }
         .onAppear {
             if store.openPartyAt != nil { store.openPartyAt = nil; sheet = .party }
             if let a = store.openActivity { store.openActivity = nil; sheet = a == "ranch" ? .ranch : .garden }
@@ -425,18 +428,25 @@ struct MapHomeView: View {
                     withAnimation(.snappy) { sound.routeMusicOn.toggle() }
                 } label: {
                 card {
+                    // the route music, or what you're playing in Spotify / Music
+                    let other = sound.nowPlaying == nil ? otherMusic.track : nil
+                    let playing = sound.nowPlaying != nil || other != nil
                     HStack(spacing: 8) {
-                        Image(systemName: sound.nowPlaying != nil ? "music.note" : "speaker.slash.fill")
+                        Image(systemName: playing ? "music.note" : "speaker.slash.fill")
                             .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(sound.nowPlaying != nil ? Theme.teal : Theme.inkSoft)
-                            .symbolEffect(.variableColor.iterative, options: .repeating, isActive: sound.nowPlaying != nil)
+                            .foregroundStyle(other?.app == "Spotify" ? Color(hex: 0x1DB954) : playing ? Theme.teal : Theme.inkSoft)
+                            .symbolEffect(.variableColor.iterative, options: .repeating, isActive: playing)
                             .contentTransition(.symbolEffect(.replace))
                             .frame(width: 26)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(sound.nowPlaying != nil ? "NOW PLAYING" : "MUSIC").font(.rounded(10, .heavy)).foregroundStyle(Theme.inkSoft)
-                            Text(sound.nowPlaying ?? musicOffText)
-                                .font(.rounded(13, .heavy)).lineLimit(2).minimumScaleFactor(0.75)
+                            Text(other.map { "\($0.app.uppercased())" } ?? (playing ? "NOW PLAYING" : "MUSIC"))
+                                .font(.rounded(10, .heavy)).foregroundStyle(Theme.inkSoft)
+                            Text(other?.title ?? sound.nowPlaying ?? musicOffText)
+                                .font(.rounded(13, .heavy)).lineLimit(other?.artist.isEmpty == false ? 1 : 2).minimumScaleFactor(0.75)
                                 .contentTransition(.opacity)
+                            if let a = other?.artist, !a.isEmpty {
+                                Text(a).font(.rounded(11, .bold)).foregroundStyle(Theme.inkSoft).lineLimit(1)
+                            }
                         }
                         Spacer(minLength: 0)
                     }
@@ -446,7 +456,8 @@ struct MapHomeView: View {
                 .contentShape(RoundedRectangle(cornerRadius: 20))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(sound.nowPlaying.map { "Now playing \($0). Tap to mute." } ?? "Music off. Tap to play.")
+                .accessibilityLabel(otherMusic.track.map { "\($0.app) is playing \($0.title) by \($0.artist)." }
+                                    ?? sound.nowPlaying.map { "Now playing \($0). Tap to mute." } ?? "Music off. Tap to play.")
             }
             .fixedSize(horizontal: false, vertical: true)      // music card matches the steps card's height
             card {
