@@ -142,7 +142,7 @@ enum MoveData {
 
     /// Moves the battle engine doesn't support (they'd only ever fail).
     static let unsupported: Set<String> = ["baton-pass", "trick", "recycle", "snatch", "assist", "imprison", "grudge",
-                                           "follow-me", "helping-hand", "struggle", "sketch"]
+                                           "follow-me", "helping-hand", "struggle"]
 
     /// How many species can learn each move.
     private static let common: [Int: Int] = {
