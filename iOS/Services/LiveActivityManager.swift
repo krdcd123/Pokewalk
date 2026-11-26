@@ -54,20 +54,26 @@ final class LiveActivityManager {
     }
 
     func update(with store: GameStore) {
+        Task { await updateNow(with: store) }
+    }
+
+    /// Updates the Live Activity and returns once it's done (used while the app is awake in the background).
+    func updateNow(with store: GameStore) async {
+        // After iOS relaunches the app in the background (e.g. for the watch) `activity` starts out empty
+        if activity == nil { activity = Activity<WalkActivityAttributes>.activities.first { $0.activityState == .active } }
         guard let activity, activity.activityState == .active else { return }
-        Task {
-            guard var state = await content(store) else { return }
-            state.hop = lastState?.hop ?? false
-            guard state != lastState else { return }
-            lastState = state
-            await activity.update(.init(state: state, staleDate: Date().addingTimeInterval(8 * 3600)))
-        }
+        guard var state = await content(store) else { return }
+        state.hop = lastState?.hop ?? false
+        guard state != lastState else { return }
+        lastState = state
+        await activity.update(.init(state: state, staleDate: Date().addingTimeInterval(8 * 3600)))
     }
 
     private var lastHop = Date.distantPast
 
     /// Called on each step while you're walking: bobs the buddy's icon (at most every 1.5 s).
     func hop() {
+        if activity == nil { activity = Activity<WalkActivityAttributes>.activities.first { $0.activityState == .active } }
         guard let activity, activity.activityState == .active, var state = lastState,
               Date().timeIntervalSince(lastHop) >= 1.5 else { return }
         lastHop = .now

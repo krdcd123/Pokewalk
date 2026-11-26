@@ -1,5 +1,6 @@
 import Foundation
 import WatchConnectivity
+import UIKit
 
 /// Sends the party snapshot (and sprite PNGs) to the Watch, and answers sync requests from it.
 final class PhoneConnectivity: NSObject, WCSessionDelegate {
@@ -100,11 +101,7 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
         switch message["request"] as? String {
         case "buddy":
             Task { @MainActor in
-                var name = ""
-                if let id = UUID(uuidString: message["id"] as? String ?? ""), let mon = GameStore.shared.state.mon(id) {
-                    await GameStore.shared.setBuddy(id)
-                    name = mon.name
-                }
+                let name = await Self.applyBuddy(message)
                 replyHandler(["snapshot": (try? JSONEncoder().encode(GameStore.shared.snapshot)) ?? Data(),
                               "message": name.isEmpty ? "Couldn't change your buddy." : "\(name) is your walking buddy!"])
             }
@@ -176,9 +173,24 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
     }
 
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        if userInfo["request"] as? String == "buddy" {
+            Task { @MainActor in _ = await Self.applyBuddy(userInfo) }
+            return
+        }
         if Self.takeWatchSleep(userInfo) { return }
         if Self.takeWorkoutLive(userInfo) { return }
         _ = Self.takeWatchSteps(userInfo)
+    }
+
+    /// A buddy change from the watch. iOS only wakes the app for a few seconds, so ask for extra time
+    /// until the Live Activity / Dynamic Island shows the new buddy.
+    @MainActor static func applyBuddy(_ m: [String: Any]) async -> String {
+        guard let id = UUID(uuidString: m["id"] as? String ?? ""), let mon = GameStore.shared.state.mon(id) else { return "" }
+        let task = UIApplication.shared.beginBackgroundTask(withName: "buddy")
+        await GameStore.shared.setBuddy(id)
+        await LiveActivityManager.shared.updateNow(with: GameStore.shared)
+        if task != .invalid { UIApplication.shared.endBackgroundTask(task) }
+        return mon.name
     }
 
     /// Sleep sent straight from the watch: saved, then the morning popup / Journal update right away.

@@ -260,11 +260,23 @@ final class WatchModel: NSObject, ObservableObject {
 
     /// Makes a party Pokémon your walking buddy (on the phone too). Returns a message to show.
     func makeBuddy(_ member: WatchSnapshot.Member) async -> String {
-        guard let reply = await ask(["request": "buddy", "id": member.id]) else { return "Couldn't reach your iPhone." }
-        ingest(reply["snapshot"] as? Data)
+        // Swap the buddy here first so the app and complications change instantly,
+        // then let the phone do the real change (and its Live Activity).
+        var local = snapshot
+        for i in local.party.indices { local.party[i].isBuddy = local.party[i].id == member.id }
+        snapshot = local
+        SharedStore.saveSnapshot(local)
         WidgetCenter.shared.reloadAllTimelines()
         WKInterfaceDevice.current().play(.success)
-        return reply["message"] as? String ?? ""
+
+        if let reply = await ask(["request": "buddy", "id": member.id]) {
+            ingest(reply["snapshot"] as? Data)
+            WidgetCenter.shared.reloadAllTimelines()
+            return reply["message"] as? String ?? "\(member.name) is your walking buddy!"
+        }
+        // iPhone asleep/out of range: queued, delivered as soon as it can take it
+        WCSession.default.transferUserInfo(["request": "buddy", "id": member.id])
+        return "\(member.name) is your walking buddy! Your iPhone will catch up when it's nearby."
     }
 
     /// Opens a Pokémon's summary (from tapping its complication).
