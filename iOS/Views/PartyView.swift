@@ -5,7 +5,7 @@ import SwiftUI
 struct PartyView: View {
     @EnvironmentObject private var store: GameStore
     @State private var open: UUID?
-    enum Tab { case party, gyms, frontier }
+    enum Tab { case party, gyms }
     @State private var tab: Tab = .party
 
     private let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
@@ -15,7 +15,6 @@ struct PartyView: View {
             Picker("View", selection: $tab) {
                 Label("Party", systemImage: "circle.grid.2x2.fill").tag(Tab.party)
                 Label("Gyms", systemImage: "flag.2.crossed.fill").tag(Tab.gyms)
-                Label("Frontier", systemImage: "building.columns.fill").tag(Tab.frontier)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal).padding(.top, 6)
@@ -23,10 +22,9 @@ struct PartyView: View {
             switch tab {
             case .party: partyGrid
             case .gyms: FrontierView(mode: .gym).frame(maxHeight: .infinity)
-            case .frontier: BattleFrontierHub().frame(maxHeight: .infinity)
             }
         }
-        .navigationTitle(tab == .party ? "Party" : tab == .gyms ? "Gym Challenge" : "Battle Frontier")
+        .navigationTitle(tab == .party ? "Party" : "Gym Challenge")
         .glassScreen(transparent: true)
         .navigationDestination(item: $open) { id in
             PagedSummaryView(ids: store.state.partyIDs, start: id)

@@ -18,12 +18,27 @@ struct ContestHallView: View {
         ScrollView {
             VStack(spacing: 16) {
                 hostCard
-                blenderCard
-                if let mon { conditionCard(mon); enterCard(mon) }
+                let c = store.state.contests
+                if !ContestRules.canStart(store.state) {
+                    lockedCard
+                } else {
+                    if c.open {
+                        blenderCard
+                        if let mon { conditionCard(mon); enterCard(mon) }
+                    }
+                    if c.nextProject != nil || c.building != nil {
+                        BuildCard(projects: ContestRules.projects, built: c.built, building: c.building,
+                                  start: { store.startContestProject() },
+                                  finish: { if let p = store.finishContestProjectIfDone() { says = "The \(p.name) is ready! \(p.reward)." } })
+                    }
+                }
             }
             .padding()
         }
-        .task { if host == nil { host = await PretFiles.sprite("graphics/trainers/front_pics/lady.png") } }
+        .task {
+            if host == nil { host = await PretFiles.sprite("graphics/trainers/front_pics/lady.png") }
+            if let p = store.finishContestProjectIfDone() { says = "The \(p.name) is ready! \(p.reward)." }
+        }
         .fullScreenCover(item: $staging) { e in
             ContestStage(entry: e) { place in
                 let prize = store.finishContest(e.mon.id, e.category, e.rank, place: place)
@@ -40,12 +55,26 @@ struct ContestHallView: View {
                 .frame(width: 88, height: 88)
             VStack(alignment: .leading, spacing: 6) {
                 Text("Contest Hall").font(.rounded(13, .heavy)).foregroundStyle(Theme.tealDark)
-                Text(says ?? "Make Pokéblocks from your berries to bring out a Pokémon's best side, then show it off in a contest! \(store.state.contests.wins) wins so far.")
+                Text(says ?? (!store.state.contests.open
+                     ? (store.state.contests.building == nil ? "Build a Contest Hall on your ranch and I'll host Pokémon Contests for you!" : "The Contest Hall is going up — not long now!")
+                     : "Make Pokéblocks from your berries to bring out a Pokémon's best side, then show it off in a contest! \(store.state.contests.wins) wins so far."))
                     .font(.rounded(15, .bold)).foregroundStyle(.white).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
         .padding(14)
+        .glassCard(22)
+    }
+
+    private var lockedCard: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "lock.fill").font(.system(size: 22, weight: .heavy)).foregroundStyle(.white)
+                .frame(width: 50, height: 50).glassCircle()
+            Text("Clear the land at your Ranch to build a Contest Hall.")
+                .font(.rounded(14, .bold)).foregroundStyle(.white).multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(20)
         .glassCard(22)
     }
 

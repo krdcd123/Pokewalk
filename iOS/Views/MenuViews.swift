@@ -13,7 +13,7 @@ struct MainMenuView: View {
     var close: () -> Void = {}
 
     enum Dest: Hashable {
-        case pc, dex, bag, shop, journal, trainer, garden, ranch, achievements, settings, summary(UUID)
+        case pc, dex, bag, shop, journal, trainer, garden, ranch, frontier, achievements, settings, summary(UUID)
     }
 
     private struct Item: Identifiable { let dest: Dest; let title: String; let symbol: String; var id: String { title } }
@@ -71,7 +71,10 @@ struct MainMenuView: View {
                             .buttonStyle(.plain)
                     }
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 16) {
-                        ForEach(items) { item in
+                        // the Battle Frontier joins the menu once you're Champion
+                        let tiles = items + (FrontierRules.canBuild(store.state)
+                            ? [Item(dest: .frontier, title: "Battle Frontier", symbol: "building.columns.fill")] : [])
+                        ForEach(tiles) { item in
                             let title = item.title, symbol = item.symbol
                             NavigationLink(value: item.dest) {
                                 VStack(spacing: 10) {
@@ -122,6 +125,7 @@ struct MainMenuView: View {
                 case .trainer: TrainerCardView()
                 case .garden: ActivitiesView(tab: .garden)
                 case .ranch: ActivitiesView(tab: .ranch)
+                case .frontier: BattleFrontierHub().navigationTitle("Battle Frontier").glassScreen(transparent: true)
                 case .achievements: AchievementsView()
                 case .settings: SettingsView()
                 case .summary(let id): SummaryView(pokemonID: id)

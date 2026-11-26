@@ -571,6 +571,31 @@ final class GameStore: ObservableObject {
         return r
     }
 
+    func startContestProject() -> Bool {
+        guard ContestRules.canStart(state), state.contests.building == nil, let p = state.contests.nextProject,
+              canAfford(p) else { return false }
+        let end = Date().addingTimeInterval(p.hours * 3600)
+        mutate { s in
+            s.money -= p.money
+            for (m, n) in p.cost { s.ranch.materials[m.rawValue, default: 0] -= n }
+            s.contests.building = RanchBuild(project: p.id, startedAt: .now, endsAt: end)
+        }
+        notify(title: "\(p.name) is finished! 🎀", body: "Come and see the Contest Hall — \(p.reward).",
+               id: "contest-build", category: nil, at: end)
+        return true
+    }
+
+    @discardableResult
+    func finishContestProjectIfDone() -> RanchProject? {
+        guard let b = state.contests.building, b.endsAt <= .now,
+              let p = ContestRules.projects.first(where: { $0.id == b.project }) else { return nil }
+        mutate { s in
+            s.contests.building = nil
+            s.contests.built = max(s.contests.built, p.id + 1)
+        }
+        return p
+    }
+
     func startFrontierProject() -> Bool {
         guard FrontierRules.canBuild(state), state.frontier.building == nil, let p = state.frontier.nextProject,
               canAfford(p) else { return false }

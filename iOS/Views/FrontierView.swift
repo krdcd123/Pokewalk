@@ -8,6 +8,7 @@ struct FrontierView: View {
     var mode: FrontierRules.Mode = .gym
     @State private var battling: Fight?
     @State private var result: String?
+    @State private var frontierUnlocked = false
 
     struct Fight: Identifiable { let id = UUID(); let number: Int; let trainer: FrontierTrainer }
 
@@ -28,13 +29,20 @@ struct FrontierView: View {
             .padding()
         }
         .onAppear { store.refreshFrontier() }
+        .alert("You're the Champion! 🏆", isPresented: $frontierUnlocked) {
+            Button("Great!") { SoundKit.shared.play(.select) }
+        } message: {
+            Text("You can now build the Battle Frontier. It's in the Menu — build the Battle Tower to open it.")
+        }
         .fullScreenCover(item: $battling) { fight in
             BattleView(number: fight.number, trainer: fight.trainer) { won in
+                let couldBuild = FrontierRules.canBuild(store.state)
                 if let r = store.finishFrontierBattle(fight.number, trainer: fight.trainer, mode: mode, won: won) {
+                    if !couldBuild && FrontierRules.canBuild(store.state) { frontierUnlocked = true }
                     var text = "You won! " + FrontierRules.rewardText(r)
                     if fight.trainer.isLeader, let b = fight.trainer.badge { text += " · \(b)!" }
                     if fight.trainer.isChampion && !fight.trainer.isBrain && mode == .gym {
-                        text += " You're the Champion! You can now build the Battle Frontier."
+                        text += " You're the Champion!"
                     }
                     result = text
                 } else if !won {

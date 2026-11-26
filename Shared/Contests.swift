@@ -84,6 +84,8 @@ struct ContestRecord: Codable, Equatable, Hashable {
     var ribbons: [String: [String]] = [:]     // Pokémon id → ["cool-0", …]
     var wins = 0
     var entered = 0
+    var built = 0                             // Contest Hall projects finished
+    var building: RanchBuild?
 
     init() {}
     init(from decoder: Decoder) throws {
@@ -94,7 +96,15 @@ struct ContestRecord: Codable, Equatable, Hashable {
         ribbons = (try? c.decodeIfPresent([String: [String]].self, forKey: .ribbons)) ?? [:]
         wins = (try? c.decodeIfPresent(Int.self, forKey: .wins)) ?? 0
         entered = (try? c.decodeIfPresent(Int.self, forKey: .entered)) ?? 0
+        built = (try? c.decodeIfPresent(Int.self, forKey: .built)) ?? 0
+        building = try? c.decodeIfPresent(RanchBuild.self, forKey: .building)
+        // already entered contests before the hall had to be built: it's standing
+        if built == 0 && entered > 0 { built = 1 }
     }
+
+    func has(_ p: Int) -> Bool { built > p }
+    var open: Bool { has(0) }
+    var nextProject: RanchProject? { ContestRules.projects.first { $0.id == built } }
 
     func condition(_ id: UUID) -> [Int] { conditions[id.uuidString] ?? [0, 0, 0, 0, 0] }
     func ribbons(_ id: UUID) -> [String] { ribbons[id.uuidString] ?? [] }
@@ -114,19 +124,32 @@ enum ContestRules {
     static let rainbowBoost = 8
 
     /// 2 berries of one kind → a coloured block. One of each kind (5) → 2 Rainbow blocks.
+    /// Built on the ranch, like the Daycare.
+    static let projects: [RanchProject] = [
+        .init(id: 0, name: "Contest Hall", symbol: "rosette", text: "A stage, seats and a Berry Blender.",
+              cost: [.wood: 220, .stone: 120, .fibre: 120], money: 12_000, hours: 36, reward: "Pokéblocks & contests", ticket: nil),
+        .init(id: 1, name: "Deluxe Blender", symbol: "tornado", text: "A faster blender that wastes nothing.",
+              cost: [.stone: 200, .clay: 250], money: 25_000, hours: 48, reward: "Every blend makes an extra Pokéblock", ticket: nil),
+        .init(id: 2, name: "Grand Stage", symbol: "sparkles", text: "Lights, curtains and a bigger crowd.",
+              cost: [.wood: 400, .clay: 300, .fibre: 300], money: 50_000, hours: 96, reward: "Pokéblocks raise condition 50% more", ticket: nil),
+    ]
+    static func canStart(_ s: GameState) -> Bool { s.ranch.has(0) }
+
     static func blend(_ c: ContestCategory?, in s: inout GameState) -> Bool {
+        guard s.contests.open else { return false }
+        let extra = s.contests.has(1) ? 1 : 0
         if let c {
             guard (s.bag[c.berry] ?? 0) >= 2 else { return false }
             s.bag[c.berry, default: 0] -= 2
             if s.bag[c.berry] == 0 { s.bag[c.berry] = nil }
-            s.contests.blocks[c.rawValue, default: 0] += 1
+            s.contests.blocks[c.rawValue, default: 0] += 1 + extra
         } else {
             guard ContestCategory.allCases.allSatisfy({ (s.bag[$0.berry] ?? 0) >= 1 }) else { return false }
             for cat in ContestCategory.allCases {
                 s.bag[cat.berry, default: 0] -= 1
                 if s.bag[cat.berry] == 0 { s.bag[cat.berry] = nil }
             }
-            s.contests.blocks["rainbow", default: 0] += 2
+            s.contests.blocks["rainbow", default: 0] += 2 + extra
         }
         return true
     }
@@ -136,9 +159,10 @@ enum ContestRules {
         guard (s.contests.blocks[block] ?? 0) > 0, (s.contests.sheen[key] ?? 0) < maxSheen else { return false }
         var cond = s.contests.condition(id)
         if let c = ContestCategory(rawValue: block), let i = ContestCategory.allCases.firstIndex(of: c) {
-            cond[i] = min(255, cond[i] + blockBoost)
+            cond[i] = min(255, cond[i] + blockBoost * (s.contests.has(2) ? 3 : 2) / 2)
         } else {
-            cond = cond.map { min(255, $0 + rainbowBoost) }
+            let boost = rainbowBoost * (s.contests.has(2) ? 3 : 2) / 2
+            cond = cond.map { min(255, $0 + boost) }
         }
         s.contests.conditions[key] = cond
         s.contests.sheen[key] = min(maxSheen, (s.contests.sheen[key] ?? 0) + blockSheen)
