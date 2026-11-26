@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Party › Battle Frontier: five battles a day, each tougher (and paying more BP) than the last. The fifth is a
-/// Gym Leader — a different one each day, Monday to Saturday. Beat all six in a week and Sunday's fifth battle
-/// is the Champion or a legendary Frontier Brain.
+/// Party › Gym Challenge and Battle Frontier: five battles a day, each tougher (and paying more BP) than the last.
+/// Gym Challenge: four trainers, then your region's next Gym Leader — with all eight badges, the Elite Four and the
+/// Champion. Battle Frontier (built once you're Champion): Frontier trainers and a Frontier Brain. Three tries a day.
 struct FrontierView: View {
     @EnvironmentObject private var store: GameStore
+    var mode: FrontierRules.Mode = .gym
     @State private var battling: Fight?
     @State private var result: String?
 
@@ -16,7 +17,12 @@ struct FrontierView: View {
             VStack(spacing: 16) {
                 statusCard(f)
                 ladder(f)
-                weekCard(f)
+                if mode == .gym { journeyCard(f) }
+                if mode == .frontier, f.nextProject != nil || f.building != nil {
+                    BuildCard(projects: FrontierRules.projects, built: f.built, building: f.building,
+                              start: { store.startFrontierProject() },
+                              finish: { if let p = store.finishFrontierProjectIfDone() { result = "The \(p.name) is ready! \(p.reward)." } })
+                }
                 if !f.badges.isEmpty || !f.symbols.isEmpty { badgeCard(f) }
             }
             .padding()
@@ -24,24 +30,43 @@ struct FrontierView: View {
         .onAppear { store.refreshFrontier() }
         .fullScreenCover(item: $battling) { fight in
             BattleView(number: fight.number, trainer: fight.trainer) { won in
-                if let r = store.finishFrontierBattle(fight.number, trainer: fight.trainer, won: won) {
-                    result = "You won! " + FrontierRules.rewardText(r)
+                if let r = store.finishFrontierBattle(fight.number, trainer: fight.trainer, mode: mode, won: won) {
+                    var text = "You won! " + FrontierRules.rewardText(r)
+                    if fight.trainer.isLeader, let b = fight.trainer.badge { text += " · \(b)!" }
+                    if fight.trainer.isChampion && !fight.trainer.isBrain && mode == .gym {
+                        text += " You're the Champion! You can now build the Battle Frontier."
+                    }
+                    result = text
                 } else if !won {
-                    result = "You lost to \(fight.trainer.title) \(fight.trainer.name). Rest up and come back tomorrow!"
+                    let f = store.state.frontier
+                    let left = FrontierRules.maxLosses(mode, store.state) - f.losses(mode)
+                    result = left > 0
+                        ? "You lost to \(fight.trainer.title) \(fight.trainer.name). \(left) \(left == 1 ? "try" : "tries") left today."
+                        : "You lost to \(fight.trainer.title) \(fight.trainer.name). No tries left — come back tomorrow!"
                 }
                 battling = nil
             }
         }
     }
 
+    private var title: String {
+        if mode == .frontier { return "Battle Frontier" }
+        return FrontierRules.isLeagueDay(store.state) ? "Pokémon League" : "Gym Challenge"
+    }
+
     private func statusCard(_ f: Frontier) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let won = f.won(mode), done = f.done(mode)
+        let limit = FrontierRules.maxLosses(mode, store.state)
+        let tries = max(0, limit - f.losses(mode))
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Image(systemName: "flag.2.crossed.fill").font(.system(size: 26, weight: .bold)).foregroundStyle(.orange)
+                Image(systemName: mode == .frontier ? "building.columns.fill" : "flag.2.crossed.fill")
+                    .font(.system(size: 26, weight: .bold)).foregroundStyle(.orange)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Today's run: \(f.won)/5").font(.rounded(22, .black)).foregroundStyle(.white)
-                    Text(f.lost ? "Defeated — the Frontier reopens tomorrow." : f.won == 5 ? "Cleared! Come back tomorrow for more." : "Your party battles in order; win to move on.")
-                        .font(.rounded(13, .bold)).foregroundStyle(f.lost ? .orange : Theme.inkSoft)
+                    Text("\(title): \(won)/5").font(.rounded(22, .black)).foregroundStyle(.white)
+                    Text(done ? "Out of tries — it reopens tomorrow." : won == 5 ? "Cleared! Come back tomorrow for more."
+                         : "\(tries) of \(limit) tries left today · lose and you can try that battle again.")
+                        .font(.rounded(13, .bold)).foregroundStyle(done ? .orange : Theme.inkSoft)
                 }
                 Spacer()
             }
@@ -53,7 +78,7 @@ struct FrontierView: View {
                 Text("\(f.bp) BP").font(.rounded(15, .black)).foregroundStyle(.white)
                 Text("· spend them at the Poké Mart's BP counter").font(.rounded(12, .semibold)).foregroundStyle(Theme.inkSoft)
             }
-            Text("Your Pokémon's levels set the trainers' levels, so it's always a fair fight. \(f.totalWins) wins in total.")
+            Text("New trainers every day. Your Pokémon's levels set theirs, and every Pokémon gets four random moves from everything it can learn.")
                 .font(.rounded(12, .semibold)).foregroundStyle(Theme.inkSoft)
         }
         .padding(14)
@@ -61,38 +86,40 @@ struct FrontierView: View {
     }
 
     private func ladder(_ f: Frontier) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let won = f.won(mode), done = f.done(mode)
+        return VStack(alignment: .leading, spacing: 10) {
             ForEach(1...5, id: \.self) { n in
-                let t = FrontierRules.trainer(for: n, in: store.state)
-                let isNext = n == f.won + 1 && !f.lost
-                let won = n <= f.won
+                let t = FrontierRules.trainer(for: n, in: store.state, mode: mode)
+                let isNext = n == won + 1 && !done
+                let beaten = n <= won
+                let shown = beaten || isNext || n == 5 || t.isElite
                 HStack(spacing: 12) {
                     ZStack {
-                        Circle().fill(won ? Color.green.opacity(0.55) : isNext ? Color.orange.opacity(0.55) : Color.white.opacity(0.08))
+                        Circle().fill(beaten ? Color.green.opacity(0.55) : isNext ? Color.orange.opacity(0.55) : Color.white.opacity(0.08))
                             .frame(width: 44, height: 44)
-                        TrainerOverworld(pic: t.pic, gen: BattleGen.of(store.state.trainer.style), hidden: !(won || isNext || n == 5))
+                        TrainerOverworld(pic: t.pic, gen: BattleGen.of(store.state.trainer.style), hidden: !shown)
                             .frame(width: 34, height: 40)
-                        if won {
+                        if beaten {
                             Image(systemName: "checkmark.circle.fill").font(.system(size: 15, weight: .black))
                                 .foregroundStyle(.white, .green).offset(x: 15, y: 15)
                         }
                     }
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(won || isNext || n == 5 ? "\(t.title) \(t.name)" : "???").font(.rounded(15, .heavy)).foregroundStyle(.white)
-                        Text(won || isNext ? "\(t.team.count) Pokémon · Lv. \(t.team.map(\.level).max() ?? 0)" + (t.intro.isEmpty ? "" : " · \(t.intro)")
+                        Text(shown ? "\(t.title) \(t.name)" : "???").font(.rounded(15, .heavy)).foregroundStyle(.white)
+                        Text(beaten || isNext ? "\(t.team.count) Pokémon · Lv. \(t.team.map(\.level).max() ?? 0)" + (t.intro.isEmpty ? "" : " · \(t.intro)")
                              : n == 5 ? t.intro : "A tougher trainer")
                             .font(.rounded(11, .semibold)).foregroundStyle(Theme.inkSoft)
-                        Text(FrontierRules.rewardText(FrontierRules.reward(for: n, champion: t.isChampion)))
+                        Text(FrontierRules.rewardText(FrontierRules.reward(for: n, trainer: t, mode: mode, in: store.state)))
                             .font(.rounded(11, .bold)).foregroundStyle(Color(hex: 0xF5C542))
                     }
                     Spacer()
-                    if isNext && f.won < 5 {
+                    if isNext && won < 5 {
                         Button {
                             SoundKit.shared.play(.menuOpen)
                             result = nil
                             battling = Fight(number: n, trainer: t)
                         } label: {
-                            Text("Battle!").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                            Text(f.losses(mode) > 0 && n == won + 1 ? "Retry!" : "Battle!").font(.rounded(14, .heavy)).foregroundStyle(.white)
                                 .padding(.horizontal, 14).padding(.vertical, 8)
                                 .glassCapsule(tint: .orange, interactive: true)
                         }
@@ -105,26 +132,29 @@ struct FrontierView: View {
         .glassCard(22)
     }
 
-    private func weekCard(_ f: Frontier) -> some View {
-        let regionKeys = Set(FrontierRules.leaders(FrontierRules.region(store.state)).map(\.key))
-        let beaten = f.week == Swarm.week() ? Set(f.leadersBeaten).intersection(regionKeys) : []
+    /// Your Gym journey: the region's eight leaders in order, then the League.
+    private func journeyCard(_ f: Frontier) -> some View {
+        let leaders = FrontierRules.allLeaders(FrontierRules.region(store.state))
+        let next = FrontierRules.nextLeader(store.state)
+        let champ = FrontierRules.isChampion(store.state)
         return VStack(alignment: .leading, spacing: 8) {
-            Text("This week's Gym Leaders").font(.rounded(16, .heavy)).foregroundStyle(.white)
-            HStack(spacing: 6) {
-                ForEach(Array(FrontierRules.leaders(FrontierRules.region(store.state)).enumerated()), id: \.offset) { i, l in
+            Text("Gym journey").font(.rounded(16, .heavy)).foregroundStyle(.white)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 10) {
+                ForEach(Array(leaders.enumerated()), id: \.offset) { i, l in
+                    let have = f.badges.contains(l.key)
                     VStack(spacing: 2) {
-                        Image(systemName: beaten.contains(l.key) ? "shield.lefthalf.filled" : "shield")
+                        Image(systemName: have ? "seal.fill" : l.key == next?.key ? "seal" : "lock.fill")
                             .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(beaten.contains(l.key) ? Color(hex: l.type.hex) : Theme.inkSoft)
-                        Text(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][i]).font(.rounded(10, .heavy)).foregroundStyle(.white)
-                        Text(l.name).font(.rounded(9, .bold)).foregroundStyle(Theme.inkSoft).lineLimit(1).minimumScaleFactor(0.7)
+                            .foregroundStyle(have ? Color(hex: l.type.hex) : l.key == next?.key ? .orange : Theme.inkSoft)
+                        Text("\(i + 1). \(l.name)").font(.rounded(10, .heavy)).foregroundStyle(.white).lineLimit(1).minimumScaleFactor(0.7)
+                        Text(l.badge).font(.rounded(9, .bold)).foregroundStyle(Theme.inkSoft).lineLimit(1).minimumScaleFactor(0.7)
                     }
                     .frame(maxWidth: .infinity)
                 }
             }
-            let sunday = FrontierRules.sundayLeader(FrontierRules.region(store.state))
-            Text(beaten.count >= 6 ? "All six beaten! Sunday's 5th battle is the Champion or a Frontier Brain."
-                 : "Beat all six this week (\(beaten.count)/6) and Sunday's 5th battle is the Champion or a legendary Frontier Brain. Otherwise it's \(sunday.name).")
+            Text(next.map { "Next: \($0.name) (\($0.type.displayName)) — the 5th battle of each day until you win the \($0.badge)." }
+                 ?? (champ ? "You're the Champion! Gym Leaders take turns for rematches, and the League rematch is on Sundays."
+                           : "All eight badges! Today's run is the Pokémon League: the Elite Four, then the Champion."))
                 .font(.rounded(12, .semibold)).foregroundStyle(Theme.inkSoft)
         }
         .padding(14)
@@ -157,6 +187,45 @@ struct FrontierView: View {
         }
         .padding(14)
         .glassCard(22)
+    }
+}
+
+/// Party › Battle Frontier: locked until you're Champion, then built like the Daycare.
+struct BattleFrontierHub: View {
+    @EnvironmentObject private var store: GameStore
+    @State private var says: String?
+
+    var body: some View {
+        let f = store.state.frontier
+        Group {
+            if f.open {
+                FrontierView(mode: .frontier)
+            } else {
+                ScrollView {
+                    VStack(spacing: 16) {
+                        VStack(spacing: 8) {
+                            Image(systemName: FrontierRules.canBuild(store.state) ? "building.columns.fill" : "lock.fill")
+                                .font(.system(size: 22, weight: .heavy)).foregroundStyle(.white)
+                                .frame(width: 50, height: 50).glassCircle()
+                            Text(says ?? (FrontierRules.canBuild(store.state)
+                                 ? "You're the Champion! Build the Battle Tower to open the Battle Frontier."
+                                 : "Win all eight badges in the Gym Challenge, then beat the Elite Four and the Champion. After that you can build the Battle Frontier."))
+                                .font(.rounded(14, .bold)).foregroundStyle(.white).multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(20)
+                        .glassCard(22)
+                        if FrontierRules.canBuild(store.state) {
+                            BuildCard(projects: FrontierRules.projects, built: f.built, building: f.building,
+                                      start: { store.startFrontierProject() },
+                                      finish: { if let p = store.finishFrontierProjectIfDone() { says = "The \(p.name) is ready! \(p.reward)." } })
+                        }
+                    }
+                    .padding()
+                }
+            }
+        }
+        .onAppear { store.finishFrontierProjectIfDone() }
     }
 }
 
@@ -740,7 +809,7 @@ struct BattleView: View {
 
     private func startMusic() {
         let key: String
-        if trainer.isChampion { key = trainer.title == "Champion" ? "elite" : "brain" }
+        if trainer.isChampion || trainer.isElite { key = trainer.isBrain ? "brain" : "elite" }
         else if trainer.isLeader { key = "leader" }
         else { key = gen.rawValue }
         if let t = BattleAudio.tracks[key] { BattleAudio.shared.startMusic(t) }

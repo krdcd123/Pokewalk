@@ -93,6 +93,7 @@ enum MoveData {
     private struct File: Codable {
         let moves: [MoveInfo]
         let learnsets: [String: [[Int]]]
+        let allMoves: [String: [Int]]?
         let gen3Types: [String: [String]]
         let weights: [String: Int]?
     }
@@ -139,16 +140,53 @@ enum MoveData {
         return !m.status && ((m.power ?? 0) > 0 || fixedDamage.contains(m.key) || variablePower.contains(m.key))
     }
 
-    /// Four random moves from everything it could have learned by levelling up to `level` (at least one that does damage).
+    /// Moves the battle engine doesn't support (they'd only ever fail).
+    static let unsupported: Set<String> = ["baton-pass", "trick", "recycle", "snatch", "assist", "imprison", "grudge",
+                                           "follow-me", "helping-hand", "struggle", "sketch"]
+
+    /// How many species can learn each move.
+    private static let common: [Int: Int] = {
+        var n: [Int: Int] = [:]
+        for list in (file?.allMoves ?? [:]).values { for id in list { n[id, default: 0] += 1 } }
+        return n
+    }()
+
+    /// Everything a Pokémon can learn in Gen 3 — level-up, TMs/HMs, tutors and Egg moves, its earlier forms' too.
+    static func fullPool(_ species: Int) -> [Int] {
+        var ids = Set<Int>()
+        var sp: Int? = species
+        var guardCount = 0
+        while let cur = sp, guardCount < 4 {
+            ids.formUnion(file?.allMoves?[String(cur)] ?? [])
+            ids.formUnion(learnset(cur).map(\.1))
+            sp = Dex.species(cur).evolvesFrom
+            guardCount += 1
+        }
+        return ids.filter { info($0).map { !unsupported.contains($0.key) } ?? false }.sorted()
+    }
+
+    /// Four random moves from everything the species can learn — always four, with at least one (two if it can)
+    /// that does damage. Pokémon that learn fewer than four (Magikarp, Ditto, Unown…) are topped up with attacks of their type.
     static func randomSet<R: RandomNumberGenerator>(species: Int, level: Int, using rng: inout R) -> [Int] {
-        let pool = pool(species, level)
-        guard !pool.isEmpty else { return [33] }       // Tackle
+        let pool = fullPool(species)
         var picks = Array(pool.shuffled(using: &rng).prefix(4))
         let damaging = pool.filter(doesDamage)
-        if !picks.contains(where: { damaging.contains($0) }), let d = damaging.randomElement(using: &rng) {
-            picks[picks.count - 1] = d
+        let wantDamaging = min(2, damaging.count)
+        while picks.filter(doesDamage).count < wantDamaging,
+              let d = damaging.filter({ !picks.contains($0) }).randomElement(using: &rng),
+              let swap = picks.lastIndex(where: { !doesDamage($0) }) {
+            picks[swap] = d
         }
-        return picks
+        if picks.count < 4 {
+            let types = Set(types(species))
+            let extra = all.filter { m in
+                !picks.contains(m.id) && !unsupported.contains(m.key) && doesDamage(m.id) && (m.power ?? 0) <= 90
+                    && (common[m.id] ?? 0) >= 15                       // no one's signature move
+                    && (types.contains(m.type) || m.type == .normal)
+            }.map(\.id).shuffled(using: &rng)
+            for id in extra where picks.count < 4 { picks.append(id) }
+        }
+        return picks.isEmpty ? [33] : picks
     }
 
     /// A trainer's set: its strongest attacks (one per type, so it has coverage) and something useful.
@@ -351,8 +389,8 @@ struct BattleMon: Identifiable, Hashable {
         self.hp = st[0]
         self.friendship = friendship
         self.ability = ability ?? Self.gen3Ability(speciesID, using: &rng)
-        self.moves = (trainer ? MoveData.trainerSet(species: speciesID, level: level, types: t, using: &rng)
-                              : MoveData.randomSet(species: speciesID, level: level, using: &rng)).map { BattleMove(id: $0) }
+        // Frontier rules: both sides get four random moves from everything the species can learn
+        self.moves = MoveData.randomSet(species: speciesID, level: level, using: &rng).map { BattleMove(id: $0) }
     }
 
     init(owned m: OwnedPokemon) {

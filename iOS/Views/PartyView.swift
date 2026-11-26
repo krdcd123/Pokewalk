@@ -5,22 +5,28 @@ import SwiftUI
 struct PartyView: View {
     @EnvironmentObject private var store: GameStore
     @State private var open: UUID?
-    @State private var frontier = false
+    enum Tab { case party, gyms, frontier }
+    @State private var tab: Tab = .party
 
     private let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("View", selection: $frontier) {
-                Label("Party", systemImage: "circle.grid.2x2.fill").tag(false)
-                Label("Battle Frontier", systemImage: "flag.2.crossed.fill").tag(true)
+            Picker("View", selection: $tab) {
+                Label("Party", systemImage: "circle.grid.2x2.fill").tag(Tab.party)
+                Label("Gyms", systemImage: "flag.2.crossed.fill").tag(Tab.gyms)
+                Label("Frontier", systemImage: "building.columns.fill").tag(Tab.frontier)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal).padding(.top, 6)
-            .onChange(of: frontier) { _, _ in SoundKit.shared.play(.select) }
-            if frontier { FrontierView().frame(maxHeight: .infinity) } else { partyGrid }
+            .onChange(of: tab) { _, _ in SoundKit.shared.play(.select) }
+            switch tab {
+            case .party: partyGrid
+            case .gyms: FrontierView(mode: .gym).frame(maxHeight: .infinity)
+            case .frontier: BattleFrontierHub().frame(maxHeight: .infinity)
+            }
         }
-        .navigationTitle(frontier ? "Battle Frontier" : "Party")
+        .navigationTitle(tab == .party ? "Party" : tab == .gyms ? "Gym Challenge" : "Battle Frontier")
         .glassScreen(transparent: true)
         .navigationDestination(item: $open) { id in
             PagedSummaryView(ids: store.state.partyIDs, start: id)

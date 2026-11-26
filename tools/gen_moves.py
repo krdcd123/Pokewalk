@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds Shared/Resources/moves.json from PokéAPI's CSVs: Gen 3 (Emerald) move data and level-up learnsets.
+"""Builds Shared/Resources/moves.json from PokéAPI's CSVs: Gen 3 (Emerald) move data, level-up learnsets and full Gen 3 move pools.
 
 Usage: gen_moves.py <csv dir> <pogo_assets move sound list> <out.json>
 Move data is rolled back to its Emerald values with move_changelog (power/accuracy/type changes in later games).
@@ -53,6 +53,15 @@ for r in csv.DictReader(open(f"{d}/pokemon_moves.csv", encoding="utf-8")):
         if p <= 386 and mv in moves: learn[p].add((int(r["level"]), mv))
 learnsets = {str(p): sorted([lv, mv] for lv, mv in learn[p]) for p in range(1, 387)}
 
+# Everything each Pokémon can learn in Gen 3 (Ruby/Sapphire, Emerald, FireRed/LeafGreen):
+# level-up, Egg moves, tutors and TMs/HMs — the Frontier's random movesets come from this.
+pool = collections.defaultdict(set)
+for r in csv.DictReader(open(f"{d}/pokemon_moves.csv", encoding="utf-8")):
+    if r["version_group_id"] in ("5", "6", "7") and r["pokemon_move_method_id"] in ("1", "2", "3", "4"):
+        p, mv = int(r["pokemon_id"]), int(r["move_id"])
+        if p <= 386 and mv in moves: pool[p].add(mv)
+allmoves = {str(p): sorted(pool[p]) for p in range(1, 387)}
+
 # Types before Fairy existed (Clefairy was Normal, Marill Water…)
 gen3types = {}
 past = collections.defaultdict(list)
@@ -83,6 +92,6 @@ for m in moves.values(): m["sound"] = sound.get(m["key"])
 # Weights (hectograms) for Low Kick
 weights = {r["id"]: int(r["weight"]) for r in rows("pokemon") if int(r["id"]) <= 386}
 
-json.dump({"moves": list(moves.values()), "learnsets": learnsets, "gen3Types": gen3types, "weights": weights},
+json.dump({"moves": list(moves.values()), "learnsets": learnsets, "allMoves": allmoves, "gen3Types": gen3types, "weights": weights},
           open(out, "w"), separators=(",", ":"))
 print(len(moves), "moves;", sum(1 for m in moves.values() if m["key"] in by_slug), "exact sounds;", len(gen3types), "gen3 type fixes")

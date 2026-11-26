@@ -531,18 +531,29 @@ final class GameStore: ObservableObject {
         if t.frontier != state.frontier { mutate { FrontierRules.refresh(&$0) } }
     }
 
-    /// Records a Frontier battle. Returns the reward if won.
-    func finishFrontierBattle(_ battle: Int, trainer: FrontierTrainer, won: Bool) -> FrontierRules.Reward? {
+    /// Records a Gym Challenge / Battle Frontier battle. Returns the reward if won. Three losses a day and you're done.
+    func finishFrontierBattle(_ battle: Int, trainer: FrontierTrainer, mode: FrontierRules.Mode = .gym, won: Bool) -> FrontierRules.Reward? {
         refreshFrontier()
-        guard state.frontier.won == battle - 1, !state.frontier.lost else { return nil }
+        let f = state.frontier
+        guard f.won(mode) == battle - 1, !f.done(mode) else { return nil }
         guard won else {
-            mutate { $0.frontier.lost = true }
+            let limit = FrontierRules.maxLosses(mode, state)
+            mutate { s in
+                if mode == .gym {
+                    s.frontier.losses += 1
+                    if s.frontier.losses >= limit { s.frontier.lost = true }
+                } else {
+                    s.frontier.fLosses += 1
+                    if s.frontier.fLosses >= limit { s.frontier.fLost = true }
+                }
+            }
             return nil
         }
-        let r = FrontierRules.reward(for: battle, champion: trainer.isChampion)
+        let r = FrontierRules.reward(for: battle, trainer: trainer, mode: mode, in: state)
         let leaderKey: String? = trainer.isLeader ? FrontierRules.everyLeader.first(where: { "leader_" + $0.key == trainer.pic })?.key : nil
+        let region = FrontierRules.region(state).rawValue
         mutate { s in
-            s.frontier.won = battle
+            if mode == .gym { s.frontier.won = battle } else { s.frontier.fWon = battle }
             s.frontier.totalWins += 1
             s.stats["frontierWins", default: 0] += 1
             s.frontier.bp += r.bp
@@ -552,11 +563,37 @@ final class GameStore: ObservableObject {
                 if !s.frontier.badges.contains(key) { s.frontier.badges.append(key) }
             }
             if trainer.isChampion, !s.frontier.symbols.contains(trainer.name) { s.frontier.symbols.append(trainer.name) }
+            if trainer.isChampion, mode == .gym, !s.frontier.champions.contains(region) { s.frontier.champions.append(region) }
             if trainer.isChampion { s.stats["championWins", default: 0] += 1 }
             // battling raises friendship a little
             for id in s.partyIDs { if let i = s.index(of: id) { s.pokemon[i].friendship = min(255, s.pokemon[i].friendship + 1) } }
         }
         return r
+    }
+
+    func startFrontierProject() -> Bool {
+        guard FrontierRules.canBuild(state), state.frontier.building == nil, let p = state.frontier.nextProject,
+              canAfford(p) else { return false }
+        let end = Date().addingTimeInterval(p.hours * 3600)
+        mutate { s in
+            s.money -= p.money
+            for (m, n) in p.cost { s.ranch.materials[m.rawValue, default: 0] -= n }
+            s.frontier.building = RanchBuild(project: p.id, startedAt: .now, endsAt: end)
+        }
+        notify(title: "\(p.name) is finished! 🏆", body: "Come and see the Battle Frontier — \(p.reward).",
+               id: "frontier-build", category: nil, at: end)
+        return true
+    }
+
+    @discardableResult
+    func finishFrontierProjectIfDone() -> RanchProject? {
+        guard let b = state.frontier.building, b.endsAt <= .now,
+              let p = FrontierRules.projects.first(where: { $0.id == b.project }) else { return nil }
+        mutate { s in
+            s.frontier.building = nil
+            s.frontier.built = max(s.frontier.built, p.id + 1)
+        }
+        return p
     }
 
     // MARK: Contests
@@ -1341,7 +1378,7 @@ final class GameStore: ObservableObject {
         a.frontierWon = s.frontier.day == FrontierRules.today() ? s.frontier.won : 0
         a.frontierLost = s.frontier.day == FrontierRules.today() && s.frontier.lost
         a.badges = s.frontier.badges.count
-        a.leaderToday = FrontierRules.leaderToday(FrontierRules.region(s)).name
+        a.leaderToday = FrontierRules.isLeagueDay(s) ? "Pokémon League" : FrontierRules.nextLeader(s)?.name ?? "Gym rematch"
         a.contestWins = s.contests.wins
         a.ribbons = s.contests.ribbons.values.reduce(0) { $0 + $1.count }
         a.season = Season.at().name
