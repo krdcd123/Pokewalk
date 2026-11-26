@@ -379,10 +379,10 @@ struct MapHomeView: View {
                                 HStack(spacing: 5) {
                                     Image(systemName: "moon.zzz.fill").foregroundStyle(Color(hex: 0x9AA7FF))
                                         .symbolEffect(.pulse, options: .repeating)
-                                    Text("SLEEPING").font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft)
+                                    Text("GOODNIGHT").font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft)
                                 }
-                                Text(recorder.asleepSince.map { "Since \(SleepFormat.time($0))" } ?? "Goodnight")
-                                    .font(.rounded(22, .black))
+                                // No clock time here: the night's story is revealed in the morning
+                                Text("Time to sleep").font(.rounded(22, .black))
                                 Text("Listening for sleep talking").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                                 Text("\(store.stepsToday.formatted()) steps today").font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                             }

@@ -314,6 +314,7 @@ extension BattleGfx {
 /// (needed to apply the game's own palettes). Handles 1/2/4/8-bit, colour type 0 or 3, not interlaced.
 struct IndexedPNG {
     let w: Int, h: Int
+    var depth = 8
     let indices: [UInt8]
     let palette: [(UInt8, UInt8, UInt8)]?
 
@@ -374,7 +375,7 @@ struct IndexedPNG {
             }
             prev = line
         }
-        w = W; h = H; indices = out; palette = pal
+        w = W; h = H; indices = out; palette = pal; self.depth = depth
     }
 
     struct Rendered {

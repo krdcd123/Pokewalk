@@ -2,8 +2,7 @@ import Foundation
 
 // MARK: - Battles (Battle Frontier)
 //
-// A compact Gen 3-style battle: real base stats, levels and natures, type matchups, STAB, critical hits.
-// Each Pokémon gets moves from its types (stronger ones at higher levels) plus a Normal-type move.
+// Gen 3 battles: the engine is in BattleEngine.swift (real Emerald moves, learnsets and effects).
 
 enum TypeChart {
     private static let se: [PokeType: [PokeType]] = [
@@ -20,7 +19,7 @@ enum TypeChart {
         .ice: [.fire, .water, .ice, .steel], .fighting: [.poison, .flying, .psychic, .bug, .fairy],
         .poison: [.poison, .ground, .rock, .ghost], .ground: [.grass, .bug], .flying: [.electric, .rock, .steel],
         .psychic: [.psychic, .steel], .bug: [.fire, .fighting, .poison, .flying, .ghost, .steel, .fairy],
-        .rock: [.fighting, .ground, .steel], .ghost: [.dark], .dragon: [.steel], .dark: [.fighting, .dark, .fairy],
+        .rock: [.fighting, .ground, .steel], .ghost: [.dark, .steel], .dragon: [.steel], .dark: [.fighting, .dark, .fairy, .steel],
         .steel: [.fire, .water, .electric, .steel], .fairy: [.fire, .poison, .steel],
     ]
     private static let immune: [PokeType: [PokeType]] = [
@@ -35,133 +34,6 @@ enum TypeChart {
             if nve[move]?.contains(t) == true { return m * 0.5 }
             return m
         }
-    }
-}
-
-struct BattleMove: Hashable {
-    let name: String
-    let type: PokeType
-    let power: Int
-    let special: Bool
-
-    /// Three strengths per type and category: early, mid and late game.
-    private static let names: [PokeType: (phys: [String], spec: [String])] = [
-        .normal: (["Tackle", "Body Slam", "Double-Edge"], ["Swift", "Hyper Voice", "Hyper Beam"]),
-        .fire: (["Fire Fang", "Fire Punch", "Flare Blitz"], ["Ember", "Flamethrower", "Fire Blast"]),
-        .water: (["Aqua Jet", "Waterfall", "Aqua Tail"], ["Water Gun", "Surf", "Hydro Pump"]),
-        .grass: (["Vine Whip", "Razor Leaf", "Leaf Blade"], ["Absorb", "Giga Drain", "Solar Beam"]),
-        .electric: (["Spark", "Thunder Punch", "Wild Charge"], ["Thunder Shock", "Thunderbolt", "Thunder"]),
-        .ice: (["Ice Shard", "Ice Punch", "Icicle Crash"], ["Powder Snow", "Ice Beam", "Blizzard"]),
-        .fighting: (["Karate Chop", "Brick Break", "Close Combat"], ["Vacuum Wave", "Aura Sphere", "Focus Blast"]),
-        .poison: (["Poison Sting", "Poison Jab", "Gunk Shot"], ["Acid", "Sludge Bomb", "Sludge Wave"]),
-        .ground: (["Mud-Slap", "Dig", "Earthquake"], ["Mud Shot", "Earth Power", "Earth Power"]),
-        .flying: (["Peck", "Aerial Ace", "Brave Bird"], ["Gust", "Air Slash", "Hurricane"]),
-        .psychic: (["Confusion", "Zen Headbutt", "Psycho Cut"], ["Confusion", "Psychic", "Psystrike"]),
-        .bug: (["Bug Bite", "X-Scissor", "Megahorn"], ["Struggle Bug", "Signal Beam", "Bug Buzz"]),
-        .rock: (["Rock Throw", "Rock Slide", "Stone Edge"], ["Rock Throw", "Power Gem", "Power Gem"]),
-        .ghost: (["Lick", "Shadow Claw", "Shadow Claw"], ["Astonish", "Shadow Ball", "Shadow Ball"]),
-        .dragon: (["Dragon Tail", "Dragon Claw", "Outrage"], ["Twister", "Dragon Pulse", "Draco Meteor"]),
-        .dark: (["Bite", "Crunch", "Night Slash"], ["Snarl", "Dark Pulse", "Dark Pulse"]),
-        .steel: (["Metal Claw", "Iron Head", "Iron Tail"], ["Mirror Shot", "Flash Cannon", "Flash Cannon"]),
-        .fairy: (["Fairy Wind", "Play Rough", "Play Rough"], ["Disarming Voice", "Dazzling Gleam", "Moonblast"]),
-    ]
-    private static let powers = [[40, 75, 100], [40, 80, 110]]   // normal-type moves are a bit weaker per tier
-
-    static func make(_ type: PokeType, level: Int, special: Bool) -> BattleMove {
-        let tier = level < 22 ? 0 : level < 42 ? 1 : 2
-        let n = names[type]!
-        let power = type == .normal ? [40, 70, 90][tier] : powers[1][tier]
-        return BattleMove(name: (special ? n.spec : n.phys)[tier], type: type, power: power, special: special)
-    }
-}
-
-struct BattleMon: Identifiable, Hashable {
-    let id = UUID()
-    let ownedID: UUID?
-    let speciesID: Int
-    let name: String
-    let level: Int
-    let isShiny: Bool
-    let types: [PokeType]
-    let stats: [Int]          // hp, atk, def, spa, spd, spe
-    var hp: Int
-    let moves: [BattleMove]
-    var friendship = 70
-
-    var maxHP: Int { stats[0] }
-    var fainted: Bool { hp <= 0 }
-
-    init(speciesID: Int, level: Int, nature: String, isShiny: Bool = false, name: String? = nil,
-         ownedID: UUID? = nil, friendship: Int = 70) {
-        let sp = Dex.species(speciesID)
-        let base = SpeciesData.stats(speciesID)
-        let ni = Dex.natures.firstIndex(of: nature) ?? 0
-        let up = ni / 5 + 1, down = ni % 5 + 1        // stat index raised / lowered (1 atk … 5 spe order differs below)
-        // nature order: Atk, Def, Spe, SpA, SpD → our stat indices 1, 2, 5, 3, 4
-        let map = [1, 2, 5, 3, 4]
-        var st: [Int] = []
-        for i in 0..<6 {
-            if i == 0 {
-                st.append((2 * base[0] + 15) * level / 100 + level + 10)
-            } else {
-                var v = Double((2 * base[i] + 15) * level / 100 + 5)
-                if up != down {
-                    if map[up - 1] == i { v *= 1.1 }
-                    if map[down - 1] == i { v *= 0.9 }
-                }
-                st.append(Int(v))
-            }
-        }
-        self.ownedID = ownedID
-        self.speciesID = speciesID
-        self.name = name ?? sp.name
-        self.level = level
-        self.isShiny = isShiny
-        self.types = sp.types
-        self.stats = st
-        self.hp = st[0]
-        self.friendship = friendship
-        let special = base[3] > base[1]
-        var moves = sp.types.map { BattleMove.make($0, level: level, special: special) }
-        if !sp.types.contains(.normal) { moves.append(BattleMove.make(.normal, level: level, special: special)) }
-        // a coverage move from a type that's good against what this Pokémon is weak to
-        let coverage: [PokeType: PokeType] = [.fire: .ground, .water: .ice, .grass: .poison, .electric: .steel, .rock: .ground,
-                                               .ground: .rock, .flying: .steel, .psychic: .fairy, .bug: .flying, .ghost: .dark,
-                                               .dragon: .fire, .dark: .fighting, .steel: .ground, .fairy: .psychic,
-                                               .ice: .water, .fighting: .rock, .poison: .ground, .normal: .fighting]
-        if let c = coverage[sp.types[0]], !moves.contains(where: { $0.type == c }), level >= 15 {
-            moves.append(BattleMove.make(c, level: max(1, level - 10), special: special))
-        }
-        self.moves = Array(moves.prefix(4))
-    }
-
-    init(owned m: OwnedPokemon) {
-        self.init(speciesID: m.speciesID, level: m.level, nature: m.nature, isShiny: m.isShiny, name: m.name,
-                  ownedID: m.id, friendship: m.friendship)
-    }
-}
-
-enum BattleMath {
-    struct Hit { var damage: Int; var effectiveness: Double; var crit: Bool }
-
-    static func hit(_ move: BattleMove, from a: BattleMon, to d: BattleMon, random: Bool = true) -> Hit {
-        let atk = Double(move.special ? a.stats[3] : a.stats[1])
-        let def = Double(move.special ? d.stats[4] : d.stats[2])
-        let eff = TypeChart.multiplier(move.type, against: d.types)
-        let stab = a.types.contains(move.type) ? 1.5 : 1
-        let crit = random && Int.random(in: 0..<16) == 0
-        let roll = random ? Double.random(in: 0.85...1) : 0.92
-        // Friendship: a well-loved Pokémon hits a little harder (up to +10%)
-        let love = 1 + Double(max(0, a.friendship - 70)) / 1850
-        var dmg = ((2 * Double(a.level) / 5 + 2) * Double(move.power) * atk / max(1, def)) / 50 + 2
-        dmg *= stab * eff * roll * (crit ? 1.5 : 1) * love
-        return Hit(damage: eff == 0 ? 0 : max(1, Int(dmg)), effectiveness: eff, crit: crit)
-    }
-
-    /// The trainer AI: usually the strongest hit, sometimes something else.
-    static func aiMove(_ a: BattleMon, vs d: BattleMon) -> BattleMove {
-        if Double.random(in: 0..<1) < 0.15 { return a.moves.randomElement()! }
-        return a.moves.max { hit($0, from: a, to: d, random: false).damage < hit($1, from: a, to: d, random: false).damage }!
     }
 }
 

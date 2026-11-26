@@ -197,6 +197,10 @@ struct BattleView: View {
     private struct Flight { let from: CGPoint; let to: CGPoint; let arc: CGFloat; let start: Date; let duration: Double }
 
     private var style: TrainerStyle { store.state.trainer.style }
+    /// Red → Red/Blue's battle screen, Gold/Kris → Crystal's, everyone else → Emerald's
+    private var gen: BattleGen { BattleGen.of(style) }
+    @State private var shownHP: [UUID: Int] = [:]      // what the HP bars show (they drain smoothly)
+    @ObservedObject private var audio = BattleAudio.shared
 
     // The scene is laid out on a 200 px wide "GBA" canvas as tall as the top half allows (vh), spread out like
     // Emerald's: foe box top left, foe on its platform to the right, you bottom left, your box bottom right.
@@ -220,8 +224,8 @@ struct BattleView: View {
                 VStack(spacing: 12) {
                     // Emerald's scene in a glass frame
                     ZStack(alignment: .topLeading) {
-                        Color(hex: 0xF6F6FF)
-                        if let wall {
+                        Color(hex: gen.isGameBoy ? 0xF8F8F8 : 0xF6F6FF)
+                        if !gen.isGameBoy, let wall {
                             // Emerald's Frontier wall, its stripes carried down the whole height
                             Image(uiImage: wall).interpolation(.none).resizable()
                                 .frame(width: sceneW, height: wall.size.height * s)
@@ -250,7 +254,19 @@ struct BattleView: View {
                             .animation(nil, value: text)
                         controls
                         Spacer(minLength: 0)
-                        Text("Battle \(number) of 5").font(.rounded(12, .heavy)).foregroundStyle(.white.opacity(0.7))
+                        HStack(spacing: 8) {
+                            Text("Battle \(number) of 5").font(.rounded(12, .heavy)).foregroundStyle(.white.opacity(0.7))
+                            if let t = audio.nowPlaying {
+                                Label(t.title, systemImage: "music.note")
+                                    .font(.rounded(12, .heavy)).foregroundStyle(.white)
+                                    .lineLimit(1)
+                                    .symbolEffect(.pulse, options: .repeating)
+                                    .padding(.horizontal, 10).padding(.vertical, 5)
+                                    .glassCapsule()
+                                    .transition(.scale.combined(with: .opacity))
+                            }
+                        }
+                        .animation(.spring(duration: 0.4), value: audio.nowPlaying)
                     }
                     .padding(.horizontal, 14)
                 }
@@ -270,8 +286,9 @@ struct BattleView: View {
             let m = mine[me]
             meBounds = await BattleGfx.bounds(m.speciesID, kind: m.isShiny ? .backShiny : .back) ?? .fallback
         }
-        .onAppear { SoundKit.shared.setScene(.battle) }
-        .onDisappear { SoundKit.shared.setScene(.map) }
+        .onAppear { SoundKit.shared.setScene(.none) }
+        .onDisappear { BattleAudio.shared.stopMusic(); SoundKit.shared.setScene(.map) }
+        .onChange(of: lowHealth) { _, on in BattleAudio.shared.setLowHealth(on) }
         .sheet(isPresented: $choosingSwitch) { switchSheet.presentationDetents([.medium]).interactiveDismissDisabled(forcedSwitch) }
     }
 
@@ -294,7 +311,7 @@ struct BattleView: View {
     private func battleScene(_ s: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
             Color.clear.frame(width: Self.vw * s, height: vh * s)
-            if let platform {
+            if !gen.isGameBoy, let platform {
                 // the same oval as in Emerald for both sides (yours bigger and half off the bottom, like the game)
                 Image(uiImage: platform).interpolation(.none).resizable()
                     .frame(width: 128 * s, height: 32 * s)
@@ -336,16 +353,16 @@ struct BattleView: View {
                     .id(fx.start)
                     .position(x: fx.at.x * s, y: fx.at.y * s)
             }
-            if foeBoxIn, foes.indices.contains(foe) {
-                infoBox(foes[foe], mine: false)
-                    .frame(width: Self.vw * 0.52 * s)
-                    .position(x: foeBoxCentre.x * s, y: foeBoxCentre.y * s)
+            if foeBoxIn, foes.indices.contains(foe), let img = hud(foes[foe], player: false) {
+                Image(uiImage: img).interpolation(.none).resizable()
+                    .frame(width: img.size.width * s, height: img.size.height * s)
+                    .position(x: (4 + img.size.width / 2) * s, y: (6 + img.size.height / 2) * s)
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
-            if meBoxIn, mine.indices.contains(me) {
-                infoBox(mine[me], mine: true)
-                    .frame(width: Self.vw * 0.52 * s)
-                    .position(x: myBoxCentre.x * s, y: myBoxCentre.y * s)
+            if meBoxIn, mine.indices.contains(me), let img = hud(mine[me], player: true) {
+                Image(uiImage: img).interpolation(.none).resizable()
+                    .frame(width: img.size.width * s, height: img.size.height * s)
+                    .position(x: (Self.vw - 2 - img.size.width / 2) * s, y: myBoxCentre.y * s)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
@@ -380,10 +397,22 @@ struct BattleView: View {
         }
     }
 
+    private func hud(_ m: BattleMon, player: Bool) -> UIImage? {
+        BattleHUD.shared.image(gen, mon: m, hp: shownHP[m.id] ?? m.hp, player: player)
+    }
+
+    /// Your Pokémon's HP bar is red: Emerald's low-health beeping
+    private var lowHealth: Bool {
+        guard outcome == nil, meBoxIn, mine.indices.contains(me) else { return false }
+        let hp = shownHP[mine[me].id] ?? mine[me].hp
+        return hp > 0 && hp * 48 / max(1, mine[me].maxHP) < 10
+    }
+
     @ViewBuilder private func foeTrainer(_ s: CGFloat) -> some View {
         if let trainerPic {
+            let size = trainerPic.size.width
             Image(uiImage: trainerPic).interpolation(.none).resizable()
-                .frame(width: 64 * s, height: 64 * s)
+                .frame(width: size * s, height: size * s)
                 .position(x: (foeTrainerCentre.x + foeTrainerX) * s, y: foeTrainerCentre.y * s)
         }
     }
@@ -436,41 +465,6 @@ struct BattleView: View {
         return min(1, now.timeIntervalSince(f.start) / f.duration) * 720
     }
 
-    private func infoBox(_ m: BattleMon, mine isMine: Bool) -> some View {
-        let frac = Double(max(0, m.hp)) / Double(max(1, m.maxHP))
-        let bar = frac > 0.5 ? Color(hex: 0x58D068) : frac > 0.2 ? Color(hex: 0xF8C030) : Color(hex: 0xF05838)
-        return VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(m.name.uppercased()).font(.rounded(16, .black)).foregroundStyle(Theme.ink)
-                    .lineLimit(1).minimumScaleFactor(0.6)
-                if m.isShiny { Text("✨").font(.system(size: 11)) }
-                Spacer(minLength: 4)
-                Text("Lv\(m.level)").font(.rounded(15, .black)).foregroundStyle(Theme.ink)
-            }
-            HStack(spacing: 6) {
-                Text("HP").font(.rounded(10, .black)).foregroundStyle(Color(hex: 0xF8B030))
-                    .padding(.horizontal, 4).padding(.vertical, 1)
-                    .background(Capsule().fill(Color(hex: 0x40484A)))
-                GeometryReader { g in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(.black.opacity(0.28))
-                        Capsule().fill(bar).frame(width: max(0, g.size.width * frac))
-                    }
-                }
-                .frame(height: 7)
-                .animation(.easeInOut(duration: 0.5), value: m.hp)
-            }
-            if isMine {
-                Text("\(max(0, m.hp))/ \(m.maxHP)").font(.rounded(15, .black)).monospacedDigit().foregroundStyle(Theme.ink)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-        }
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .glassCard(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.4), lineWidth: 1.2))
-        .shadow(color: .black.opacity(0.22), radius: 6, y: 3)
-    }
-
     // MARK: Controls
 
     @ViewBuilder private var controls: some View {
@@ -482,23 +476,33 @@ struct BattleView: View {
             }
             .buttonStyle(.plain)
         } else if mine.indices.contains(me), foes.indices.contains(foe) {
-            let my = mine[me], their = foes[foe]
+            let my = mine[me]
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                ForEach(my.moves, id: \.self) { m in
-                    let eff = TypeChart.multiplier(m.type, against: their.types)
-                    Button { Task { await turn(m) } } label: {
-                        VStack(spacing: 1) {
-                            Text(m.name).font(.rounded(15, .heavy))
-                            Text("\(m.type.displayName) · \(m.power) \(m.special ? "Sp" : "Phys")" + (eff >= 2 ? " · Super!" : eff == 0 ? " · No effect" : eff < 1 ? " · Weak" : ""))
-                                .font(.rounded(10, .bold)).opacity(0.85)
+                if my.hasUsableMove {
+                    ForEach(Array(my.moves.enumerated()), id: \.offset) { i, m in
+                        Button { Task { await turn(i) } } label: {
+                            VStack(spacing: 1) {
+                                Text(m.name).font(.rounded(15, .heavy)).lineLimit(1).minimumScaleFactor(0.7)
+                                Text("\(m.type.displayName.uppercased())  PP \(m.pp)/\(m.maxPP)")
+                                    .font(.rounded(10, .bold)).monospacedDigit().opacity(0.85)
+                            }
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity).frame(height: 50)
+                            .glassCapsule(tint: Color(hex: m.type.hex), interactive: true)
                         }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity).frame(height: 50)
-                        .glassCapsule(tint: Color(hex: m.type.hex), interactive: true)
+                        .buttonStyle(.plain)
+                        .disabled(busy || m.pp == 0)
+                        .opacity(busy || m.pp == 0 ? 0.55 : 1)
+                    }
+                } else {
+                    // no PP left anywhere: Struggle
+                    Button { Task { await turn(-1) } } label: {
+                        Text("Struggle").font(.rounded(15, .heavy)).foregroundStyle(.white)
+                            .frame(maxWidth: .infinity).frame(height: 50)
+                            .glassCapsule(tint: Color(hex: PokeType.normal.hex), interactive: true)
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
-                    .opacity(busy ? 0.55 : 1)
                 }
             }
             HStack(spacing: 10) {
@@ -619,10 +623,13 @@ struct BattleView: View {
         guard mine.isEmpty else { return }
         mine = store.state.party.map(BattleMon.init(owned:))
         foes = trainer.team
+        for m in mine + foes { shownHP[m.id] = m.hp }
+        startMusic()
         async let bg = BattleGfx.frontierBackground()
-        async let pic = PretFiles.sprite("graphics/trainers/front_pics/\(trainer.pic).png")
+        async let pic = loadTrainerPic()
         async let back = BattleGfx.trainerBack(style)
         async let balls = BattleGfx.ball(.poke)
+        await BattleHUD.shared.load(gen)
         scene = await bg
         trainerPic = await pic
         backFrames = await back
@@ -647,45 +654,83 @@ struct BattleView: View {
         text = "What will \(mine[me].name) do?"
     }
 
-    private func turn(_ move: BattleMove) async {
+    /// The opponent's picture from your trainer's generation.
+    private func loadTrainerPic() async -> UIImage? {
+        if let u = gen.trainerPicURL(trainer.pic) { return await BattleHUD.gbTrainerPic(u) }
+        return await PretFiles.sprite("graphics/trainers/front_pics/\(trainer.pic).png")
+    }
+
+    private func startMusic() {
+        let key: String
+        if trainer.isChampion { key = trainer.title == "Champion" ? "elite" : "brain" }
+        else if trainer.isLeader { key = "leader" }
+        else { key = gen.rawValue }
+        if let t = BattleAudio.tracks[key] { BattleAudio.shared.startMusic(t) }
+    }
+
+    /// One turn through the Gen 3 engine; then its events are played out in order.
+    private func turn(_ move: Int?) async {
         busy = true
-        let foeMove = BattleMath.aiMove(foes[foe], vs: mine[me])
-        let meFirst = mine[me].stats[5] > foes[foe].stats[5] || (mine[me].stats[5] == foes[foe].stats[5] && Bool.random())
-        if meFirst {
-            await attack(mineAttacks: true, move)
-            if foes[foe].fainted { await foeFainted(); return }
-            await attack(mineAttacks: false, foeMove)
-            if mine[me].fainted { await myFainted(); return }
-        } else {
-            await attack(mineAttacks: false, foeMove)
-            if mine[me].fainted { await myFainted(); return }
-            await attack(mineAttacks: true, move)
-            if foes[foe].fainted { await foeFainted(); return }
+        let foeMove = BattleEngine.aiMove(foes[foe], vs: mine[me])
+        var a = mine[me], b = foes[foe]
+        let events = BattleEngine.turn(mine: &a, foe: &b, myMove: move, foeMove: foeMove)
+        let myHP = a.hp, foeHP = b.hp
+        // everything but HP applies now (PP, status, stat stages…); the bars follow the events
+        mine[me] = a; foes[foe] = b
+        mine[me].hp = shownHP[a.id] ?? myHP; foes[foe].hp = shownHP[b.id] ?? foeHP
+        await play(events)
+        mine[me].hp = myHP; foes[foe].hp = foeHP
+        shownHP[a.id] = myHP; shownHP[b.id] = foeHP
+
+        if foes[foe].fainted { await foeFainted(); return }
+        if mine[me].fainted { await myFainted(); return }
+        // Two-turn moves and recharging carry on by themselves
+        if mine[me].charging != nil || mine[me].mustRecharge {
+            await wait(400)
+            await turn(0)
+            return
         }
         text = "What will \(mine[me].name) do?"
         busy = false
     }
 
-    private func attack(mineAttacks: Bool, _ move: BattleMove) async {
-        let a = mineAttacks ? mine[me] : foes[foe]
-        let d = mineAttacks ? foes[foe] : mine[me]
-        await say("\(mineAttacks ? "" : "The foe's ")\(a.name) used \(move.name)!", 700)
-        let hit = BattleMath.hit(move, from: a, to: d)
-        for _ in 0..<2 {
-            if mineAttacks { foeFlash.toggle() } else { meFlash.toggle() }
-            try? await Task.sleep(for: .milliseconds(90))
-            if mineAttacks { foeFlash.toggle() } else { meFlash.toggle() }
-            try? await Task.sleep(for: .milliseconds(90))
+    private func play(_ events: [BattleEvent]) async {
+        for e in events {
+            switch e {
+            case .say(let t):
+                await say(t, 900)
+            case .uses(_, let m):
+                BattleAudio.shared.playMove(m)
+                try? await Task.sleep(for: .milliseconds(350))
+            case .hp(let side, let hp, let eff):
+                let isMine = side == .mine
+                guard (isMine ? mine : foes).indices.contains(isMine ? me : foe) else { continue }
+                let id = isMine ? mine[me].id : foes[foe].id
+                let before = shownHP[id] ?? hp
+                if let eff {
+                    BattleAudio.shared.playHit(eff)
+                    Haptics.tap()
+                    for _ in 0..<2 {
+                        if isMine { meFlash.toggle() } else { foeFlash.toggle() }
+                        try? await Task.sleep(for: .milliseconds(90))
+                        if isMine { meFlash.toggle() } else { foeFlash.toggle() }
+                        try? await Task.sleep(for: .milliseconds(90))
+                    }
+                }
+                // the bar drains (or fills) a step at a time, like the games
+                let steps = max(1, min(24, abs(before - hp)))
+                for k in 1...steps {
+                    shownHP[id] = before + (hp - before) * k / steps
+                    try? await Task.sleep(for: .milliseconds(28))
+                }
+                if isMine { mine[me].hp = hp } else { foes[foe].hp = hp }
+                try? await Task.sleep(for: .milliseconds(200))
+            case .stat(_, let up):
+                BattleAudio.shared.playStat(up: up)
+            case .status:
+                break
+            }
         }
-        withAnimation(.easeInOut(duration: 0.5)) {
-            if mineAttacks { foes[foe].hp = max(0, foes[foe].hp - hit.damage) } else { mine[me].hp = max(0, mine[me].hp - hit.damage) }
-        }
-        Haptics.tap()
-        try? await Task.sleep(for: .milliseconds(550))
-        if hit.crit { await say("A critical hit!", 800) }
-        if hit.effectiveness == 0 { await say("It doesn't affect \(d.name)…", 900) }
-        else if hit.effectiveness >= 2 { await say("It's super effective!", 900) }
-        else if hit.effectiveness < 1 { await say("It's not very effective…", 900) }
     }
 
     private func foeFainted() async {
@@ -695,6 +740,7 @@ struct BattleView: View {
         foeShown = false
         if let next = foes.indices.first(where: { !foes[$0].fainted }) {
             foe = next
+            shownHP[foes[foe].id] = foes[foe].hp
             await sendOutFoe()
             text = "What will \(mine[me].name) do?"
             busy = false
@@ -736,11 +782,23 @@ struct BattleView: View {
             await say("Come back, \(mine[me].name)!", 500)
             await recallMine()
         }
+        mine[me].switchedOut()
         me = i
+        shownHP[mine[me].id] = mine[me].hp
         await sendOutMine(withTrainer: false)
         if !wasForced {
-            // switching uses your turn
-            await attack(mineAttacks: false, BattleMath.aiMove(foes[foe], vs: mine[me]))
+            // switching uses your turn: only the foe moves
+            busy = true
+            let foeMove = BattleEngine.aiMove(foes[foe], vs: mine[me])
+            var a = mine[me], b = foes[foe]
+            let events = BattleEngine.turn(mine: &a, foe: &b, myMove: nil, foeMove: foeMove)
+            let myHP = a.hp, foeHP = b.hp
+            mine[me] = a; foes[foe] = b
+            mine[me].hp = shownHP[a.id] ?? myHP; foes[foe].hp = shownHP[b.id] ?? foeHP
+            await play(events)
+            mine[me].hp = myHP; foes[foe].hp = foeHP
+            shownHP[a.id] = myHP; shownHP[b.id] = foeHP
+            if foes[foe].fainted { await foeFainted(); return }
             if mine[me].fainted { await myFainted(); return }
         }
         text = "What will \(mine[me].name) do?"
