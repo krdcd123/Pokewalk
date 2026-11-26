@@ -62,3 +62,34 @@ private extension Array where Element: Hashable {
         return filter { seen.insert($0).inserted }
     }
 }
+
+/// Where you are right now, in words (street + area), for the map's music card. Looked up as you move,
+/// but at most every 20 s and only after 40 m, so it's gentle on battery and Apple's lookup limits.
+@MainActor
+final class HereName: ObservableObject {
+    static let shared = HereName()
+    @Published private(set) var street: String?
+    @Published private(set) var area: String?
+    private var last: CLLocation?
+    private var lastAt = Date.distantPast
+    private var busy = false
+    private let geocoder = CLGeocoder()
+
+    func update(_ loc: CLLocation?) {
+        guard let loc, !busy else { return }
+        if let last, loc.distance(from: last) < 40 { return }
+        guard Date().timeIntervalSince(lastAt) > 20 || street == nil else { return }
+        busy = true
+        lastAt = .now
+        Task {
+            defer { busy = false }
+            guard let m = try? await geocoder.reverseGeocodeLocation(loc).first else { return }
+            last = loc
+            // "12 High Street" → "High Street"; parks, stations etc. use their own name
+            let place = m.areasOfInterest?.first ?? m.thoroughfare ?? m.name ?? m.subLocality
+            street = place
+            area = [m.subLocality, m.locality].compactMap { $0 }.filter { $0 != place }.removingDuplicates().first
+        }
+    }
+}
+

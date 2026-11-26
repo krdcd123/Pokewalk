@@ -6,6 +6,9 @@ enum WhatsNew {
     struct Note { let build: Int; let items: [String] }
 
     static let notes: [Note] = [
+        Note(build: 201, items: [
+            "The music card on the map now shows where you are (street and area) in big text, with the song playing underneath. Tap it to play or mute music as before.",
+        ]),
         Note(build: 200, items: [
             "The map turns as you walk: in a straight line, the way you're heading is always up the screen.",
             "Tap the compass to put north back at the top (it stays that way until you tap the location button). Switch the turning off in Settings › Walking.",

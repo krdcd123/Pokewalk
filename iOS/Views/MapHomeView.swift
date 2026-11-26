@@ -95,6 +95,7 @@ struct MapHomeView: View {
     @State private var panelSession = 0
     @ObservedObject private var sound = SoundKit.shared
     @ObservedObject private var otherMusic = ExternalMusic.shared
+    @ObservedObject private var here = HereName.shared
     @ObservedObject private var weather = WeatherService.shared      // new identity each time a panel opens, so menus start at the top
 
     enum HomeSheet: Hashable, Identifiable {
@@ -305,7 +306,7 @@ struct MapHomeView: View {
             store.openPartyAt = nil
             withAnimation(.spring(duration: 0.4)) { sheet = .party }
         }
-        .onAppear { otherMusic.start() }
+        .onAppear { otherMusic.start(); here.update(tracker.currentLocation()) }
         .onDisappear { otherMusic.stop() }
         .onAppear {
             if store.openPartyAt != nil { store.openPartyAt = nil; sheet = .party }
@@ -396,6 +397,7 @@ struct MapHomeView: View {
         }
         // Keep you in the middle as you walk (same zoom)
         .onChange(of: tracker.lastLocation) { old, loc in
+            here.update(loc)
             guard following, sheet == nil, let loc, loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 50 else { return }
             // tiny GPS wobbles don't move the camera
             if let old, loc.distance(from: old) < 3 { return }
@@ -501,36 +503,42 @@ struct MapHomeView: View {
                     withAnimation(.snappy) { sound.routeMusicOn.toggle() }
                 } label: {
                 card {
-                    // the route music, or what you're playing in Spotify / Music
+                    // Where you are (big), then what's playing: the route music, or Spotify / Music
                     let other = sound.nowPlaying == nil ? otherMusic.track : nil
                     let playing = sound.nowPlaying != nil || other != nil
-                    HStack(spacing: 8) {
-                        Image(systemName: playing ? "music.note" : "speaker.slash.fill")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(other?.app == "Spotify" ? Color(hex: 0x1DB954) : playing ? Theme.teal : Theme.inkSoft)
-                            .symbolEffect(.variableColor.iterative, options: .repeating, isActive: playing)
-                            .contentTransition(.symbolEffect(.replace))
-                            .frame(width: 26)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(other.map { "\($0.app.uppercased())" } ?? (playing ? "NOW PLAYING" : "MUSIC"))
-                                .font(.rounded(10, .heavy)).foregroundStyle(Theme.inkSoft)
-                            Text(other?.title ?? sound.nowPlaying ?? musicOffText)
-                                .font(.rounded(13, .heavy)).lineLimit(other?.artist.isEmpty == false ? 1 : 2).minimumScaleFactor(0.75)
-                                .contentTransition(.opacity)
-                            if let a = other?.artist, !a.isEmpty {
-                                Text(a).font(.rounded(11, .bold)).foregroundStyle(Theme.inkSoft).lineLimit(1)
-                            }
+                    let song = other.map { $0.artist.isEmpty ? $0.title : "\($0.title) · \($0.artist)" } ?? sound.nowPlaying ?? musicOffText
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "location.fill").font(.system(size: 9, weight: .heavy))
+                            Text((here.area ?? "You are here").uppercased()).lineLimit(1)
                         }
-                        Spacer(minLength: 0)
+                        .font(.rounded(10, .heavy)).foregroundStyle(Theme.inkSoft)
+                        Text(here.street ?? "Finding you…")
+                            .font(.rounded(17, .black)).foregroundStyle(.white)
+                            .lineLimit(2).minimumScaleFactor(0.6)
+                            .contentTransition(.opacity)
+                            .animation(.smooth, value: here.street)
+                        HStack(spacing: 5) {
+                            Image(systemName: playing ? "music.note" : "speaker.slash.fill")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(other?.app == "Spotify" ? Color(hex: 0x1DB954) : playing ? Theme.teal : Theme.inkSoft)
+                                .symbolEffect(.variableColor.iterative, options: .repeating, isActive: playing)
+                                .contentTransition(.symbolEffect(.replace))
+                            Text(song)
+                                .font(.rounded(11, .bold)).foregroundStyle(playing ? Color.white.opacity(0.85) : Theme.inkSoft)
+                                .lineLimit(1).minimumScaleFactor(0.8)
+                                .contentTransition(.opacity)
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(maxHeight: .infinity)
                 }
                 .frame(width: 150)
                 .contentShape(RoundedRectangle(cornerRadius: 20))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(otherMusic.track.map { "\($0.app) is playing \($0.title) by \($0.artist)." }
-                                    ?? sound.nowPlaying.map { "Now playing \($0). Tap to mute." } ?? "Music off. Tap to play.")
+                .accessibilityLabel("You're at \(here.street ?? "an unknown place"). " + (otherMusic.track.map { "\($0.app) is playing \($0.title) by \($0.artist)." }
+                                    ?? sound.nowPlaying.map { "Now playing \($0). Tap to mute." } ?? "Music off. Tap to play."))
             }
             .fixedSize(horizontal: false, vertical: true)      // music card matches the steps card's height
             card {
