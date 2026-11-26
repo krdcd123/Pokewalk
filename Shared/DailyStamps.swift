@@ -33,24 +33,24 @@ enum DailyStamps {
 
     static let days = 7
     static let rewards: [[Reward]] = [
-        [Reward(kind: .ball(.poke), count: 5)],
+        [Reward(kind: .ball(.poke), count: 3)],
         [Reward(kind: .item("pomeg-berry"), count: 3)],
-        [Reward(kind: .ball(.great), count: 3)],
+        [Reward(kind: .ball(.great), count: 2)],
         [Reward(kind: .item("exp-candy-m"), count: 1)],
         [Reward(kind: .money, count: 200)],
-        [Reward(kind: .ball(.ultra), count: 2)],
+        [Reward(kind: .ball(.ultra), count: 1)],
         [],   // Day 7: a present — see `present(for:)`
     ]
 
     /// Day 7's present: a different bundle each week, all worth about the same.
     static let presents: [[Reward]] = [
         [Reward(kind: .item("rare-candy"), count: 2), Reward(kind: .ball(.ultra), count: 3), Reward(kind: .money, count: 500)],
-        [Reward(kind: .item("exp-candy-l"), count: 1), Reward(kind: .ball(.ultra), count: 5)],
+        [Reward(kind: .item("exp-candy-l"), count: 1), Reward(kind: .ball(.ultra), count: 3)],
         [Reward(kind: .item("rare-candy"), count: 1), Reward(kind: .item("exp-candy-m"), count: 2), Reward(kind: .money, count: 800)],
         [Reward(kind: .item("rare-candy"), count: 1), Reward(kind: .ball(.timer), count: 2), Reward(kind: .ball(.nest), count: 2),
          Reward(kind: .money, count: 300)],
         [Reward(kind: .item("moon-stone"), count: 1), Reward(kind: .ball(.ultra), count: 3), Reward(kind: .money, count: 400)],
-        [Reward(kind: .item("nugget"), count: 1), Reward(kind: .item("rare-candy"), count: 1), Reward(kind: .ball(.great), count: 5)],
+        [Reward(kind: .item("nugget"), count: 1), Reward(kind: .item("rare-candy"), count: 1), Reward(kind: .ball(.great), count: 3)],
         [Reward(kind: .item("star-piece"), count: 1), Reward(kind: .ball(.luxury), count: 2), Reward(kind: .item("rare-candy"), count: 1),
          Reward(kind: .money, count: 500)],
     ]
@@ -69,9 +69,9 @@ enum DailyStamps {
     static func rollDaily() -> [Reward] {
         let berry = ItemCatalog.berries.randomElement() ?? "pomeg-berry"
         let pool: [[Reward]] = [
-            [Reward(kind: .ball(.poke), count: 5)],
-            [Reward(kind: .ball(.great), count: 3)],
-            [Reward(kind: .ball(.ultra), count: 2)],
+            [Reward(kind: .ball(.poke), count: 3)],
+            [Reward(kind: .ball(.great), count: 2)],
+            [Reward(kind: .ball(.ultra), count: 1)],
             [Reward(kind: .item(berry), count: 3)],
             [Reward(kind: .item("exp-candy-m"), count: 1)],
             [Reward(kind: .item("exp-candy-s"), count: 3)],

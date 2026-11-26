@@ -225,6 +225,11 @@ final class GameStore: ObservableObject {
             UserDefaults.standard.set(true, forKey: "ballSteps1000")
             mutate { $0.settings.ballSteps = 1_000 }
         }
+        // One-time: balls were too plentiful — one every 2,500 steps now
+        if !UserDefaults.standard.bool(forKey: "ballSteps2500") {
+            UserDefaults.standard.set(true, forKey: "ballSteps2500")
+            mutate { $0.settings.ballSteps = 2_500 }
+        }
         migrateGardenToOnePerPatch()
         // Pokémon working in the Garden / Ranch don't sit in a PC box
         mutate { s in for id in s.garden.workers + s.ranch.ranchers + s.daycare.parents { GameRules.takeOutOfBox(id, in: &s) } }

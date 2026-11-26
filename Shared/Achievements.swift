@@ -57,10 +57,10 @@ struct Achievement: Identifiable {
     var reward: AchievementReward {
         var r: AchievementReward
         switch tier {
-        case 1: r = .init(money: 500, balls: [.poke: 5])
-        case 2: r = .init(money: 2_500, balls: [.great: 5], items: ["honey": 1])
-        case 3: r = .init(money: 10_000, balls: [.ultra: 5], items: ["rare-candy": 3])
-        case 4: r = .init(money: 40_000, balls: [.ultra: 10], items: ["rare-candy": 10, "ability-capsule": 1])
+        case 1: r = .init(money: 500, balls: [.poke: 3])
+        case 2: r = .init(money: 2_500, balls: [.great: 3], items: ["honey": 1])
+        case 3: r = .init(money: 10_000, balls: [.ultra: 3], items: ["rare-candy": 3])
+        case 4: r = .init(money: 40_000, balls: [.ultra: 5], items: ["rare-candy": 10, "ability-capsule": 1])
         default: r = .init(money: 150_000, balls: [.master: 1], items: ["rare-candy": 25])
         }
         for (k, n) in special { r.items[k, default: 0] += n }

@@ -6,6 +6,11 @@ enum WhatsNew {
     struct Note { let build: Int; let items: [String] }
 
     static let notes: [Note] = [
+        Note(build: 202, items: [
+            "Catching is harder: no more free catch bonus, and higher-level Pokémon are tougher to catch. Great and Ultra Balls really matter now.",
+            "Wild Pokémon flee more often, especially rare ones — berries still calm them down.",
+            "Fewer free balls: a Poké Ball every 2,500 steps (was 1,000), and smaller ball rewards from stamps, achievements and item finds.",
+        ]),
         Note(build: 201, items: [
             "The music card on the map now shows where you are (street and area) in big text, with the song playing underneath. Tap it to play or mute music as before.",
         ]),

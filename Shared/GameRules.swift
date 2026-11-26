@@ -358,9 +358,9 @@ enum GameRules {
         table += FieldItems.finds
         // Valuables to sell — the cheaper, the more common
         for (k, price) in ItemCatalog.sellPrice { table.append((k, price <= 50 ? 6 : price <= 250 ? 3.5 : price <= 500 ? 1.5 : 0.6)) }
-        // Rare balls (Poké/Great/Ultra come every 100 steps instead)
+        // Rare balls (Poké/Great/Ultra come from steps instead)
         for b in BallKind.allCases where !b.isStepBall {
-            table.append((b.itemKey, b == .master ? 0.08 : 2.5))
+            table.append((b.itemKey, b == .master ? 0.04 : 1.2))
         }
         // Held items some trade evolutions need (Onix → Steelix, Seadra → Kingdra…) — very rare
         for k in ["kings-rock", "metal-coat", "dragon-scale", "up-grade", "deep-sea-tooth", "deep-sea-scale", "prism-scale"] {
@@ -757,18 +757,18 @@ struct SafariEncounter {
     var baseFleeChance: Double {
         let sp = wild.species
         let rarity: Double
-        if sp.isLegendary || sp.isMythical { rarity = 0.30 }
+        if sp.isLegendary || sp.isMythical { rarity = 0.40 }
         else {
             switch sp.captureRate {
-            case 190...: rarity = 0.06
-            case 120..<190: rarity = 0.09
-            case 75..<120: rarity = 0.13
-            case 45..<75: rarity = 0.18
-            default: rarity = 0.24
+            case 190...: rarity = 0.10
+            case 120..<190: rarity = 0.15
+            case 75..<120: rarity = 0.21
+            case 45..<75: rarity = 0.28
+            default: rarity = 0.36
             }
         }
-        let levelBonus = Double(max(0, wild.level - 5)) * 0.002      // +1% every 5 levels
-        return min(0.45, rarity + levelBonus)
+        let levelBonus = Double(max(0, wild.level - 5)) * 0.003      // +1.5% every 5 levels
+        return min(0.55, rarity + levelBonus)
     }
 
     /// While it's eating a berry it's much calmer.
@@ -783,7 +783,9 @@ struct SafariEncounter {
         let ballBonus = ball.bonus(species: wild.species, level: wild.level, turn: throwCount,
                                    caughtBefore: caughtBefore,
                                    nearWater: wild.habitat == .sea || wild.habitat == .watersEdge)
-        return Double(wild.species.captureRate) * ballBonus * throwBonus * bait * Self.safariBonus / 3
+        // Higher-level wild Pokémon are tougher to hold on to (×1 up to Lv. 10, down to ×0.6 by Lv. 50)
+        let levelFactor = min(1, max(0.6, 1.1 - Double(wild.level) / 100))
+        return Double(wild.species.captureRate) * ballBonus * throwBonus * bait * levelFactor / 3
     }
 
     /// Probability of passing one shake check.
