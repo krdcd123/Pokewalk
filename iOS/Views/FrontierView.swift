@@ -202,29 +202,36 @@ struct BattleView: View {
     @State private var shownHP: [UUID: Int] = [:]      // what the HP bars show (they drain smoothly)
     @ObservedObject private var audio = BattleAudio.shared
 
-    // The scene is laid out on a 200 px wide "GBA" canvas as tall as the top half allows (vh), spread out like
-    // Emerald's: foe box top left, foe on its platform to the right, you bottom left, your box bottom right.
+    // Laid out on the original screen's pixel grid — Emerald's 240 px wide, the Game Boy's 160 px — as tall as the
+    // top half allows (vh), arranged like the games: foe box top left, foe top right, you bottom left, your box bottom right.
     @State private var vh: CGFloat = 200
     @State private var wall: UIImage?
     @State private var platform: UIImage?
-    private static let vw: CGFloat = 200
-    private var foeFeet: CGPoint { CGPoint(x: Self.vw * 0.70, y: vh * 0.47) }
-    private var myFeet: CGPoint { CGPoint(x: Self.vw * 0.27, y: vh - 6) }
-    private var foeTrainerCentre: CGPoint { CGPoint(x: foeFeet.x, y: foeFeet.y - 26) }
-    private var playerCentre: CGPoint { CGPoint(x: Self.vw * 0.29, y: vh - 33) }
-    private var foeBoxCentre: CGPoint { CGPoint(x: Self.vw * 0.28, y: vh * 0.13) }
-    private var myBoxCentre: CGPoint { CGPoint(x: Self.vw * 0.73, y: vh * 0.70) }
+    private var vw: CGFloat { gen.isGameBoy ? 160 : 240 }
+    private var foeFeet: CGPoint { gen.isGameBoy ? CGPoint(x: 120, y: max(60, vh * 0.40)) : CGPoint(x: 172, y: max(72, vh * 0.48)) }
+    private var myFeet: CGPoint { gen.isGameBoy ? CGPoint(x: 40, y: vh - 2) : CGPoint(x: 62, y: vh - 4) }
+    private var foeTrainerCentre: CGPoint { CGPoint(x: foeFeet.x, y: foeFeet.y - (gen.isGameBoy ? 26 : 30)) }
+    private var playerCentre: CGPoint {
+        let h = backFrames.first?.size.height ?? 64
+        return CGPoint(x: gen.isGameBoy ? 38 : 78, y: vh - 2 - h / 2)
+    }
+    private var foeBoxOrigin: CGPoint { gen.isGameBoy ? CGPoint(x: 6, y: 8) : CGPoint(x: 6, y: 10) }
+    private var myBoxOrigin: CGPoint { gen.isGameBoy ? CGPoint(x: 76, y: vh - 46) : CGPoint(x: 112, y: vh - 44) }
+    private var foeBoxCentre: CGPoint { CGPoint(x: foeBoxOrigin.x + (gen.isGameBoy ? 40 : 54), y: foeBoxOrigin.y + 14) }
+    private var myBoxCentre: CGPoint { CGPoint(x: myBoxOrigin.x + (gen.isGameBoy ? 40 : 58), y: myBoxOrigin.y + 18) }
+    private var foeSize: CGFloat { gen.isGameBoy ? 0.9 : 1.05 }        // sprite size on the canvas
+    private var mySize: CGFloat { gen.isGameBoy ? 1.05 : 1.3 }
 
     var body: some View {
         GeometryReader { geo in
             let sceneW = geo.size.width - 20
             let sceneH = geo.size.height / 2 - 16
-            let s = sceneW / Self.vw
+            let s = sceneW / vw
             ZStack(alignment: .top) {
                 VStack(spacing: 12) {
                     // Emerald's scene in a glass frame
                     ZStack(alignment: .topLeading) {
-                        Color(hex: gen.isGameBoy ? 0xF8F8F8 : 0xF6F6FF)
+                        Color(hex: gen.isGameBoy ? 0xFFFFFF : 0xF6F6FF)
                         if !gen.isGameBoy, let wall {
                             // Emerald's Frontier wall, its stripes carried down the whole height
                             Image(uiImage: wall).interpolation(.none).resizable()
@@ -236,7 +243,7 @@ struct BattleView: View {
                         .task(id: "\(Int(sceneH / s))-\(scene != nil)") {
                             vh = sceneH / s
                             guard let scene else { return }
-                            wall = BattleGfx.frontierWall(scene, height: Int(vh) + 4, width: Int(Self.vw))
+                            wall = BattleGfx.frontierWall(scene, height: Int(vh) + 4, width: Int(vw))
                             platform = BattleGfx.frontierPlatform(scene)
                         }
                         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -254,6 +261,7 @@ struct BattleView: View {
                             .animation(nil, value: text)
                         controls
                         Spacer(minLength: 0)
+                        sideButtons
                         HStack(spacing: 8) {
                             Text("Battle \(number) of 5").font(.rounded(12, .heavy)).foregroundStyle(.white.opacity(0.7))
                             if let t = audio.nowPlaying {
@@ -310,7 +318,7 @@ struct BattleView: View {
 
     private func battleScene(_ s: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
-            Color.clear.frame(width: Self.vw * s, height: vh * s)
+            Color.clear.frame(width: vw * s, height: vh * s)
             if !gen.isGameBoy, let platform {
                 // the same oval as in Emerald for both sides (yours bigger and half off the bottom, like the game)
                 Image(uiImage: platform).interpolation(.none).resizable()
@@ -356,22 +364,22 @@ struct BattleView: View {
             if foeBoxIn, foes.indices.contains(foe), let img = hud(foes[foe], player: false) {
                 Image(uiImage: img).interpolation(.none).resizable()
                     .frame(width: img.size.width * s, height: img.size.height * s)
-                    .position(x: (4 + img.size.width / 2) * s, y: (6 + img.size.height / 2) * s)
+                    .position(x: (foeBoxOrigin.x + img.size.width / 2) * s, y: (foeBoxOrigin.y + img.size.height / 2) * s)
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
             if meBoxIn, mine.indices.contains(me), let img = hud(mine[me], player: true) {
                 Image(uiImage: img).interpolation(.none).resizable()
                     .frame(width: img.size.width * s, height: img.size.height * s)
-                    .position(x: (Self.vw - 2 - img.size.width / 2) * s, y: myBoxCentre.y * s)
+                    .position(x: (myBoxOrigin.x + img.size.width / 2) * s, y: (myBoxOrigin.y + img.size.height / 2) * s)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .frame(width: Self.vw * s, height: vh * s, alignment: .topLeading)
+        .frame(width: vw * s, height: vh * s, alignment: .topLeading)
     }
 
     @ViewBuilder private func foeMon(_ s: CGFloat) -> some View {
         if foeShown, foes.indices.contains(foe) {
-            let m = foes[foe], b = foeBounds, e = s * 0.8
+            let m = foes[foe], b = foeBounds, e = s * foeSize
             let lift = CGFloat(BattleElevation.pixels(m.speciesID)) * 1.5 * e
             let cy = foeFeet.y * s - (b.bottom - b.size.height / 2) * e - lift
             AnimatedSprite(speciesID: m.speciesID, shiny: m.isShiny)
@@ -385,7 +393,7 @@ struct BattleView: View {
 
     @ViewBuilder private func myMon(_ s: CGFloat) -> some View {
         if meShown, mine.indices.contains(me) {
-            let m = mine[me], b = meBounds, e = s * 0.95
+            let m = mine[me], b = meBounds, e = s * mySize
             let cy = myFeet.y * s - (b.bottom - b.size.height / 2) * e
             AnimatedSprite(speciesID: m.speciesID, shiny: m.isShiny, kind: m.isShiny ? .backShiny : .back)
                 .frame(width: b.size.width * e, height: b.size.height * e)
@@ -419,8 +427,9 @@ struct BattleView: View {
 
     @ViewBuilder private func playerTrainer(_ s: CGFloat) -> some View {
         if backFrames.indices.contains(backFrame) {
+            let size = backFrames[backFrame].size
             Image(uiImage: backFrames[backFrame]).interpolation(.none).resizable()
-                .frame(width: 64 * s, height: 64 * s)
+                .frame(width: size.width * s, height: size.height * s)
                 .position(x: (playerCentre.x + playerX) * s, y: playerCentre.y * s)
         }
     }
@@ -505,16 +514,24 @@ struct BattleView: View {
                     .disabled(busy)
                 }
             }
+        }
+    }
+
+    /// Switch and give up sit lower down, away from the moves.
+    @ViewBuilder private var sideButtons: some View {
+        if outcome == nil, mine.indices.contains(me), foes.indices.contains(foe) {
             HStack(spacing: 10) {
                 Button { forcedSwitch = false; choosingSwitch = true } label: {
-                    Label("Pokémon", systemImage: "arrow.left.arrow.right").font(.rounded(14, .heavy)).foregroundStyle(.white)
-                        .frame(maxWidth: .infinity).frame(height: 40).glassCapsule(interactive: true)
+                    Label("Pokémon", systemImage: "arrow.left.arrow.right").font(.rounded(15, .heavy)).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity).frame(height: 46)
+                        .glassCapsule(tint: Color(hex: 0xF5C542), interactive: true)
                 }
                 .buttonStyle(.plain)
                 .disabled(busy || mine.filter { !$0.fainted }.count < 2)
                 Button { Task { await forfeit() } } label: {
-                    Label("Give up", systemImage: "flag.fill").font(.rounded(14, .heavy)).foregroundStyle(.white)
-                        .frame(maxWidth: .infinity).frame(height: 40).glassCapsule(interactive: true)
+                    Label("Give up", systemImage: "flag.fill").font(.rounded(15, .heavy)).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity).frame(height: 46)
+                        .glassCapsule(tint: Color(hex: 0xE5484D), interactive: true)
                 }
                 .buttonStyle(.plain)
                 .disabled(busy)
@@ -577,7 +594,7 @@ struct BattleView: View {
     private func sendOutFoe() async {
         foeBoxIn = false
         await say("\(trainer.title) \(trainer.name) sent out \(foes[foe].name)!", 350)
-        await throwBall(from: CGPoint(x: Self.vw + 16, y: foeFeet.y - 60), to: CGPoint(x: foeFeet.x, y: foeFeet.y - 14), arc: 30, foeSide: true)
+        await throwBall(from: CGPoint(x: vw + 16, y: foeFeet.y - 60), to: CGPoint(x: foeFeet.x, y: foeFeet.y - 14), arc: 30, foeSide: true)
         withAnimation(.spring(duration: 0.35)) { foeBoxIn = true }
     }
 

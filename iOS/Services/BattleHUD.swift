@@ -201,8 +201,8 @@ final class BattleHUD {
         }
         let fg = Self.gba(64, 64, 64), shadow = Self.gba(216, 208, 176)
         // Positions measured from Emerald's battle screen, relative to these images
-        let nameX = player ? 16 : 9
-        let lvX = player ? 82 : 64
+        let nameX = player ? 16 : 8
+        let lvX = player ? 72 : 64
         let barOrigin = player ? (24, 16) : (16, 16)
         let w = text(m.name.uppercased(), x: nameX, y: 3, on: &c, fg: fg, shadow: shadow)
         switch m.gender {
@@ -253,9 +253,15 @@ final class BattleHUD {
                 let s = Array(String(max(0, n)))
                 for (i, ch) in s.reversed().enumerated() { text(String(ch), x: endX - 5 * (i + 1), y: 21, on: &c, fg: fg, shadow: shadow) }
             }
-            digits(hp, endX: 76)
-            text("/", x: 76, y: 21, on: &c, fg: fg, shadow: shadow)
-            digits(m.maxHP, endX: 96)
+            digits(hp, endX: 75)
+            text("/", x: 75, y: 21, on: &c, fg: fg, shadow: shadow)
+            digits(m.maxHP, endX: 95)
+            // Exp bar: 64 px along the bottom (rows 35–36 from x 32), filled by progress through the level
+            let expPx = Int((m.expFraction * 64).rounded(.down))
+            for x in 0..<expPx {
+                c.set(32 + x, 35, Self.gba(72, 200, 248))
+                c.set(32 + x, 36, Self.gba(40, 152, 232))
+            }
         }
         return c.image()
     }
@@ -264,7 +270,7 @@ final class BattleHUD {
 
     private func gameBoy(_ gen: BattleGen, _ m: BattleMon, hp: Int, player: Bool) -> UIImage? {
         guard let g = gb else { return nil }
-        let white: (UInt8, UInt8, UInt8) = (248, 248, 248), black: (UInt8, UInt8, UInt8) = (0, 0, 0)
+        let white: (UInt8, UInt8, UInt8) = (255, 255, 255), black: (UInt8, UInt8, UInt8) = (0, 0, 0)
         let filled = hp <= 0 ? 0 : max(1, hp * 48 / max(1, m.maxHP))
         let barColour: (UInt8, UInt8, UInt8) = gen == .rby ? (64, 64, 64)
             : filled >= 24 ? (0, 184, 0) : filled >= 10 ? (248, 168, 0) : (248, 0, 0)
@@ -347,7 +353,11 @@ final class BattleHUD {
             put(nums, col: 2, row: 3)
             tile(g.border, 0, at: 9, 3)
             tile(g.enemyBorder, 3, at: 0, 4)                // bottom left ramp
-            for col in 1...8 { tile(g.exp, 0, at: col, 4) } // the (empty) Exp bar along the bottom
+            for col in 1...8 { tile(g.border, 3, at: col, 4) }   // the Exp bar's line along the bottom…
+            // …filled from the right, like Gold/Silver/Crystal
+            let expPx = Int((m.expFraction * 64).rounded(.down))
+            let expColour: (UInt8, UInt8, UInt8) = gen == .rby ? (64, 64, 64) : (32, 144, 248)
+            for x in 0..<expPx { c.set(8 + 63 - x, 4 * 8 + 3, expColour); c.set(8 + 63 - x, 4 * 8 + 4, expColour) }
             tile(g.border, 4, at: 9, 4)                     // bottom right
         }
         return c.image()

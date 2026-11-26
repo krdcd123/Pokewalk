@@ -36,13 +36,52 @@ struct MoveInfo: Codable, Hashable {
     /// Gen 3: physical or special depends only on the type.
     var physical: Bool { MoveData.physicalTypes.contains(type) }
     var targetsUser: Bool { target == 7 }
+
+    init(id: Int, key: String, name: String, type: PokeType, power: Int?, pp: Int, accuracy: Int?, priority: Int, target: Int,
+         status: Bool, effect: Int, chance: Int, cat: Int, ailment: Int, minHits: Int?, maxHits: Int?, drain: Int, healing: Int,
+         crit: Int, ailmentChance: Int, flinch: Int, statChance: Int, stats: [[Int]], sound: String?) {
+        self.id = id; self.key = key; self.name = name; self.type = type; self.power = power; self.pp = pp
+        self.accuracy = accuracy; self.priority = priority; self.target = target; self.status = status; self.effect = effect
+        self.chance = chance; self.cat = cat; self.ailment = ailment; self.minHits = minHits; self.maxHits = maxHits
+        self.drain = drain; self.healing = healing; self.crit = crit; self.ailmentChance = ailmentChance; self.flinch = flinch
+        self.statChance = statChance; self.stats = stats; self.sound = sound
+    }
+
+    /// Tolerant decoding: an unknown type (like Curse's "???") becomes Ghost rather than failing the whole file.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        key = try c.decode(String.self, forKey: .key)
+        name = try c.decode(String.self, forKey: .name)
+        type = PokeType(rawValue: (try? c.decode(String.self, forKey: .type)) ?? "") ?? .ghost
+        power = try? c.decodeIfPresent(Int.self, forKey: .power)
+        pp = (try? c.decode(Int.self, forKey: .pp)) ?? 10
+        accuracy = try? c.decodeIfPresent(Int.self, forKey: .accuracy)
+        priority = (try? c.decode(Int.self, forKey: .priority)) ?? 0
+        target = (try? c.decode(Int.self, forKey: .target)) ?? 10
+        status = (try? c.decode(Bool.self, forKey: .status)) ?? false
+        effect = (try? c.decode(Int.self, forKey: .effect)) ?? 0
+        chance = (try? c.decode(Int.self, forKey: .chance)) ?? 0
+        cat = (try? c.decode(Int.self, forKey: .cat)) ?? 0
+        ailment = (try? c.decode(Int.self, forKey: .ailment)) ?? 0
+        minHits = try? c.decodeIfPresent(Int.self, forKey: .minHits)
+        maxHits = try? c.decodeIfPresent(Int.self, forKey: .maxHits)
+        drain = (try? c.decode(Int.self, forKey: .drain)) ?? 0
+        healing = (try? c.decode(Int.self, forKey: .healing)) ?? 0
+        crit = (try? c.decode(Int.self, forKey: .crit)) ?? 0
+        ailmentChance = (try? c.decode(Int.self, forKey: .ailmentChance)) ?? 0
+        flinch = (try? c.decode(Int.self, forKey: .flinch)) ?? 0
+        statChance = (try? c.decode(Int.self, forKey: .statChance)) ?? 0
+        stats = (try? c.decode([[Int]].self, forKey: .stats)) ?? []
+        sound = try? c.decodeIfPresent(String.self, forKey: .sound)
+    }
 }
 
 enum MoveData {
     private struct File: Codable {
         let moves: [MoveInfo]
         let learnsets: [String: [[Int]]]
-        let gen3Types: [String: [PokeType]]
+        let gen3Types: [String: [String]]
     }
 
     static let physicalTypes: Set<PokeType> = [.normal, .fighting, .flying, .poison, .ground, .rock, .bug, .ghost, .steel]
@@ -68,7 +107,7 @@ enum MoveData {
 
     /// Types as they were in Gen 3 (no Fairy type yet).
     static func types(_ species: Int) -> [PokeType] {
-        file?.gen3Types[String(species)] ?? Dex.species(species).types
+        file?.gen3Types[String(species)]?.compactMap(PokeType.init(rawValue:)) ?? Dex.species(species).types
     }
 
     /// Four random moves from everything it could have learned by levelling up to `level` (at least one that does damage).
@@ -146,6 +185,7 @@ struct BattleMon: Identifiable, Hashable {
     var moves: [BattleMove]
     var friendship = 70
     var status: StatusCondition = .none
+    var expFraction = 0.0       // how far into this level (for the Exp bar)
 
     // Volatile (reset when it switches out)
     var stages = [Int](repeating: 0, count: 9)      // index = stat id (2 atk … 8 eva)
@@ -206,6 +246,7 @@ struct BattleMon: Identifiable, Hashable {
     init(owned m: OwnedPokemon) {
         self.init(speciesID: m.speciesID, level: m.level, nature: m.nature, isShiny: m.isShiny, name: m.name,
                   gender: m.gender, ownedID: m.id, friendship: m.friendship)
+        expFraction = m.species.growth.progress(exp: m.exp)
     }
 
     /// Clears everything that goes away when it's switched out.
