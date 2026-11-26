@@ -82,6 +82,7 @@ struct PokeWalkApp: App {
 struct RootView: View {
     @EnvironmentObject private var store: GameStore
     @State private var crashReport: String? = CrashReporter.takeLastReport()
+    @State private var whatsNew: [WhatsNew.Note]?
 
     var body: some View {
         Group {
@@ -94,6 +95,15 @@ struct RootView: View {
         .fullScreenCover(item: $store.evolutionCandidate) { EvolutionView(candidate: $0) }
         .sheet(isPresented: Binding(get: { crashReport != nil }, set: { if !$0 { crashReport = nil } })) {
             CrashReportView(report: crashReport ?? "") { crashReport = nil }
+        }
+        // First launch after an update: a short summary of what changed (once per build)
+        .sheet(isPresented: Binding(get: { whatsNew != nil && crashReport == nil },
+                                    set: { if !$0 { whatsNew = nil; WhatsNew.markSeen() } })) {
+            WhatsNewView(notes: whatsNew ?? []) { whatsNew = nil; WhatsNew.markSeen() }
+        }
+        .task {
+            try? await Task.sleep(for: .seconds(1.2))        // let the map appear first
+            whatsNew = WhatsNew.pending(hasGame: store.hasGame)
         }
     }
 }
