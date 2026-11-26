@@ -428,7 +428,73 @@ extension CGImage {
             r.cgContext.translateBy(x: 0, y: CGFloat(h)); r.cgContext.scaleBy(x: 1, y: -1)
             r.cgContext.draw(self, in: CGRect(x: 0, y: 0, width: w, height: h))
         }
+        if let cg = img.cgImage, let small = cg.indexedPNG() { return small }
         return img.pngData()
+    }
+
+    /// Palette PNG (pixel art has few colours): several times smaller than UIKit's 32-bit PNGs, which matters
+    /// for the Live Activity's 4 KB limit (colourful icons like Milotic's didn't fit before).
+    func indexedPNG() -> Data? {
+        let w = width, h = height
+        guard w > 0, h > 0,
+              let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(self, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let px = ctx.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+        var palette: [UInt32] = [0]                 // index 0 = see-through
+        var lookup: [UInt32: UInt8] = [:]
+        var raw = Data(capacity: (w + 1) * h)
+        for y in 0..<h {
+            raw.append(0)                           // filter: none
+            for x in 0..<w {
+                let i = (y * w + x) * 4
+                let a = px[i + 3]
+                guard a >= 128 else { raw.append(0); continue }
+                // un-premultiply (opaque pixels are unchanged)
+                let r = UInt32(min(255, Int(px[i]) * 255 / Int(a)))
+                let g = UInt32(min(255, Int(px[i + 1]) * 255 / Int(a)))
+                let b = UInt32(min(255, Int(px[i + 2]) * 255 / Int(a)))
+                let key = (r << 16) | (g << 8) | b | 0x1000000
+                if let idx = lookup[key] { raw.append(idx); continue }
+                guard palette.count < 256 else { return nil }
+                lookup[key] = UInt8(palette.count)
+                raw.append(UInt8(palette.count))
+                palette.append(key)
+            }
+        }
+        guard let deflated = try? (raw as NSData).compressed(using: .zlib) as Data else { return nil }
+
+        func be32(_ v: UInt32) -> Data { withUnsafeBytes(of: v.bigEndian) { Data($0) } }
+        func chunk(_ type: String, _ body: Data) -> Data {
+            let typed = Data(type.utf8) + body
+            return be32(UInt32(body.count)) + typed + be32(PNGCRC.crc(typed))
+        }
+        var adler1: UInt32 = 1, adler2: UInt32 = 0
+        for byte in raw { adler1 = (adler1 + UInt32(byte)) % 65521; adler2 = (adler2 + adler1) % 65521 }
+        let zlib = Data([0x78, 0x01]) + deflated + be32((adler2 << 16) | adler1)
+
+        var plte = Data(), trns = Data([0])
+        for c in palette { plte.append(contentsOf: [UInt8((c >> 16) & 0xFF), UInt8((c >> 8) & 0xFF), UInt8(c & 0xFF)]) }
+        trns.append(contentsOf: [UInt8](repeating: 255, count: palette.count - 1))
+        var ihdr = be32(UInt32(w)) + be32(UInt32(h))
+        ihdr.append(contentsOf: [8, 3, 0, 0, 0])      // 8-bit, palette
+        return Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+            + chunk("IHDR", ihdr) + chunk("PLTE", plte) + chunk("tRNS", trns)
+            + chunk("IDAT", zlib) + chunk("IEND", Data())
+    }
+}
+
+enum PNGCRC {
+    static let table: [UInt32] = (0..<256).map { n -> UInt32 in
+        var c = UInt32(n)
+        for _ in 0..<8 { c = c & 1 != 0 ? 0xEDB88320 ^ (c >> 1) : c >> 1 }
+        return c
+    }
+    static func crc(_ data: Data) -> UInt32 {
+        var c: UInt32 = 0xFFFFFFFF
+        for b in data { c = table[Int((c ^ UInt32(b)) & 0xFF)] ^ (c >> 8) }
+        return c ^ 0xFFFFFFFF
     }
 }
 
