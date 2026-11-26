@@ -26,6 +26,30 @@ struct MapHomeView: View {
     /// Set once the map has zoomed in on you after launch (until then it may be showing the whole country
     /// while it waits for your location, and that zoom mustn't be kept).
     @State private var didInitialZoom = false
+    /// Heading-up: recent fixes, to tell when you're walking in a straight line (and which way)
+    @AppStorage("mapHeadingUp") private var headingUp = true
+    @State private var recentFixes: [CLLocation] = []
+    @State private var walkHeading: Double?
+
+    /// The way you're heading, if the last ~25–60 m have been a straight line (nil while turning or standing).
+    private func straightHeading(_ fixes: [CLLocation]) -> Double? {
+        guard let now = fixes.last,
+              let start = fixes.last(where: { $0.distance(from: now) >= 25 }) else { return nil }
+        let pts = fixes.filter { $0.timestamp >= start.timestamp }
+        guard pts.count >= 3 else { return nil }
+        let overall = Self.bearing(start.coordinate, now.coordinate)
+        // every leg of the walk points (roughly) the same way
+        for (a, b) in zip(pts, pts.dropFirst()) where a.distance(from: b) >= 4 {
+            if Self.angle(Self.bearing(a.coordinate, b.coordinate), overall) > 30 { return nil }
+        }
+        return overall
+    }
+    static func bearing(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
+        let φ1 = a.latitude * .pi / 180, φ2 = b.latitude * .pi / 180, Δλ = (b.longitude - a.longitude) * .pi / 180
+        let y = sin(Δλ) * cos(φ2), x = cos(φ1) * sin(φ2) - sin(φ1) * cos(φ2) * cos(Δλ)
+        return (atan2(y, x) * 180 / .pi + 360).truncatingRemainder(dividingBy: 360)
+    }
+    static func angle(_ a: Double, _ b: Double) -> Double { let d = abs(a - b).truncatingRemainder(dividingBy: 360); return min(d, 360 - d) }
 
     /// Tap the location button / menus close / app reopens: glide back to you at the same zoom.
     private func followMe(distance: Double? = nil, duration: Double = 0.6) {
@@ -337,9 +361,20 @@ struct MapHomeView: View {
             guard following, sheet == nil, let loc, loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 50 else { return }
             // tiny GPS wobbles don't move the camera
             if let old, loc.distance(from: old) < 3 { return }
+            // Heading-up: walking in a straight line turns the map so you're always going up the screen.
+            // Only a real change of direction (15°+) turns it, so it doesn't sway with every step.
+            var heading = lastCamera?.heading ?? 0
+            if headingUp {
+                recentFixes.append(loc)
+                recentFixes.removeAll { loc.timestamp.timeIntervalSince($0.timestamp) > 90 || loc.distance(from: $0) > 80 }
+                if let h = straightHeading(recentFixes), Self.angle(h, heading) >= 15 || walkHeading == nil {
+                    walkHeading = h
+                    heading = h
+                }
+            }
             let cam = MapCamera(centerCoordinate: loc.coordinate, distance: zoomDistance,
-                                heading: lastCamera?.heading ?? 0, pitch: lastCamera?.pitch ?? 0)
-            withAnimation(.linear(duration: 0.8)) { camera = .camera(cam) }
+                                heading: heading, pitch: lastCamera?.pitch ?? 0)
+            withAnimation(.linear(duration: heading == (lastCamera?.heading ?? 0) ? 0.8 : 1.2)) { camera = .camera(cam) }
         }
         // Launch, and every time you come back to the app (the map is rebuilt after being in the background):
         // it starts on the whole country, so as soon as we know where you are, jump in to street level —

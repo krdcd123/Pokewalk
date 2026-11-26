@@ -690,6 +690,7 @@ struct SettingsView: View {
     @StateObject private var downloader = SpriteDownloader.shared
     @StateObject private var cries = CryPlayer.shared
 
+    @AppStorage("mapHeadingUp") private var headingUp = true
     var body: some View {
         Form {
             SavedSpotSection(spot: HomeLocation, title: "Home", icon: "house", isSet: $homeSet)
@@ -734,6 +735,13 @@ struct SettingsView: View {
                     }
                     .glassRow()
                 Toggle("Encounter notifications", isOn: binding(\.notifyEncounters)).glassRow()
+                Toggle(isOn: $headingUp) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Turn the map as you walk")
+                        Text("Walking in a straight line, the map turns so you're always heading up the screen.")
+                            .font(.rounded(12)).foregroundStyle(Theme.inkSoft)
+                    }
+                }.glassRow()
                 Toggle(isOn: Binding(get: { fullAccuracy }, set: { fullAccuracy = $0; LocationTracker.shared.setFullAccuracyAlways($0) })) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Full accuracy all the time")
