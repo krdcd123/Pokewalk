@@ -219,8 +219,7 @@ enum Dex {
     static func itemName(_ key: String) -> String {
         if let n = extraNames[key] { return n }
         if key == Fishing.rodKey { return Fishing.rodName }
-        if let n = Fishing.baitBerries(key) { return Fishing.baitName(berries: n) }
-        if let n = Fishing.lureBerries(key) { return Fishing.lureName(berries: n) }
+        if let name = Fishing.name(key) { return name }
         if let b = BallKind.allCases.first(where: { $0.itemKey == key }) { return b.name }
         return itemNames[key] ?? key.split(separator: "-").map { $0.capitalized }.joined(separator: " ")
     }

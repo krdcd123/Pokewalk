@@ -5,6 +5,7 @@ struct EncounterContext {
     var habitats: Set<Habitat> = [.urban, .grassland]
     var isNight: Bool = false
     var location: MetLocation?
+    var favouredTypes: Set<PokeType> = []          // a flavoured lure's types
 }
 
 struct StepOutcome {
@@ -309,6 +310,7 @@ enum GameRules {
         if spooky { w *= context.isNight ? 1.5 : 0.8 }
         // Weather where you are: matching types are ~5% more likely (rain → Water, sun → Fire…)
         if let weather = currentWeather, !weather.boostedTypes.isDisjoint(with: sp.types) { w *= weatherBoost }
+        if !context.favouredTypes.isEmpty, !context.favouredTypes.isDisjoint(with: sp.types) { w *= Fishing.flavorBoost }
         return w
     }
 

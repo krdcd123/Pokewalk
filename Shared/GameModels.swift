@@ -285,6 +285,7 @@ struct StepCounters: Codable, Hashable {
 /// A lure that's been set: after `endsAt`, it brings a wild Pokémon.
 struct ActiveLure: Codable, Equatable {
     var berries: Int
+    var flavor: Fishing.Flavor?
     var startedAt: Date
     var endsAt: Date
 }

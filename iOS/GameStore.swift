@@ -540,15 +540,13 @@ final class GameStore: ObservableObject {
             return nil
         }
         let r = FrontierRules.reward(for: battle, champion: trainer.isChampion)
-        let allLeaders = FrontierRules.leaders + [FrontierRules.sundayLeader]
-        let leaderKey: String? = trainer.isLeader ? allLeaders.first(where: { $0.name == trainer.name })?.key : nil
+        let leaderKey: String? = trainer.isLeader ? FrontierRules.everyLeader.first(where: { "leader_" + $0.key == trainer.pic })?.key : nil
         mutate { s in
             s.frontier.won = battle
             s.frontier.totalWins += 1
             s.stats["frontierWins", default: 0] += 1
-            s.money += r.money
-            for (b, n) in r.balls { s.balls[b, default: 0] += n }
-            for (k, n) in r.items { s.bag[k, default: 0] += n }
+            s.frontier.bp += r.bp
+            s.frontier.bpEarned += r.bp
             if let key = leaderKey {
                 if !s.frontier.leadersBeaten.contains(key) { s.frontier.leadersBeaten.append(key) }
                 if !s.frontier.badges.contains(key) { s.frontier.badges.append(key) }
@@ -1118,9 +1116,9 @@ final class GameStore: ObservableObject {
         mutate { s in
             s.bag[key, default: 0] -= 1
             if s.bag[key] == 0 { s.bag[key] = nil }
-            s.activeLure = ActiveLure(berries: n, startedAt: now, endsAt: now.addingTimeInterval(Fishing.lureDuration))
+            s.activeLure = ActiveLure(berries: n, flavor: Fishing.flavor(key), startedAt: now, endsAt: now.addingTimeInterval(Fishing.lureDuration))
         }
-        notify(title: "Your lure is ready!", body: "Something was attracted by your \(Fishing.lureName(berries: n)). Open PokéWalk to see.",
+        notify(title: "Your lure is ready!", body: "Something was attracted by your \(Fishing.name(key) ?? "lure"). Open PokéWalk to see.",
                id: "lure", at: now.addingTimeInterval(Fishing.lureDuration))
         return true
     }
@@ -1136,6 +1134,7 @@ final class GameStore: ObservableObject {
             context.location = MetLocation(latitude: loc.coordinate.latitude, longitude: loc.coordinate.longitude,
                                            placeName: await PlaceService.shared.placeName(for: loc))
         }
+        context.favouredTypes = lure.flavor?.lureTypes ?? []
         guard state.activeLure == lure else { return }        // already handled while we were looking
         let candidates = (0..<Fishing.lurePicks(berries: lure.berries)).map { _ in
             GameRules.generateEncounter(context: context, lifetimeSteps: state.lifetimeSteps, settings: state.settings)
@@ -1160,6 +1159,13 @@ final class GameStore: ObservableObject {
             if case .bite = result { s.stats["fishHooked", default: 0] += 1 }
         }
         return result
+    }
+
+    /// The BP counter: Frontier Battle Points for items and special balls.
+    func buyWithBP(_ e: BPShop.Entry, count: Int = 1) -> Bool {
+        var ok = false
+        mutate { ok = BPShop.buy(e, count: count, in: &$0) }
+        return ok
     }
 
     func buy(_ ball: BallKind, count: Int) -> Bool {
@@ -1335,7 +1341,7 @@ final class GameStore: ObservableObject {
         a.frontierWon = s.frontier.day == FrontierRules.today() ? s.frontier.won : 0
         a.frontierLost = s.frontier.day == FrontierRules.today() && s.frontier.lost
         a.badges = s.frontier.badges.count
-        a.leaderToday = FrontierRules.weekday() == 7 ? "Sunday special" : FrontierRules.leaders[FrontierRules.weekday() - 1].name
+        a.leaderToday = FrontierRules.leaderToday(FrontierRules.region(s)).name
         a.contestWins = s.contests.wins
         a.ribbons = s.contests.ribbons.values.reduce(0) { $0 + $1.count }
         a.season = Season.at().name

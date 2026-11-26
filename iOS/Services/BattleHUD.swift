@@ -23,7 +23,13 @@ enum BattleGen: String {
                 "cooltrainer_f": "cooltrainer_f", "expert_m": "gentleman", "dragon_tamer": "clair",
                 "leader_roxanne": "brock", "leader_brawly": "chuck", "leader_wattson": "lt_surge", "leader_flannery": "blaine",
                 "leader_norman": "whitney", "leader_winona": "falkner", "leader_tate_and_liza": "sabrina",
-                "champion_wallace": "champion", "steven": "blue",
+                "champion_wallace": "champion", "steven": "blue", "leader_juan": "pryce",
+                // Kanto & Johto leaders as Crystal drew them
+                "leader_brock": "brock", "leader_misty": "misty", "leader_lt_surge": "lt_surge", "leader_erika": "erika",
+                "leader_koga": "koga", "leader_sabrina": "sabrina", "leader_blaine": "blaine", "leader_giovanni": "blue",
+                "leader_falkner": "falkner", "leader_bugsy": "bugsy", "leader_whitney": "whitney", "leader_morty": "morty",
+                "leader_chuck": "chuck", "leader_jasmine": "jasmine", "leader_pryce": "pryce", "leader_clair": "clair",
+                "champion_lance": "champion", "champion_blue": "blue",
             ]
             let name = map[emeraldPic] ?? "red"            // Frontier Brains → Red, the strongest trainer in Gen 2
             return URL(string: "https://raw.githubusercontent.com/pret/pokecrystal/master/gfx/trainers/\(name).png")
@@ -34,7 +40,10 @@ enum BattleGen: String {
                 "cooltrainer_f": "cooltrainerf", "expert_m": "gentleman", "dragon_tamer": "lance",
                 "leader_roxanne": "brock", "leader_brawly": "bruno", "leader_wattson": "lt.surge", "leader_flannery": "blaine",
                 "leader_norman": "giovanni", "leader_winona": "koga", "leader_tate_and_liza": "sabrina",
-                "champion_wallace": "rival3", "steven": "lance",
+                "champion_wallace": "rival3", "steven": "lance", "leader_juan": "misty",
+                "leader_brock": "brock", "leader_misty": "misty", "leader_lt_surge": "lt.surge", "leader_erika": "erika",
+                "leader_koga": "koga", "leader_sabrina": "sabrina", "leader_blaine": "blaine", "leader_giovanni": "giovanni",
+                "champion_blue": "rival3", "champion_lance": "lance",
             ]
             let name = map[emeraldPic] ?? "rival3"
             return URL(string: "https://raw.githubusercontent.com/pret/pokered/master/gfx/trainers/\(name).png")
@@ -45,6 +54,9 @@ enum BattleGen: String {
     func overworldPath(_ emeraldPic: String) -> (url: URL, colour: UInt32)? {
         switch self {
         case .rse:
+            if let fr = Self.fireRedPerson(emeraldPic) {
+                return URL(string: "https://raw.githubusercontent.com/pret/pokefirered/master/graphics/object_events/pics/people/\(fr).png").map { ($0, 0) }
+            }
             let map: [String: String] = [
                 "cooltrainer_m": "man_3", "cooltrainer_f": "woman_5", "dragon_tamer": "man_5", "champion_wallace": "wallace",
             ]
@@ -67,11 +79,33 @@ enum BattleGen: String {
                 "leader_wattson": ("surge", 0x40A040), "leader_flannery": ("blaine", 0xE04040),
                 "leader_norman": (self == .rby ? "rocket" : "whitney", 0xE060A0), "leader_winona": (self == .rby ? "koga" : "falkner", 0x3870E0),
                 "leader_tate_and_liza": ("sabrina", 0xE04040), "champion_wallace": (self == .rby ? "blue" : "lance", 0xE04040),
-                "steven": (self == .rby ? "lance" : "blue", 0x3870E0),
+                "steven": (self == .rby ? "lance" : "blue", 0x3870E0), "leader_juan": ("pryce", 0x3870E0),
+                "leader_brock": ("brock", 0x9A6A3A), "leader_misty": ("misty", 0x3870E0), "leader_lt_surge": ("surge", 0x40A040),
+                "leader_erika": ("erika", 0x40A040), "leader_koga": ("koga", 0xB060C0), "leader_sabrina": ("sabrina", 0xE04040),
+                "leader_blaine": ("blaine", 0xE04040), "leader_giovanni": ("rocket", 0x9A6A3A),
+                "leader_falkner": ("falkner", 0x3870E0), "leader_bugsy": ("bugsy", 0x40A040), "leader_whitney": ("whitney", 0xE060A0),
+                "leader_morty": ("morty", 0xB060C0), "leader_chuck": ("chuck", 0x9A6A3A), "leader_jasmine": ("jasmine", 0x40A040),
+                "leader_pryce": ("pryce", 0x3870E0), "leader_clair": ("clair", 0x3870E0),
+                "champion_lance": ("lance", 0xE04040), "champion_blue": ("blue", 0x3870E0),
             ]
             let e = map[emeraldPic] ?? ("red", 0xE04040)
             return URL(string: "https://raw.githubusercontent.com/pret/pokecrystal/master/gfx/sprites/\(e.0).png").map { ($0, e.1) }
         }
+    }
+
+    /// Kanto leaders and Blue in a Gen 3 battle come from FireRed/LeafGreen (pokeemerald doesn't have them).
+    static let fireRedKanto: Set<String> = ["brock", "misty", "lt_surge", "erika", "koga", "sabrina", "blaine", "giovanni"]
+    static func fireRedPerson(_ pic: String) -> String? {
+        if pic == "champion_blue" { return "blue" }
+        guard pic.hasPrefix("leader_") else { return nil }
+        let k = String(pic.dropFirst(7))
+        return fireRedKanto.contains(k) ? k : nil
+    }
+    /// The FireRed front picture (path inside pret/pokefirered), for Kanto leaders and Blue.
+    static func fireRedFrontPic(_ pic: String) -> String? {
+        if pic == "champion_blue" { return "graphics/trainers/front_pics/champion_rival_front_pic.png" }
+        guard let k = fireRedPerson(pic) else { return nil }
+        return "graphics/trainers/front_pics/leader_\(k)_front_pic.png"
     }
 
     /// The Game Boy games had a plain white battle background.

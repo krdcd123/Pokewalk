@@ -185,7 +185,7 @@ enum Achievements {
             A(id: "frontier1", title: "Frontier Debut", detail: "Win a Battle Frontier battle", symbol: "flag.2.crossed.fill", tier: 1, category: .master, target: 1, value: stat("frontierWins")),
             A(id: "frontier100", title: "Frontier Regular", detail: "Win 100 Battle Frontier battles", symbol: "flag.2.crossed.fill", tier: 3, category: .master, target: 100, value: stat("frontierWins")),
             A(id: "frontier500", title: "Frontier Legend", detail: "Win 500 Battle Frontier battles", symbol: "flag.checkered", tier: 4, category: .master, target: 500, value: stat("frontierWins")),
-            A(id: "badges", title: "Badge Collector", detail: "Earn all 7 Gym badges", symbol: "seal.fill", tier: 3, category: .master, target: 7) { $0.frontier.badges.count },
+            A(id: "badges", title: "Badge Collector", detail: "Earn 8 Gym badges", symbol: "seal.fill", tier: 3, category: .master, target: 8) { $0.frontier.badges.count },
             A(id: "champion", title: "Hoenn Champion", detail: "Beat the Champion or a Frontier Brain", symbol: "crown.fill", tier: 4, category: .master, target: 1, value: stat("championWins")),
             A(id: "brains", title: "Frontier Brain Buster", detail: "Beat 5 different Champions and Frontier Brains", symbol: "star.square.fill", tier: 5, category: .master, target: 5) { $0.frontier.symbols.count },
             A(id: "contest1", title: "Showtime", detail: "Win a contest", symbol: "rosette", tier: 1, category: .pokemon, target: 1, value: stat("contestWins")),

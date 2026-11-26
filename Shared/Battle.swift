@@ -48,6 +48,8 @@ struct Frontier: Codable, Equatable, Hashable {
     var badges: [String] = []         // every leader ever beaten
     var symbols: [String] = []        // Champion / Frontier Brains beaten
     var totalWins = 0
+    var bp = 0                        // Battle Points to spend at the Poké Mart's BP counter
+    var bpEarned = 0
 
     init() {}
     init(from decoder: Decoder) throws {
@@ -60,6 +62,8 @@ struct Frontier: Codable, Equatable, Hashable {
         badges = (try? c.decodeIfPresent([String].self, forKey: .badges)) ?? []
         symbols = (try? c.decodeIfPresent([String].self, forKey: .symbols)) ?? []
         totalWins = (try? c.decodeIfPresent(Int.self, forKey: .totalWins)) ?? 0
+        bp = (try? c.decodeIfPresent(Int.self, forKey: .bp)) ?? 0
+        bpEarned = (try? c.decodeIfPresent(Int.self, forKey: .bpEarned)) ?? 0
     }
 }
 
@@ -77,22 +81,68 @@ struct FrontierTrainer {
 enum FrontierRules {
     struct Leader { let key: String; let name: String; let badge: String; let type: PokeType; let team: [Int] }
 
-    /// Monday → Saturday.
-    static let leaders: [Leader] = [
+    /// Your trainer's games decide which region's Gym Leaders (and Champion) you face.
+    enum Region: String { case kanto, johto, hoenn }
+    static func region(_ s: GameState) -> Region { region(appearance: s.trainer.appearance) }
+    static func region(appearance: String) -> Region {
+        switch appearance {
+        case "red1", "red", "leaf": return .kanto
+        case "gold", "kris": return .johto
+        default: return .hoenn
+        }
+    }
+
+    /// Monday → Saturday, then the two Sunday leaders (they take turns, week by week).
+    static let kanto: [Leader] = [
+        .init(key: "brock", name: "Brock", badge: "Boulder Badge", type: .rock, team: [74, 138, 140, 111, 95]),
+        .init(key: "misty", name: "Misty", badge: "Cascade Badge", type: .water, team: [118, 54, 86, 116, 121]),
+        .init(key: "lt_surge", name: "Lt. Surge", badge: "Thunder Badge", type: .electric, team: [100, 81, 125, 25, 26]),
+        .init(key: "erika", name: "Erika", badge: "Rainbow Badge", type: .grass, team: [114, 70, 102, 44, 45]),
+        .init(key: "koga", name: "Koga", badge: "Soul Badge", type: .poison, team: [109, 88, 48, 42, 110]),
+        .init(key: "sabrina", name: "Sabrina", badge: "Marsh Badge", type: .psychic, team: [122, 49, 97, 124, 65]),
+        .init(key: "blaine", name: "Blaine", badge: "Volcano Badge", type: .fire, team: [58, 77, 37, 126, 59]),
+        .init(key: "giovanni", name: "Giovanni", badge: "Earth Badge", type: .ground, team: [111, 51, 31, 34, 112]),
+    ]
+    static let johto: [Leader] = [
+        .init(key: "falkner", name: "Falkner", badge: "Zephyr Badge", type: .flying, team: [16, 21, 163, 83, 17]),
+        .init(key: "bugsy", name: "Bugsy", badge: "Hive Badge", type: .bug, team: [165, 167, 48, 193, 123]),
+        .init(key: "whitney", name: "Whitney", badge: "Plain Badge", type: .normal, team: [35, 39, 161, 206, 241]),
+        .init(key: "morty", name: "Morty", badge: "Fog Badge", type: .ghost, team: [92, 200, 93, 200, 94]),
+        .init(key: "chuck", name: "Chuck", badge: "Storm Badge", type: .fighting, team: [56, 66, 237, 57, 62]),
+        .init(key: "jasmine", name: "Jasmine", badge: "Mineral Badge", type: .steel, team: [81, 205, 227, 82, 208]),
+        .init(key: "pryce", name: "Pryce", badge: "Glacier Badge", type: .ice, team: [86, 220, 124, 87, 221]),
+        .init(key: "clair", name: "Clair", badge: "Rising Badge", type: .dragon, team: [147, 116, 148, 117, 230]),
+    ]
+    static let hoenn: [Leader] = [
         .init(key: "roxanne", name: "Roxanne", badge: "Stone Badge", type: .rock, team: [74, 299, 95, 345, 347]),
         .init(key: "brawly", name: "Brawly", badge: "Knuckle Badge", type: .fighting, team: [66, 296, 307, 56, 214]),
         .init(key: "wattson", name: "Wattson", badge: "Dynamo Badge", type: .electric, team: [81, 309, 100, 25, 311]),
         .init(key: "flannery", name: "Flannery", badge: "Heat Badge", type: .fire, team: [218, 322, 324, 58, 77]),
         .init(key: "norman", name: "Norman", badge: "Balance Badge", type: .normal, team: [287, 327, 263, 300, 241]),
         .init(key: "winona", name: "Winona", badge: "Feather Badge", type: .flying, team: [333, 276, 278, 227, 357]),
+        .init(key: "tate_and_liza", name: "Tate & Liza", badge: "Mind Badge", type: .psychic, team: [337, 338, 343, 177, 280]),
+        .init(key: "juan", name: "Juan", badge: "Rain Badge", type: .water, team: [370, 340, 364, 342, 230]),
     ]
-    /// Sunday if all six weren't beaten this week.
-    static let sundayLeader = Leader(key: "tate_and_liza", name: "Tate & Liza", badge: "Mind Badge", type: .psychic,
-                                     team: [337, 338, 343, 177, 280])
+    /// All eight of a region's leaders.
+    static func allLeaders(_ r: Region) -> [Leader] { r == .kanto ? kanto : r == .johto ? johto : hoenn }
+    /// Monday → Saturday.
+    static func leaders(_ r: Region) -> [Leader] { Array(allLeaders(r).prefix(6)) }
+    /// Sunday's leader if all six weren't beaten this week (the region's last two take turns).
+    static func sundayLeader(_ r: Region, date: Date = .now) -> Leader { allLeaders(r)[6 + Swarm.week(date) % 2] }
+    static var everyLeader: [Leader] { kanto + johto + hoenn }
+    static func leaderToday(_ r: Region, date: Date = .now) -> Leader {
+        let d = weekday(date)
+        return d == 7 ? sundayLeader(r, date: date) : leaders(r)[d - 1]
+    }
 
     struct Brain { let key: String; let name: String; let title: String; let pic: String; let team: [Int] }
-    static let champion = Brain(key: "wallace", name: "Wallace", title: "Champion", pic: "champion_wallace",
-                                team: [321, 73, 272, 340, 130, 350])
+    static func champion(_ r: Region) -> Brain {
+        switch r {
+        case .kanto: return Brain(key: "blue", name: "Blue", title: "Champion", pic: "champion_blue", team: [18, 65, 112, 103, 59, 9])
+        case .johto: return Brain(key: "lance", name: "Lance", title: "Champion", pic: "champion_lance", team: [130, 142, 6, 148, 148, 149])
+        case .hoenn: return Brain(key: "wallace", name: "Wallace", title: "Champion", pic: "champion_wallace", team: [321, 73, 272, 340, 130, 350])
+        }
+    }
     static let brains: [Brain] = [
         .init(key: "anabel", name: "Anabel", title: "Salon Maiden", pic: "salon_maiden_anabel", team: [65, 244, 143]),
         .init(key: "tucker", name: "Tucker", title: "Dome Ace", pic: "dome_ace_tucker", team: [260, 373, 6]),
@@ -158,27 +208,32 @@ enum FrontierRules {
         var rng = SeededRNG(seed: daySeed &* 31 &+ UInt64(battle))
         if battle == 5 {
             let day = weekday(date)
+            let r = region(s)
             if day == 7 {
-                let allSix = s.frontier.week == Swarm.week(date) && Set(s.frontier.leadersBeaten).isSuperset(of: leaders.map(\.key))
+                let allSix = s.frontier.week == Swarm.week(date) && Set(s.frontier.leadersBeaten).isSuperset(of: leaders(r).map(\.key))
                 if allSix {
-                    let pick = Int.random(in: 0..<3, using: &rng) == 0 ? champion : brains.randomElement(using: &rng)!
-                    let lv = top + (pick.key == "wallace" ? 5 : 6)
+                    let champ = champion(r)
+                    let pick = Int.random(in: 0..<3, using: &rng) == 0 ? champ : brains.randomElement(using: &rng)!
+                    let isChamp = pick.key == champ.key
+                    let lv = top + (isChamp ? 5 : 6)
                     let team = pick.team.enumerated().map { i, id in mon(id, lv - (i == pick.team.count - 1 ? 0 : Int.random(in: 0...2, using: &rng)), battle: 6, rng: &rng) }
                     return FrontierTrainer(name: pick.name, title: pick.title, pic: pick.pic, team: team, isLeader: false,
                                            isChampion: true, badge: nil,
-                                           intro: pick.key == "wallace" ? "You beat every Gym Leader this week. Now face the Champion!"
-                                                                         : "A legendary trainer has heard of you…")
+                                           intro: isChamp ? "You beat every Gym Leader this week. Now face the Champion!"
+                                                          : "A legendary trainer has heard of you…")
                 }
             }
             // Gym Leaders: a full team above your best, with their ace last
-            let l = day == 7 ? sundayLeader : leaders[day - 1]
+            let l = leaderToday(r, date: date)
             let size = max(l.team.count, min(6, 4 + (s.party.count >= 5 ? 1 : 0) + (top >= 40 ? 1 : 0)))
             var ids = l.team
-            while ids.count < size, let extra = l.team.randomElement(using: &rng) { ids.insert(extra, at: 0) }
+            while ids.count < size, let extra = l.team.dropLast().randomElement(using: &rng) { ids.insert(extra, at: 0) }
             let team = ids.enumerated().map { i, id -> BattleMon in
                 let ace = i == ids.count - 1
                 let lv = top + (ace ? 3 : Int.random(in: 1...2, using: &rng))
-                return mon(evolve(id, level: lv), lv, battle: 5, rng: &rng)
+                var sp = evolve(id, level: lv)
+                if Dex.species(sp).isBaby, let next = Dex.species(sp).evolutions.first?.into { sp = evolve(next, level: lv) }
+                return mon(sp, lv, battle: 5, rng: &rng)
             }
             return FrontierTrainer(name: l.name, title: "Gym Leader", pic: "leader_" + l.key, team: team, isLeader: true,
                                    isChampion: false, badge: l.badge, intro: "\(l.name) uses \(l.type.displayName)-type Pokémon.")
@@ -207,27 +262,15 @@ enum FrontierRules {
                                isLeader: false, isChampion: false, badge: nil, intro: "")
     }
 
-    struct Reward { var money: Int; var balls: [BallKind: Int]; var items: [String: Int] }
+    /// Wins pay Battle Points, spent at the Poké Mart's BP counter.
+    struct Reward { var bp: Int }
 
     static func reward(for battle: Int, champion: Bool) -> Reward {
-        if champion {
-            return Reward(money: 60_000, balls: [.master: 1], items: ["lucky-egg": 1, "rare-candy": 10])
-        }
-        switch battle {
-        case 1: return Reward(money: 600, balls: [.poke: 3], items: [:])
-        case 2: return Reward(money: 1_200, balls: [.great: 3], items: [:])
-        case 3: return Reward(money: 2_500, balls: [.ultra: 3], items: [FieldItems.vitamins.randomElement()!: 1])
-        case 4: return Reward(money: 5_000, balls: [.ultra: 2], items: ["rare-candy": 2, ["repel", "honey", "revive"].randomElement()!: 1])
-        default: return Reward(money: 12_000, balls: [.ultra: 5], items: ["rare-candy": 5, "ability-capsule": 1])
-        }
+        if champion { return Reward(bp: 20) }
+        return Reward(bp: [1, 2, 3, 4, 8][max(0, min(4, battle - 1))])
     }
 
-    static func rewardText(_ r: Reward) -> String {
-        var parts = ["₽\(r.money.formatted())"]
-        for (b, n) in r.balls { parts.append("\(n) \(b.name)\(n == 1 ? "" : "s")") }
-        for (k, n) in r.items { parts.append(n == 1 ? Dex.itemName(k) : "\(n) \(Dex.itemName(k))") }
-        return parts.joined(separator: " · ")
-    }
+    static func rewardText(_ r: Reward) -> String { "\(r.bp) BP" }
 
     /// Resets the daily run (and the weekly leader list) when the day changes.
     static func refresh(_ s: inout GameState, date: Date = .now) {
@@ -253,5 +296,51 @@ struct SeededRNG: RandomNumberGenerator {
         z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
         z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
         return z ^ (z >> 31)
+    }
+}
+
+// MARK: - BP counter (Poké Mart)
+
+/// Spend Battle Points from the Frontier on items and balls you can't buy with money.
+enum BPShop {
+    struct Entry: Identifiable, Hashable {
+        let ball: BallKind?
+        let item: String?
+        let price: Int
+        let note: String
+        var id: String { ball?.rawValue ?? item ?? "" }
+    }
+
+    /// Balls the Poké Mart doesn't sell for money (plus Ultra Balls, as a BP bargain).
+    static let balls: [Entry] = [
+        .init(ball: .ultra, item: nil, price: 1, note: "2× catch rate."),
+        .init(ball: .premier, item: nil, price: 1, note: "Same as a Poké Ball, but a handsome white."),
+        .init(ball: .safari, item: nil, price: 2, note: "1.5× catch rate, the Safari Zone's own ball."),
+        .init(ball: .master, item: nil, price: 200, note: "Catches any wild Pokémon without fail."),
+    ]
+
+    static let items: [Entry] = [
+        .init(ball: nil, item: "rare-candy", price: 4, note: "Raises a Pokémon by one level."),
+        .init(ball: nil, item: "hp-up", price: 2, note: ""), .init(ball: nil, item: "protein", price: 2, note: ""),
+        .init(ball: nil, item: "iron", price: 2, note: ""), .init(ball: nil, item: "calcium", price: 2, note: ""),
+        .init(ball: nil, item: "zinc", price: 2, note: ""), .init(ball: nil, item: "carbos", price: 2, note: ""),
+        .init(ball: nil, item: "max-revive", price: 6, note: ""),
+        .init(ball: nil, item: "smoke-ball", price: 6, note: ""),
+        .init(ball: nil, item: "white-flute", price: 5, note: ""), .init(ball: nil, item: "black-flute", price: 5, note: ""),
+        .init(ball: nil, item: "revival-herb", price: 5, note: ""),
+        .init(ball: nil, item: "soothe-bell", price: 16, note: ""),
+        .init(ball: nil, item: "lucky-egg", price: 24, note: ""),
+        .init(ball: nil, item: "amulet-coin", price: 24, note: ""),
+        .init(ball: nil, item: "ability-capsule", price: 32, note: ""),
+    ]
+
+    @discardableResult
+    static func buy(_ e: Entry, count: Int = 1, in s: inout GameState) -> Bool {
+        let total = e.price * count
+        guard count > 0, s.frontier.bp >= total else { return false }
+        s.frontier.bp -= total
+        if let b = e.ball { s.balls[b, default: 0] += count }
+        if let k = e.item { s.bag[k, default: 0] += count }
+        return true
     }
 }

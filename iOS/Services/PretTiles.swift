@@ -15,7 +15,9 @@ enum PretFiles {
     static func data(_ path: String) async -> Data? {
         let file = dir.appendingPathComponent(path.replacingOccurrences(of: "/", with: "_"))
         if let d = try? Data(contentsOf: file) { return d }
-        guard let url = URL(string: base + path),
+        // "firered/…" paths come from pret/pokefirered
+        let full = path.hasPrefix("firered/") ? "https://raw.githubusercontent.com/pret/pokefirered/master/" + path.dropFirst(8) : base + path
+        guard let url = URL(string: full),
               let (d, resp) = try? await URLSession.shared.mirroredData(from: url),
               (resp as? HTTPURLResponse)?.statusCode == 200, !d.isEmpty else { return nil }
         try? d.write(to: file, options: .atomic)

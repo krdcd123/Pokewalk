@@ -622,7 +622,7 @@ struct LureTimerBubble: View {
                     .stroke(Theme.teal, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 VStack(spacing: 0) {
-                    ItemSprite(key: Fishing.lureKey(berries: lure.berries)).frame(width: 18, height: 18)
+                    ItemSprite(key: Fishing.lureKey(berries: lure.berries, flavor: lure.flavor)).frame(width: 18, height: 18)
                     Text(left > 0 ? String(format: "%d:%02d", Int(left) / 60, Int(left) % 60) : "Ready!")
                         .font(.rounded(10, .black)).monospacedDigit()
                         .foregroundStyle(.white)
@@ -708,9 +708,9 @@ struct EncounterListView: View {
                 // A lure that's been set: counts down 30 minutes, then a wild Pokémon appears in this list
                 if let lure = store.state.activeLure {
                     HStack(spacing: 12) {
-                        ItemSprite(key: Fishing.lureKey(berries: lure.berries)).frame(width: 40, height: 40)
+                        ItemSprite(key: Fishing.lureKey(berries: lure.berries, flavor: lure.flavor)).frame(width: 40, height: 40)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(Fishing.lureName(berries: lure.berries)).font(.rounded(16, .heavy)).foregroundStyle(Theme.ink)
+                            Text(Fishing.lureName(berries: lure.berries, flavor: lure.flavor)).font(.rounded(16, .heavy)).foregroundStyle(Theme.ink)
                             ProgressView(timerInterval: lure.startedAt...lure.endsAt, countsDown: false) { EmptyView() }
                                 currentValueLabel: { EmptyView() }
                                 .tint(Theme.teal)

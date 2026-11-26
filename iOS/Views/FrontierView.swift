@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Party › Battle Frontier: five battles a day, each tougher (and better paid) than the last. The fifth is a
+/// Party › Battle Frontier: five battles a day, each tougher (and paying more BP) than the last. The fifth is a
 /// Gym Leader — a different one each day, Monday to Saturday. Beat all six in a week and Sunday's fifth battle
 /// is the Champion or a legendary Frontier Brain.
 struct FrontierView: View {
@@ -47,6 +47,11 @@ struct FrontierView: View {
             }
             if let result {
                 Text(result).font(.rounded(13, .heavy)).foregroundStyle(.yellow)
+            }
+            HStack(spacing: 6) {
+                Image(systemName: "star.circle.fill").foregroundStyle(Color(hex: 0xF5C542))
+                Text("\(f.bp) BP").font(.rounded(15, .black)).foregroundStyle(.white)
+                Text("· spend them at the Poké Mart's BP counter").font(.rounded(12, .semibold)).foregroundStyle(Theme.inkSoft)
             }
             Text("Your Pokémon's levels set the trainers' levels, so it's always a fair fight. \(f.totalWins) wins in total.")
                 .font(.rounded(12, .semibold)).foregroundStyle(Theme.inkSoft)
@@ -101,11 +106,12 @@ struct FrontierView: View {
     }
 
     private func weekCard(_ f: Frontier) -> some View {
-        let beaten = f.week == Swarm.week() ? Set(f.leadersBeaten) : []
+        let regionKeys = Set(FrontierRules.leaders(FrontierRules.region(store.state)).map(\.key))
+        let beaten = f.week == Swarm.week() ? Set(f.leadersBeaten).intersection(regionKeys) : []
         return VStack(alignment: .leading, spacing: 8) {
             Text("This week's Gym Leaders").font(.rounded(16, .heavy)).foregroundStyle(.white)
             HStack(spacing: 6) {
-                ForEach(Array(FrontierRules.leaders.enumerated()), id: \.offset) { i, l in
+                ForEach(Array(FrontierRules.leaders(FrontierRules.region(store.state)).enumerated()), id: \.offset) { i, l in
                     VStack(spacing: 2) {
                         Image(systemName: beaten.contains(l.key) ? "shield.lefthalf.filled" : "shield")
                             .font(.system(size: 20, weight: .bold))
@@ -116,8 +122,9 @@ struct FrontierView: View {
                     .frame(maxWidth: .infinity)
                 }
             }
+            let sunday = FrontierRules.sundayLeader(FrontierRules.region(store.state))
             Text(beaten.count >= 6 ? "All six beaten! Sunday's 5th battle is the Champion or a Frontier Brain."
-                 : "Beat all six this week (\(beaten.count)/6) and Sunday's 5th battle is the Champion or a legendary Frontier Brain.")
+                 : "Beat all six this week (\(beaten.count)/6) and Sunday's 5th battle is the Champion or a legendary Frontier Brain. Otherwise it's \(sunday.name).")
                 .font(.rounded(12, .semibold)).foregroundStyle(Theme.inkSoft)
         }
         .padding(14)
@@ -127,7 +134,9 @@ struct FrontierView: View {
     private func badgeCard(_ f: Frontier) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Badges & symbols").font(.rounded(16, .heavy)).foregroundStyle(.white)
-            let all = FrontierRules.leaders + [FrontierRules.sundayLeader]
+            // your region's eight first, then any you earned with another trainer
+            let mine = FrontierRules.allLeaders(FrontierRules.region(store.state))
+            let all = mine + FrontierRules.everyLeader.filter { l in f.badges.contains(l.key) && !mine.contains { $0.key == l.key } }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(all, id: \.key) { l in
@@ -725,6 +734,7 @@ struct BattleView: View {
     /// The opponent's picture from your trainer's generation.
     private func loadTrainerPic() async -> UIImage? {
         if let u = gen.trainerPicURL(trainer.pic) { return await BattleHUD.gbTrainerPic(u) }
+        if let fr = BattleGen.fireRedFrontPic(trainer.pic) { return await PretFiles.sprite("firered/" + fr) }
         return await PretFiles.sprite("graphics/trainers/front_pics/\(trainer.pic).png")
     }
 

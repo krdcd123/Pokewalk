@@ -1040,7 +1040,9 @@ private struct BagItemRow: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(Dex.itemName(key)).font(.rounded(16, .heavy))
                         Text(Fishing.isBait(key) ? "Berries mixed into bait. Use it with the Fishing Rod (Key Items)."
+                                + (Fishing.flavor(key).map { " \($0.name): \($0.baitHint) bite more often." } ?? "")
                              : Fishing.isLure(key) ? "Set it and, after 30 minutes, it attracts a wild Pokémon — rarer with more berries."
+                                + (Fishing.flavor(key).map { " \($0.name): more likely to bring \($0.lureHint)." } ?? "")
                              : GameRules.itemDescription(key)).font(.rounded(12)).foregroundStyle(Theme.inkSoft)
                             .lineLimit(expanded ? nil : 1)
                     }
@@ -1366,18 +1368,26 @@ private struct BerryMixSheet: View {
     var body: some View {
         let n = max(1, total)
         let w = Fishing.tierWeights(berries: n), sum = w.reduce(0, +)
+        let f = Fishing.Flavor.dominant(chosen)
+        let key = lure ? Fishing.lureKey(berries: n, flavor: f) : Fishing.baitKey(berries: n, flavor: f)
+        let made = Fishing.name(key) ?? ""
         NavigationStack {
             List {
                 Section {
                     HStack(spacing: 12) {
-                        ItemSprite(key: lure ? Fishing.lureKey(berries: n) : Fishing.baitKey(berries: n)).frame(width: 34, height: 34)
+                        ItemSprite(key: key).frame(width: 34, height: 34)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(total == 0 ? (lure ? "Lure" : "Bait") : lure ? Fishing.lureName(berries: total) : Fishing.baitName(berries: total))
+                            Text(total == 0 ? (lure ? "Lure" : "Bait") : made)
                                 .font(.rounded(16, .heavy))
                             Text(total == 0 ? "Add some berries below"
                                  : lure ? "Rarest of \(Fishing.lurePicks(berries: n)) wild Pokémon · +\(Fishing.lureLevelBonus(berries: n)) levels"
                                  : "\(Int(Fishing.biteChance(berries: n) * 100))% bite · \(Int((w[2] / sum * 100).rounded()))% rare catch")
                                 .font(.rounded(12, .heavy)).foregroundStyle(Theme.tealDark)
+                            if total > 0 {
+                                Text(f.map { "\($0.name): \(lure ? "more " + $0.lureHint : $0.baitHint + " bite more")" }
+                                     ?? "Mixed flavours — use mostly one kind of berry to attract certain Pokémon")
+                                    .font(.rounded(11, .semibold)).foregroundStyle(Theme.inkSoft)
+                            }
                         }
                         Spacer()
                         Text("\(total)/\(Fishing.maxBerries)").font(.rounded(15, .heavy)).monospacedDigit()
@@ -1414,7 +1424,7 @@ private struct BerryMixSheet: View {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         if store.makeBait(using: chosen.filter { $0.value > 0 }, lure: lure) {
                             SoundKit.shared.play(.useItem)
-                            store.toast = "Made \(lure ? Fishing.lureName(berries: total) : Fishing.baitName(berries: total))! It's in your Items pocket."
+                            store.toast = "Made a \(made)! It's in your Items pocket."
                             dismiss()
                         }
                     }
@@ -1520,10 +1530,11 @@ private struct FishingRodRow: View {
 /// Spend Pokédollars from selling valuables on balls (pricier than the games — balls also come free every 100 steps).
 struct ShopView: View {
     enum Section: String, CaseIterable, Identifiable {
-        case balls = "Balls", supplies = "Supplies", bait = "Bait & lures", key = "Key items"
+        case balls = "Balls", supplies = "Supplies", bait = "Bait & lures", key = "Key items", bp = "BP"
         var id: String { rawValue }
         var icon: String {
             switch self {
+            case .bp: return "star.circle.fill"
             case .balls: return "circle.circle.fill"
             case .supplies: return "cross.case.fill"
             case .bait: return "fish.fill"
@@ -1718,6 +1729,34 @@ struct ShopView: View {
             }
             }
 
+            if section == .bp {
+                SwiftUI.Section {
+                    HStack(spacing: 12) {
+                        Image(systemName: "star.circle.fill").font(.system(size: 28)).foregroundStyle(Color(hex: 0xF5C542))
+                        VStack(alignment: .leading) {
+                            Text("Battle Points").font(.rounded(13, .heavy)).foregroundStyle(Theme.inkSoft)
+                            Text("\(store.state.frontier.bp) BP").font(.rounded(26, .black))
+                                .contentTransition(.numericText(value: Double(store.state.frontier.bp)))
+                        }
+                        Spacer()
+                    }
+                    .glassRow()
+                } footer: {
+                    Text("Win Battle Frontier battles for BP: 1, 2, 3 and 4 BP for the first four, 8 for the Gym Leader and 20 for the Champion or a Frontier Brain.")
+                }
+                SwiftUI.Section {
+                    ForEach(BPShop.balls) { e in bpRow(e, name: e.ball!.name, key: e.ball!.itemKey, note: e.note,
+                                                        have: store.state.balls[e.ball!, default: 0]) }
+                } header: { Text("Balls") }
+                SwiftUI.Section {
+                    ForEach(BPShop.items) { e in
+                        let k = e.item!
+                        bpRow(e, name: Dex.itemName(k), key: k, note: e.note.isEmpty ? (FieldItems.description(k) ?? "") : e.note,
+                              have: store.state.bag[k] ?? 0)
+                    }
+                } header: { Text("Items") }
+            }
+
             if section == .bait {
             SwiftUI.Section {
                 ForEach([false, true], id: \.self) { isLure in
@@ -1770,6 +1809,33 @@ struct ShopView: View {
         )
         .navigationTitle("Poké Mart")
         .glassScreen()
+    }
+
+    private func bpRow(_ e: BPShop.Entry, name: String, key: String, note: String, have: Int) -> some View {
+        let afford = store.state.frontier.bp >= e.price
+        return HStack(spacing: 12) {
+            ItemSprite(key: key).frame(width: 32, height: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).font(.rounded(16, .heavy))
+                if !note.isEmpty { Text(note).font(.rounded(12)).foregroundStyle(Theme.inkSoft) }
+                Text("have \(have)").font(.rounded(11, .heavy)).foregroundStyle(Theme.inkSoft)
+            }
+            Spacer()
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                if store.buyWithBP(e) {
+                    SoundKit.shared.play(.select)
+                    store.toast = "Got a \(name) for \(e.price) BP!"
+                }
+            } label: {
+                Text("\(e.price) BP").font(.rounded(14, .heavy)).foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(afford ? Color(hex: 0xC9962A).opacity(0.9) : .white.opacity(0.1), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(!afford)
+        }
+        .glassRow()
     }
 }
 

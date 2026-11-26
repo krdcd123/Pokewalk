@@ -232,7 +232,7 @@ enum SharedStore {
     }
 
     static func remoteItemURL(_ key: String) -> URL {
-        let k = Fishing.isBait(key) ? "honey" : Fishing.isLure(key) ? "lax-incense" : key
+        let k = Fishing.iconKey(key) ?? key
         return URL(string: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/\(k).png")!
     }
 
