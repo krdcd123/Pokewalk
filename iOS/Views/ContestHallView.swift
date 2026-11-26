@@ -224,7 +224,7 @@ private struct ContestStage: View {
     @State private var confetti: Date?
     @State private var place = 4
 
-    private var moves: [BattleMove] { MoveData.latestSet(species: entry.mon.speciesID, level: entry.mon.level).map(BattleMove.init(id:)) }
+    private var moves: [BattleMove] { MoveData.latestSet(species: entry.mon.speciesID, level: entry.mon.level).map { BattleMove(id: $0) } }
 
     var body: some View {
         ZStack {
