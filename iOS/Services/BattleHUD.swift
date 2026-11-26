@@ -179,6 +179,11 @@ final class BattleHUD {
             let i = (y * w + x) * 4
             px[i] = c.0; px[i + 1] = c.1; px[i + 2] = c.2; px[i + 3] = 255
         }
+        mutating func clear(_ x: Int, _ y: Int) {
+            guard x >= 0, y >= 0, x < w, y < h else { return }
+            let i = (y * w + x) * 4
+            px[i] = 0; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 0
+        }
         func image() -> UIImage? {
             guard let p = CGDataProvider(data: Data(px) as CFData),
                   let cg = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
@@ -339,7 +344,8 @@ final class BattleHUD {
         var c = Canvas(cols * 8, rows * 8)
         for i in 0..<(c.w * c.h) { c.px[i * 4] = 0; c.px[i * 4 + 3] = 0 }
 
-        func tile(_ png: IndexedPNG, _ index: Int, at col: Int, _ row: Int, oneBit: Bool = false) {
+        // White paper is see-through (except inside the HP bar), so a big Pokémon behind the HUD isn't cut off.
+        func tile(_ png: IndexedPNG, _ index: Int, at col: Int, _ row: Int, oneBit: Bool = false, keepWhite: Bool = false) {
             let per = png.w / 8
             let tx = (index % per) * 8, ty = (index / per) * 8
             let maxV = png.depth >= 8 ? 255 : (1 << png.depth) - 1
@@ -348,10 +354,11 @@ final class BattleHUD {
                 let raw = Int(png.indices[(ty + y) * png.w + tx + x])
                 let v = raw * 255 / max(1, maxV)                // 255 white … 0 black
                 let colour: (UInt8, UInt8, UInt8) = v > 212 ? white : v > 127 ? light : v > 42 ? barColour : black
-                c.set(col * 8 + x, row * 8 + y, colour)
+                if colour == white && !keepWhite { c.clear(col * 8 + x, row * 8 + y) }
+                else { c.set(col * 8 + x, row * 8 + y, colour) }
             } }
         }
-        func blank(_ col: Int, _ row: Int) { for y in 0..<8 { for x in 0..<8 { c.set(col * 8 + x, row * 8 + y, white) } } }
+        func blank(_ col: Int, _ row: Int) { for y in 0..<8 { for x in 0..<8 { c.clear(col * 8 + x, row * 8 + y) } } }
         // Game Boy charmap: A=$80 … ; font.png holds $80–$FF
         func code(_ ch: Character) -> Int? {
             switch ch {
@@ -378,7 +385,7 @@ final class BattleHUD {
             tile(g.extra, 0, at: col, row); tile(g.extra, 1, at: col + 1, row)       // "HP:"
             for t in 0..<6 {
                 let px = max(0, min(8, filled - t * 8))
-                tile(g.extra, 2 + px, at: col + 2 + t, row)                         // $62 empty … $6A full
+                tile(g.extra, 2 + px, at: col + 2 + t, row, keepWhite: true)        // $62 empty … $6A full
             }
         }
         // the HUD's white background
