@@ -17,11 +17,23 @@ struct ActivitiesView: View {
 
     @State var tab: Tab
     @EnvironmentObject private var store: GameStore
+    @State private var unlocked: String?
+
+    /// The Daycare and Contest Hall only appear once the Ranch is far enough along to build them.
+    private var tabs: [Tab] {
+        Tab.allCases.filter { t in
+            switch t {
+            case .daycare: return DaycareRules.canStart(store.state) || store.state.daycare.open
+            case .contests: return ContestRules.canStart(store.state) || store.state.contests.open
+            default: return true
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             Picker("Activity", selection: $tab) {
-                ForEach(Tab.allCases) { t in Label(t.rawValue, systemImage: t.symbol).tag(t) }
+                ForEach(tabs) { t in Label(t.rawValue, systemImage: t.symbol).tag(t) }
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
@@ -36,6 +48,18 @@ struct ActivitiesView: View {
                 }
             }
             .frame(maxHeight: .infinity)
+        }
+        .onChange(of: tabs) { old, new in
+            // a tab just appeared: say so
+            if let t = new.first(where: { !old.contains($0) }) {
+                unlocked = t == .daycare ? "Daycare" : "Contest Hall"
+            }
+            if !new.contains(tab) { tab = .ranch }
+        }
+        .alert("\(unlocked ?? "") unlocked!", isPresented: Binding(get: { unlocked != nil }, set: { if !$0 { unlocked = nil } })) {
+            Button("Great!") { SoundKit.shared.play(.select) }
+        } message: {
+            Text("You can now build the \(unlocked ?? "") — find it in the tabs at the top of Activities.")
         }
         .navigationTitle(tab.rawValue)
         .navigationBarTitleDisplayMode(.inline)

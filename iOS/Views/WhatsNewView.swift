@@ -6,6 +6,9 @@ enum WhatsNew {
     struct Note { let build: Int; let items: [String] }
 
     static let notes: [Note] = [
+        Note(build: 203, items: [
+            "The Daycare and Contest Hall stay hidden until your Ranch is ready for them, then pop up with a message (on the watch too).",
+        ]),
         Note(build: 202, items: [
             "Catching is harder: no more free catch bonus, and higher-level Pokémon are tougher to catch. Great and Ultra Balls really matter now.",
             "Wild Pokémon flee more often, especially rare ones — berries still calm them down.",

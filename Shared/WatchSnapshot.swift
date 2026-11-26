@@ -31,6 +31,8 @@ struct WatchSnapshot: Codable, Equatable {
         var buildEnds: Date?
         var nextProject: String?
         var daycareOpen = false
+        var daycareUnlocked = false            // Ranch requirements met (else the Daycare isn't shown)
+        var contestsUnlocked = false
         var parents: [Int] = []
         var compatibility: String?
         var eggWaiting = false

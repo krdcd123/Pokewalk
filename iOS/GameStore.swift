@@ -1426,6 +1426,8 @@ final class GameStore: ObservableObject {
         if let b = s.ranch.building { a.buildName = RanchProject.all.first { $0.id == b.project }?.name; a.buildEnds = b.endsAt }
         a.nextProject = s.ranch.nextProject?.name
         a.daycareOpen = s.daycare.open
+        a.daycareUnlocked = DaycareRules.canStart(s) || s.daycare.open
+        a.contestsUnlocked = ContestRules.canStart(s) || s.contests.open
         let parents = daycareParents
         a.parents = parents.map(\.speciesID)
         if parents.count == 2 { a.compatibility = DaycareRules.compatibilityText(DaycareRules.compatibility(parents[0], parents[1])) }

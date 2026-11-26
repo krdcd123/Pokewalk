@@ -934,11 +934,11 @@ struct ActivitiesPage: View {
                 TimelineView(.periodic(from: .now, by: 30)) { tl in
                     VStack(spacing: 8) {
                         ranchCard(a, now: tl.date)
-                        daycareCard(a)
+                        if a.daycareUnlocked || a.daycareOpen { daycareCard(a) }
                     }
                 }
                 frontierCard(a)
-                contestCard(a)
+                if a.contestsUnlocked { contestCard(a) }
                 if !a.season.isEmpty {
                     HStack(spacing: 6) {
                         BoxIcon(speciesID: a.swarm).frame(width: 26, height: 26)
@@ -1041,7 +1041,7 @@ struct ActivitiesPage: View {
     }
 
     private func frontierCard(_ a: WatchSnapshot.Activities) -> some View {
-        card("Battle Frontier", "trophy.fill", Color(hex: 0xF2C94C)) {
+        card("Gym Challenge", "trophy.fill", Color(hex: 0xF2C94C)) {
             HStack(spacing: 3) {
                 ForEach(0..<5, id: \.self) { i in
                     Circle().fill(i < a.frontierWon ? Color(hex: 0xF2C94C) : .white.opacity(0.15))
