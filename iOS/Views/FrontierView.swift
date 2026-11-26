@@ -199,7 +199,11 @@ struct BattleView: View {
     private var style: TrainerStyle { store.state.trainer.style }
     /// Red → Red/Blue's battle screen, Gold/Kris → Crystal's, everyone else → Emerald's
     private var gen: BattleGen { BattleGen.of(style) }
-    @State private var shownHP: [UUID: Int] = [:]      // what the HP bars show (they drain smoothly)
+    @State private var shownHP: [UUID: Int] = [:]
+    @State private var anim: MoveAnim?
+    @State private var meLunge: CGFloat = 0
+    @State private var foeLunge: CGFloat = 0
+    @State private var shake: CGFloat = 0      // what the HP bars show (they drain smoothly)
     @ObservedObject private var audio = BattleAudio.shared
 
     // Laid out on the original screen's pixel grid — Emerald's 240 px wide, the Game Boy's 160 px — as tall as the
@@ -212,13 +216,14 @@ struct BattleView: View {
     private var myFeet: CGPoint { gen.isGameBoy ? CGPoint(x: 40, y: vh - 2) : CGPoint(x: 62, y: vh - 4) }
     private var foeTrainerCentre: CGPoint { CGPoint(x: foeFeet.x, y: foeFeet.y - (gen.isGameBoy ? 26 : 30)) }
     private var playerCentre: CGPoint {
-        let h = backFrames.first?.size.height ?? 64
-        return CGPoint(x: gen.isGameBoy ? 38 : 78, y: vh - 2 - h / 2)
+        let h = (backFrames.first?.size.height ?? 64) * backScale
+        return CGPoint(x: gen.isGameBoy ? 40 : 80, y: vh - 2 - h / 2)
     }
     private var foeBoxOrigin: CGPoint { gen.isGameBoy ? CGPoint(x: 6, y: 8) : CGPoint(x: 6, y: 10) }
-    private var myBoxOrigin: CGPoint { gen.isGameBoy ? CGPoint(x: 76, y: vh - 46) : CGPoint(x: 112, y: vh - 44) }
+    private var myBoxOrigin: CGPoint { gen.isGameBoy ? CGPoint(x: 76, y: vh - 46) : CGPoint(x: 124, y: vh - 82) }
     private var foeBoxCentre: CGPoint { CGPoint(x: foeBoxOrigin.x + (gen.isGameBoy ? 40 : 54), y: foeBoxOrigin.y + 14) }
     private var myBoxCentre: CGPoint { CGPoint(x: myBoxOrigin.x + (gen.isGameBoy ? 40 : 58), y: myBoxOrigin.y + 18) }
+    private var backScale: CGFloat { gen.isGameBoy ? 1.3 : 1.3 }      // your trainer's back sprite
     private var foeSize: CGFloat { gen.isGameBoy ? 0.9 : 1.05 }        // sprite size on the canvas
     private var mySize: CGFloat { gen.isGameBoy ? 1.05 : 1.3 }
 
@@ -261,7 +266,7 @@ struct BattleView: View {
                             .animation(nil, value: text)
                         controls
                         Spacer(minLength: 0)
-                        sideButtons
+                        sideButtons.padding(.bottom, 14)
                         HStack(spacing: 8) {
                             Text("Battle \(number) of 5").font(.rounded(12, .heavy)).foregroundStyle(.white.opacity(0.7))
                             if let t = audio.nowPlaying {
@@ -356,6 +361,7 @@ struct BattleView: View {
             }
             Circle().fill(.white).frame(width: 70 * s, height: 70 * s).blur(radius: 12 * s)
                 .opacity(flash.1).position(x: flash.0.x * s, y: flash.0.y * s).allowsHitTesting(false)
+            if let anim { MoveAnimLayer(anim: anim, s: s) }
             if let fx = openFX {
                 BallOpenFX(kind: .poke, gameBoy: false, start: fx.start, px: s)
                     .id(fx.start)
@@ -375,6 +381,7 @@ struct BattleView: View {
             }
         }
         .frame(width: vw * s, height: vh * s, alignment: .topLeading)
+        .offset(x: shake * s)
     }
 
     @ViewBuilder private func foeMon(_ s: CGFloat) -> some View {
@@ -385,6 +392,7 @@ struct BattleView: View {
             AnimatedSprite(speciesID: m.speciesID, shiny: m.isShiny)
                 .frame(width: b.size.width * e, height: b.size.height * e)
                 .scaleEffect(foeScale, anchor: .bottom)
+                .offset(x: -foeLunge * 18 * s, y: foeLunge * 10 * s)
                 .opacity(m.fainted ? 0 : (foeFlash ? 0.25 : 1))
                 .offset(y: m.fainted ? 40 * s : 0)
                 .position(x: foeFeet.x * s, y: cy)
@@ -399,6 +407,7 @@ struct BattleView: View {
                 .frame(width: b.size.width * e, height: b.size.height * e)
                 .colorMultiply(meRecall ? Color(hex: 0xFF5A5A) : .white)
                 .scaleEffect(meScale, anchor: .bottom)
+                .offset(x: meLunge * 20 * s, y: -meLunge * 12 * s)
                 .opacity(m.fainted ? 0 : (meFlash ? 0.25 : 1))
                 .offset(y: m.fainted ? 50 * s : 0)
                 .position(x: myFeet.x * s, y: cy)
@@ -429,7 +438,7 @@ struct BattleView: View {
         if backFrames.indices.contains(backFrame) {
             let size = backFrames[backFrame].size
             Image(uiImage: backFrames[backFrame]).interpolation(.none).resizable()
-                .frame(width: size.width * s, height: size.height * s)
+                .frame(width: size.width * backScale * s, height: size.height * backScale * s)
                 .position(x: (playerCentre.x + playerX) * s, y: playerCentre.y * s)
         }
     }
@@ -711,14 +720,44 @@ struct BattleView: View {
         busy = false
     }
 
+    /// The move's animation, in the style of your trainer's generation.
+    private func animate(_ m: MoveInfo, by side: BattleSide) async {
+        let mineSide = side == .mine
+        let me = CGPoint(x: myFeet.x + 6, y: myFeet.y - 34), them = CGPoint(x: foeFeet.x, y: foeFeet.y - 24)
+        let kind = MoveAnim.kind(for: m, targetsSelf: m.targetsUser)
+        let selfMove = kind == .auraUp || kind == .heal
+        let from = mineSide ? me : them
+        let to = selfMove ? from : (mineSide ? them : me)
+        async let p = BattleAnimGfx.particle(gen, type: m.type, kind: kind)
+        async let i = BattleAnimGfx.impact(gen)
+        let particle = await p, impact = await i
+        let duration = kind == .contact ? 0.8 : 0.95
+        anim = MoveAnim(kind: kind, from: from, to: to, particle: kind == .contact && m.type == .normal ? nil : particle,
+                        impact: impact, size: gen.isGameBoy ? 16 : 24, start: .now, duration: duration)
+        if kind == .contact {
+            withAnimation(.easeOut(duration: 0.18)) { if mineSide { meLunge = 1 } else { foeLunge = 1 } }
+            try? await Task.sleep(for: .milliseconds(220))
+            withAnimation(.easeIn(duration: 0.2)) { if mineSide { meLunge = 0 } else { foeLunge = 0 } }
+        }
+        if ["earthquake", "magnitude", "fissure", "explosion", "self-destruct"].contains(m.key) {
+            for k in 0..<8 {
+                withAnimation(.linear(duration: 0.05)) { shake = k % 2 == 0 ? 4 : -4 }
+                try? await Task.sleep(for: .milliseconds(55))
+            }
+            withAnimation(.linear(duration: 0.05)) { shake = 0 }
+        }
+        try? await Task.sleep(for: .milliseconds(Int(duration * 1000) - (kind == .contact ? 220 : 0)))
+        anim = nil
+    }
+
     private func play(_ events: [BattleEvent]) async {
         for e in events {
             switch e {
             case .say(let t):
                 await say(t, 900)
-            case .uses(_, let m):
+            case .uses(let side, let m):
                 BattleAudio.shared.playMove(m)
-                try? await Task.sleep(for: .milliseconds(350))
+                await animate(m, by: side)
             case .hp(let side, let hp, let eff):
                 let isMine = side == .mine
                 guard (isMine ? mine : foes).indices.contains(isMine ? me : foe) else { continue }

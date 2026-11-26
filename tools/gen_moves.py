@@ -31,7 +31,7 @@ for r in rows("moves"):
     m = meta.get(r["id"], {})
     moves[int(r["id"])] = {
         "id": int(r["id"]), "key": r["identifier"], "name": names.get(r["id"], r["identifier"]),
-        "type": {"unknown": "ghost", "shadow": "dark"}.get(types[v["type_id"]], types[v["type_id"]]),  # Curse's ??? type "power": num(v["power"]), "pp": num(v["pp"]) or 1,
+        "type": {"unknown": "ghost", "shadow": "dark"}.get(types[v["type_id"]], types[v["type_id"]]), "power": num(v["power"]), "pp": num(v["pp"]) or 1,
         "accuracy": num(v["accuracy"]), "priority": num(v["priority"]) or 0, "target": int(r["target_id"]),
         "status": r["damage_class_id"] == "1", "effect": num(v["effect_id"]) or 0, "chance": num(v["effect_chance"]) or 0,
         "cat": num(m.get("meta_category_id")) or 0, "ailment": num(m.get("meta_ailment_id")) or 0,
