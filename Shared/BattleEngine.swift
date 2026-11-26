@@ -266,7 +266,9 @@ enum BattleEngine {
         let atk = stat(a, physical ? 1 : 3, ignoreDown: crit)
         var def = stat(d, physical ? 2 : 4, ignoreUp: crit)
         if move.key == "self-destruct" || move.key == "explosion" { def /= 2 }
-        var base = floor(floor(floor(2 * Double(a.level) / 5 + 2) * Double(power) * atk / max(1, def)) / 50)
+        let lvTerm: Double = floor(2 * Double(a.level) / 5 + 2)
+        let top: Double = floor(lvTerm * Double(power) * atk / max(1, def))
+        var base: Double = floor(top / 50)
         if physical, a.status == .burn { base = floor(base / 2) }
         base += 2
         if crit { base *= 2 }
@@ -378,7 +380,10 @@ enum BattleEngine {
                 if Bool.random() {
                     // 40-power typeless physical hit on itself
                     let atk = stat(a, 1), def = stat(a, 2)
-                    let dmg = max(1, Int((floor(floor(2 * Double(a.level) / 5 + 2) * 40 * atk / max(1, def)) / 50 + 2) * Double(Int.random(in: 85...100)) / 100))
+                    let lv: Double = floor(2 * Double(a.level) / 5 + 2)
+                    let raw: Double = floor(lv * 40 * atk / max(1, def)) / 50 + 2
+                    let roll: Double = Double(Int.random(in: 85...100)) / 100
+                    let dmg = max(1, Int(raw * roll))
                     a.hp = max(0, a.hp - dmg)
                     a.charging = nil; a.invulnerable = false
                     return ev + [.say("It hurt itself in its confusion!"), .hp(side, a.hp, effectiveness: 1)]
