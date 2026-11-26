@@ -30,6 +30,24 @@ struct MapHomeView: View {
     @AppStorage("mapHeadingUp") private var headingUp = true
     @State private var recentFixes: [CLLocation] = []
     @State private var walkHeading: Double?
+    /// Tapped the compass: north stays up until you tap the location button again.
+    @State private var northUp = false
+    /// The map's current rotation (for the compass needle).
+    @State private var mapHeading: Double = 0
+
+    /// Compass: put north back at the top.
+    private func pointNorth() {
+        SoundKit.shared.play(.select)
+        Haptics.tap()
+        northUp = true
+        walkHeading = nil
+        recentFixes.removeAll()
+        let centre = lastCamera?.centerCoordinate ?? tracker.currentLocation()?.coordinate
+        guard let centre else { return }
+        let cam = MapCamera(centerCoordinate: centre, distance: lastCamera?.distance ?? zoomDistance,
+                            heading: 0, pitch: lastCamera?.pitch ?? 0)
+        withAnimation(.smooth(duration: 0.6)) { camera = .camera(cam); mapHeading = 0 }
+    }
 
     /// The way you're heading, if the last ~25–60 m have been a straight line (nil while turning or standing).
     private func straightHeading(_ fixes: [CLLocation]) -> Double? {
@@ -147,7 +165,24 @@ struct MapHomeView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(showCaught ? "Hide caught Pokémon" : "Show caught Pokémon")
+                            // Compass: shows while the map is turned; tap to put north at the top
+                            if Self.angle(mapHeading, 0) > 2 {
+                                Button(action: pointNorth) {
+                                    Image(systemName: "location.north.line.fill")
+                                        .font(.system(size: 18, weight: .bold))
+                                        .foregroundStyle(.white, .red)
+                                        .rotationEffect(.degrees(-mapHeading))
+                                        .frame(width: 48, height: 48)
+                                        .contentShape(Circle())
+                                        .glassCircle()
+                                        .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
+                                }
+                                .buttonStyle(.plain)
+                                .transition(.scale.combined(with: .opacity))
+                                .accessibilityLabel("Compass: point north")
+                            }
                             Button {
+                                northUp = false          // back to following the way you walk
                                 followMe()
                             } label: {
                                 Image(systemName: following ? "location.fill" : "location")
@@ -336,7 +371,10 @@ struct MapHomeView: View {
             }
         }
         .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
-        .mapControls { MapCompass() }
+        .mapControls { }
+        .onMapCameraChange(frequency: .continuous) { ctx in
+            if abs(ctx.camera.heading - mapHeading) > 1 { mapHeading = ctx.camera.heading }
+        }
         // Always keep you in view: if you pan away, it glides back to you after a few seconds
         .onMapCameraChange(frequency: .onEnd) { ctx in
             lastCamera = ctx.camera
@@ -364,7 +402,7 @@ struct MapHomeView: View {
             // Heading-up: walking in a straight line turns the map so you're always going up the screen.
             // Only a real change of direction (15°+) turns it, so it doesn't sway with every step.
             var heading = lastCamera?.heading ?? 0
-            if headingUp {
+            if headingUp && !northUp {
                 recentFixes.append(loc)
                 recentFixes.removeAll { loc.timestamp.timeIntervalSince($0.timestamp) > 90 || loc.distance(from: $0) > 80 }
                 if let h = straightHeading(recentFixes), Self.angle(h, heading) >= 15 || walkHeading == nil {

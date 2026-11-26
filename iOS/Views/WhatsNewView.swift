@@ -6,8 +6,9 @@ enum WhatsNew {
     struct Note { let build: Int; let items: [String] }
 
     static let notes: [Note] = [
-        Note(build: 199, items: [
-            "The map turns as you walk: in a straight line, the way you're heading is always up the screen (Settings › Walking to switch it off).",
+        Note(build: 200, items: [
+            "The map turns as you walk: in a straight line, the way you're heading is always up the screen.",
+            "Tap the compass to put north back at the top (it stays that way until you tap the location button). Switch the turning off in Settings › Walking.",
         ]),
         Note(build: 198, items: [
             "A \"What's new\" popup like this one after every update.",
