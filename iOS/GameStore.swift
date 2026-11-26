@@ -103,8 +103,29 @@ final class GameStore: ObservableObject {
         hasGame = !decoded.pokemon.isEmpty
     }
 
+    /// Saving used to encode and write the whole game, rebuild the watch snapshot and redraw the Live Activity on
+    /// every single change — a step sync makes many changes in a row, which kept the CPU busy (heat, battery).
+    /// Now changes in quick succession are saved together a moment later, and the encoding + disk write happen
+    /// off the main thread. Nothing is lost: it saves immediately in the background, and when the app leaves the screen.
+    private var saveWork: DispatchWorkItem?
+    private let saveQueue = DispatchQueue(label: "pokewalk.save", qos: .utility)
+
     private func save() {
-        if let data = try? JSONEncoder().encode(state) { try? data.write(to: saveURL, options: .atomic) }
+        saveWork?.cancel()
+        // In the background iOS may suspend us at any moment: write straight away
+        if UIApplication.shared.applicationState == .background { saveNow(); return }
+        let w = DispatchWorkItem { [weak self] in self?.saveNow() }
+        saveWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: w)
+    }
+
+    /// Writes any pending changes now (called when the app goes to the background).
+    func saveNow() {
+        saveWork?.cancel(); saveWork = nil
+        let copy = state, url = saveURL
+        saveQueue.async {
+            if let data = try? JSONEncoder().encode(copy) { try? data.write(to: url, options: .atomic) }
+        }
         autoBackup()
         pushOutward()
     }
@@ -133,8 +154,14 @@ final class GameStore: ObservableObject {
     private func autoBackup() {
         guard hasGame, Date().timeIntervalSince(lastBackup) > 300 else { return }
         lastBackup = .now
-        if let data = try? JSONEncoder().encode(SaveFile(state: state, tracks: TrackStore.shared.allDays(), storage: storage)) {
-            try? data.write(to: autoBackupURL, options: .atomic)
+        // reading every day's track and encoding it all is the heaviest save there is: do it off the main thread
+        TrackStore.shared.flush()
+        let copy = state, box = storage, url = autoBackupURL, dir = TrackStore.shared.directory
+        saveQueue.async {
+            let tracks = TrackStore.readAllDays(in: dir)
+            if let data = try? JSONEncoder().encode(SaveFile(state: copy, tracks: tracks, storage: box)) {
+                try? data.write(to: url, options: .atomic)
+            }
         }
     }
 

@@ -33,6 +33,36 @@ final class TrackStore: ObservableObject {
     private var todayKey = TrackStore.key(for: .now)
     private var dirty = false
 
+    var directory: URL { dir }
+    /// Every day's track, read straight from disk (safe off the main thread).
+    nonisolated static func readAllDays(in dir: URL) -> [String: [[TrackPoint]]] {
+        var out: [String: [[TrackPoint]]] = [:]
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        for f in files where f.hasSuffix(".json") {
+            if let data = try? Data(contentsOf: dir.appendingPathComponent(f)),
+               let segs = try? JSONDecoder().decode([[TrackPoint]].self, from: data) { out[String(f.dropLast(5))] = segs }
+        }
+        return out
+    }
+
+    /// Today's lines ready for the map: built once per change (only the newest line is redone as you move),
+    /// instead of every map redraw converting every point of the day.
+    struct Line: Identifiable, Equatable {
+        let id: Int
+        let drive: Bool
+        var coords: [CLLocationCoordinate2D]
+        static func == (a: Line, b: Line) -> Bool { a.id == b.id && a.drive == b.drive && a.coords.count == b.coords.count }
+    }
+    @Published private(set) var lines: [Line] = []
+    private func rebuildLines(onlyLast: Bool = false) {
+        if onlyLast, !today.isEmpty, lines.count == today.count {
+            let i = today.count - 1
+            lines[i] = Line(id: i, drive: Self.isDrive(today[i]), coords: today[i].map(\.coordinate))
+        } else {
+            lines = today.enumerated().map { Line(id: $0.offset, drive: Self.isDrive($0.element), coords: $0.element.map(\.coordinate)) }
+        }
+    }
+
     private let dir: URL = {
         let d = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Tracks", isDirectory: true)
@@ -52,6 +82,7 @@ final class TrackStore: ObservableObject {
 
     init() {
         today = load(todayKey)
+        rebuildLines()
         // Midnight: start a fresh trail even if you haven't moved (the app may stay open overnight)
         dayTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshDay() }
@@ -65,6 +96,7 @@ final class TrackStore: ObservableObject {
         flush()
         todayKey = k
         today = load(k)
+        rebuildLines()
     }
 
     private func file(_ key: String) -> URL { dir.appendingPathComponent("\(key).json") }
@@ -88,16 +120,27 @@ final class TrackStore: ObservableObject {
 
     func append(_ loc: CLLocation, drive: Bool = false) {
         let k = Self.key(for: loc.timestamp)
-        if k != todayKey { flush(); todayKey = k; today = load(k) }
+        if k != todayKey { flush(); todayKey = k; today = load(k); rebuildLines() }
         let p = TrackPoint(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude, t: loc.timestamp.timeIntervalSince1970,
                            drive: drive ? true : nil)
+        let segmentsBefore = today.count, pointsBefore = today.last?.count ?? 0
+        defer {
+            // only when a point was actually added (most fixes are skipped as too close)
+            if today.count != segmentsBefore || (today.last?.count ?? 0) != pointsBefore {
+                rebuildLines(onlyLast: today.count == segmentsBefore)
+            }
+        }
         if let last = today.last?.last {
             let gap = p.t - last.t
+            // two location feeds can both deliver the same moment: keep time going forwards
+            if gap <= 0 { return }
             let jump = loc.distance(from: last.location)
             // not moved enough — and a move smaller than the fix's own error margin is just noise
             if jump < (drive ? 25 : max(8, loc.horizontalAccuracy * 0.8)) { return }
             // A new line when you switch between walking and driving, after a long gap, or a GPS jump
-            let newSegment = last.isDrive != drive || gap > 300 || jump > (drive ? 3_000 : 150)
+            // (a train going through a tunnel or a dead spot keeps one line: only an impossible speed breaks it)
+            let newSegment = last.isDrive != drive
+                || (drive ? (gap > 1_800 || jump / max(gap, 1) > 90) : (gap > 300 || jump > 150))
             if newSegment {
                 // join the switch-over point so walk and drive lines touch
                 if last.isDrive != drive, gap < 120, jump < 500 { today.append([TrackPoint(lat: last.lat, lon: last.lon, t: last.t, drive: drive ? true : nil), p]) }
@@ -128,6 +171,7 @@ final class TrackStore: ObservableObject {
             if let data = try? JSONEncoder().encode(segs) { try? data.write(to: file(key), options: .atomic) }
         }
         today = load(todayKey)
+        rebuildLines()
     }
 
     func flush() {
@@ -191,6 +235,7 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
     override init() {
         super.init()
         manager.delegate = self
+        keepAlive.delegate = self
         authorization = manager.authorizationStatus
         if let t = UserDefaults.standard.object(forKey: walkKey) as? Date { walkStartedAt = t }
     }
@@ -220,10 +265,19 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        // Only precise fixes move "where you are": rough phone-mast fixes (hundreds of metres off) made the
-        // map's follow camera fly back and forth, which looked like it zooming in and out by itself.
-        guard let loc = locations.last, loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 50 else { return }
-        Task { @MainActor in self.setFix(loc) }
+        let from = ObjectIdentifier(manager)
+        Task { @MainActor in
+            // On a train / in a car the stay-awake feed switches to GPS, and every fix is drawn on the red line:
+            // the walking feed can pause when your feet aren't moving, which is what cut the line off before.
+            if from == ObjectIdentifier(self.keepAlive), self.vehicleMode {
+                for loc in locations { self.handle(loc) }
+                return
+            }
+            // Only precise fixes move "where you are": rough phone-mast fixes (hundreds of metres off) made the
+            // map's follow camera fly back and forth, which looked like it zooming in and out by itself.
+            guard let loc = locations.last, loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 50 else { return }
+            self.setFix(loc)
+        }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
@@ -268,17 +322,48 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         guard want != keepAliveOn else { return }
         keepAliveOn = want
         if want {
-            let best = Self.fullAccuracyAlways
-            keepAliveBest = best
-            keepAlive.desiredAccuracy = best ? kCLLocationAccuracyBest : kCLLocationAccuracyThreeKilometers
-            keepAlive.distanceFilter = best ? kCLDistanceFilterNone : 500
+            configureKeepAlive()
             keepAlive.pausesLocationUpdatesAutomatically = false
             keepAlive.allowsBackgroundLocationUpdates = true
             keepAlive.showsBackgroundLocationIndicator = false
-            keepAlive.activityType = .other
             keepAlive.startUpdatingLocation()
         } else {
             keepAlive.stopUpdatingLocation()
+        }
+    }
+
+    private func configureKeepAlive() {
+        let best = Self.fullAccuracyAlways || vehicleMode
+        keepAliveBest = best
+        keepAlive.desiredAccuracy = vehicleMode ? kCLLocationAccuracyBestForNavigation
+            : best ? kCLLocationAccuracyBest : kCLLocationAccuracyThreeKilometers
+        keepAlive.distanceFilter = vehicleMode ? 20 : best ? kCLDistanceFilterNone : 500
+        keepAlive.activityType = vehicleMode ? .otherNavigation : .other
+    }
+
+    // MARK: Trains, buses and cars
+
+    /// In a vehicle: GPS stays on (from the stay-awake feed) so the red line keeps going — GPS works with no
+    /// phone signal. Switches back to the low-power feed as soon as you're walking again.
+    private(set) var vehicleMode = false
+    private var vehicleTimer: Timer?
+
+    private func startVehicleWatch() {
+        guard vehicleTimer == nil else { return }
+        vehicleTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.checkVehicle() }
+        }
+    }
+
+    private func checkVehicle() {
+        let d = WalkingDetector.shared
+        let inVehicle = (d.isDriving || d.inVehicle) && !d.isWalking
+        guard inVehicle != vehicleMode else { return }
+        vehicleMode = inVehicle
+        if keepAliveOn {
+            configureKeepAlive()
+            keepAlive.stopUpdatingLocation()
+            keepAlive.startUpdatingLocation()
         }
     }
 
@@ -296,6 +381,7 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
     }
 
     private func start() {
+        startVehicleWatch()
         guard !isRunning else { return }
         requestPermission()
         isRunning = true
@@ -325,13 +411,23 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         setFix(loc)
         WeatherService.shared.update(for: loc)
         PlaceLog.shared.feed(loc)
-        // Keep walking-speed fixes with decent accuracy; ignore driving and GPS noise.
-        guard loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 35 else { return }
-        // In a vehicle: record it as a drive (red on the map) — tracked, but it never earns anything
-        if loc.speed > 4.5 || WalkingDetector.shared.isDriving {
-            TrackStore.shared.append(loc, drive: true)
+        guard loc.horizontalAccuracy > 0 else { return }
+        // Speed: GPS's own, or worked out from the last point (with no phone signal the GPS speed is often missing)
+        var speed = loc.speed
+        if speed < 0, let last = TrackStore.shared.today.last?.last {
+            let dt = loc.timestamp.timeIntervalSince1970 - last.t
+            if dt > 2 { speed = loc.distance(from: last.location) / dt }
+        }
+        // In a vehicle: record it as a drive (red on the map) — tracked, but it never earns anything.
+        // Inside a train carriage GPS is less precise, so drives accept rougher fixes (it's a red line, not steps).
+        let d = WalkingDetector.shared
+        if speed > 4.5 || d.isDriving || (d.inVehicle && !d.isWalking) {
+            if loc.horizontalAccuracy <= 100 { TrackStore.shared.append(loc, drive: true) }
+            if !vehicleMode { checkVehicle() }
             return
         }
+        // Keep walking-speed fixes with decent accuracy; ignore GPS noise.
+        guard loc.horizontalAccuracy <= 35 else { return }
         // Standing still: the GPS fix drifts around, so don't draw it as a walk
         guard WalkingDetector.shared.feetMoving else { return }
         TrackStore.shared.append(loc)

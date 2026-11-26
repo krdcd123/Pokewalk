@@ -28,12 +28,17 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
         session.activate()
     }
 
+    private var lastSentData: Data?
+
     func send(_ snapshot: WatchSnapshot) {
         guard let session else { return }
         guard session.activationState == .activated else { pending = snapshot; return }
         guard session.isPaired, session.isWatchAppInstalled,
               let data = try? JSONEncoder().encode(snapshot) else { return }
 
+        // nothing changed since the last one: don't wake the watch for it
+        if data == lastSentData { return }
+        lastSentData = data
         let payload: [String: Any] = ["snapshot": data]
         try? session.updateApplicationContext(payload)
 

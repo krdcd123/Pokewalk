@@ -323,13 +323,16 @@ struct AnimatedSprite: View {
     let speciesID: Int
     var shiny = false
     var kind: SpriteStore.Kind? = nil       // override (e.g. .icons)
+    var hop = false                          // hop up and down like a party icon
+    var hopFrame = 0.22
+    var hopPhase = 0
 
     @State private var image: UIImage?
 
     var body: some View {
         Group {
             if let image {
-                PixelImageView(image: image)
+                PixelImageView(image: image, hop: hop, hopFrame: hopFrame, hopPhase: hopPhase)
             } else {
                 ProgressView().tint(Theme.inkSoft)
             }
@@ -373,11 +376,36 @@ extension View {
     }
 }
 
+/// An image view that can hop like a party icon. The hop is a Core Animation loop, drawn by the system's
+/// render server: no SwiftUI (or map) redraws every frame, which is what the old clock-driven hop did.
+final class HopImageView: UIImageView {
+    var hops = false { didSet { applyHop() } }
+    var frame2 = 0.22                         // seconds per frame
+    var phase = 0                             // frames out of step (party boxes)
+    override func didMoveToWindow() { super.didMoveToWindow(); applyHop() }
+    private func applyHop() {
+        layer.removeAnimation(forKey: "hop")
+        guard hops, window != nil else { return }
+        let a = CAKeyframeAnimation(keyPath: "transform.translation.y")
+        a.values = [-4, 0]
+        a.keyTimes = [0, 0.5]
+        a.calculationMode = .discrete          // two frames, like the games
+        a.duration = frame2 * 2
+        a.timeOffset = Double(phase % 2) * frame2
+        a.repeatCount = .infinity
+        a.isRemovedOnCompletion = false
+        layer.add(a, forKey: "hop")
+    }
+}
+
 struct PixelImageView: UIViewRepresentable {
     let image: UIImage
+    var hop = false
+    var hopFrame = 0.22
+    var hopPhase = 0
 
     func makeUIView(context: Context) -> UIImageView {
-        let v = UIImageView()
+        let v = HopImageView()
         v.isUserInteractionEnabled = false   // never swallow taps meant for the button the sprite sits in
         v.contentMode = .scaleAspectFit
         v.layer.magnificationFilter = .nearest
@@ -392,6 +420,9 @@ struct PixelImageView: UIViewRepresentable {
         if v.image !== image {
             v.image = image
             if image.images != nil { v.startAnimating() }
+        }
+        if let h = v as? HopImageView, h.hops != hop || h.frame2 != hopFrame || h.phase != hopPhase {
+            h.frame2 = hopFrame; h.phase = hopPhase; h.hops = hop
         }
     }
 }

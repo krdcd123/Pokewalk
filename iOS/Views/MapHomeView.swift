@@ -276,11 +276,11 @@ struct MapHomeView: View {
 
     private var map: some View {
         Map(position: $camera) {
-            ForEach(Array(tracks.today.enumerated()), id: \.offset) { _, seg in
-                if seg.count > 1 {
-                    MapPolyline(coordinates: seg.map(\.coordinate)).stroke(.white, lineWidth: 6)
-                    MapPolyline(coordinates: seg.map(\.coordinate))
-                        .stroke(TrackStore.isDrive(seg) ? Theme.driveRoute : Theme.route, lineWidth: 3)
+            ForEach(tracks.lines) { line in
+                if line.coords.count > 1 {
+                    MapPolyline(coordinates: line.coords).stroke(.white, lineWidth: 6)
+                    MapPolyline(coordinates: line.coords)
+                        .stroke(line.drive ? Theme.driveRoute : Theme.route, lineWidth: 3)
                 }
             }
             ForEach(caughtOnMap) { mon in
@@ -689,11 +689,9 @@ struct BuddyMarker: View {
                 // Map pins are rebuilt on every location update, which kills SwiftUI's repeating
                 // animations, so drive the hop from the clock instead: two frames, like the games.
                 if let speciesID {
-                    TimelineView(.periodic(from: .now, by: 0.22)) { tl in
-                        let up = Int(tl.date.timeIntervalSinceReferenceDate / 0.22) % 2 == 0
-                        AnimatedSprite(speciesID: speciesID, shiny: shiny, kind: .icons).padding(6)
-                            .offset(y: up ? -4 : 0)
-                    }
+                    // The hop runs in Core Animation (it survives the map rebuilding its pins, and costs
+                    // almost nothing — the old clock-driven hop redrew the map pin ~5 times a second)
+                    AnimatedSprite(speciesID: speciesID, shiny: shiny, kind: .icons, hop: true).padding(6)
                 }
             }
             .frame(width: 52, height: 52)

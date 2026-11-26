@@ -68,6 +68,7 @@ struct PokeWalkApp: App {
                         store.stopPopupChecks()
                         SoundKit.shared.appWentToBackground()
                         TrackStore.shared.flush()
+                        store.saveNow()
                         // Stay small in the background so iOS keeps PokéWalk running
                         GIFCache.shared.removeAll()
                         URLCache.shared.removeAllCachedResponses()

@@ -107,13 +107,10 @@ private struct PartyBox: View {
                 ZStack(alignment: .topTrailing) {
                     // The PC box sprite, bobbing between two frames like the games' party menu
                     // (driven by the clock, each box slightly out of step with the others)
-                    TimelineView(.periodic(from: .now, by: 0.25)) { tl in
-                        let tick = Int(tl.date.timeIntervalSinceReferenceDate / 0.25) + index
-                        AnimatedSprite(speciesID: mon.speciesID, shiny: mon.isShiny, kind: .icons)
-                            .frame(width: 72, height: 72)
-                            .offset(y: tick % 2 == 0 ? -4 : 0)
-                    }
-                    .frame(maxWidth: .infinity)
+                    AnimatedSprite(speciesID: mon.speciesID, shiny: mon.isShiny, kind: .icons,
+                                   hop: true, hopFrame: 0.25, hopPhase: index)
+                        .frame(width: 72, height: 72)
+                        .frame(maxWidth: .infinity)
                     if isBuddy {
                         Image(systemName: "star.fill").font(.system(size: 13, weight: .black))
                             .foregroundStyle(Theme.orange)

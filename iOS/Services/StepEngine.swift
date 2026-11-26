@@ -107,6 +107,9 @@ final class WalkingDetector: ObservableObject {
     /// In a car, bus or train (or on a bike): the trainer stands still and the trail isn't recorded.
     @Published private(set) var isDriving = false
     private var motionSaysVehicle = false
+    /// iOS's motion chip says you're in a vehicle (car, bus, train) right now.
+    var inVehicle: Bool { motionSaysAutomotive }
+    private var motionSaysAutomotive = false
     private var lastStepAt = Date.distantPast
     private var lastSteps = 0
     private var timer: Timer?
@@ -119,6 +122,7 @@ final class WalkingDetector: ObservableObject {
                     self.motionSaysMoving = (a.walking || a.running) && a.confidence != .low
                     self.motionSaysStill = a.stationary && a.confidence != .low
                     self.motionSaysVehicle = (a.automotive || a.cycling) && a.confidence != .low
+                    self.motionSaysAutomotive = a.automotive && a.confidence != .low
                     if a.stationary && a.confidence != .low { self.motionSaysMoving = false; self.lastStepAt = .distantPast }
                     self.refresh()
                 }
