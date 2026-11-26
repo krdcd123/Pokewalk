@@ -14,7 +14,7 @@ enum BattleGfx {
     private static func data(_ url: URL, name: String) async -> Data? {
         let file = dir.appendingPathComponent(name)
         if let d = try? Data(contentsOf: file) { return d }
-        guard let (d, resp) = try? await URLSession.shared.data(from: url),
+        guard let (d, resp) = try? await URLSession.shared.mirroredData(from: url),
               (resp as? HTTPURLResponse)?.statusCode == 200, !d.isEmpty else { return nil }
         try? d.write(to: file, options: .atomic)
         return d

@@ -38,7 +38,7 @@ final class CryPlayer: ObservableObject {
         let f = file(id)
         if FileManager.default.fileExists(atPath: f.path) { return f }
         guard let url = remote(id),
-              let (data, resp) = try? await URLSession.shared.data(from: url),
+              let (data, resp) = try? await URLSession.shared.mirroredData(from: url),
               (resp as? HTTPURLResponse)?.statusCode == 200, data.count > 500 else { return nil }
         try? data.write(to: f, options: .atomic)
         return f

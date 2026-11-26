@@ -84,7 +84,7 @@ final class BattleAudio: ObservableObject {
     private func cached(_ url: URL, name: String) async -> URL? {
         let file = dir.appendingPathComponent(name)
         if FileManager.default.fileExists(atPath: file.path) { return file }
-        guard let (d, r) = try? await URLSession.shared.data(from: url), (r as? HTTPURLResponse)?.statusCode == 200, !d.isEmpty else { return nil }
+        guard let (d, r) = try? await URLSession.shared.mirroredData(from: url), (r as? HTTPURLResponse)?.statusCode == 200, !d.isEmpty else { return nil }
         try? d.write(to: file, options: .atomic)
         return file
     }

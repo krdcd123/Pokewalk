@@ -16,7 +16,7 @@ enum PretFiles {
         let file = dir.appendingPathComponent(path.replacingOccurrences(of: "/", with: "_"))
         if let d = try? Data(contentsOf: file) { return d }
         guard let url = URL(string: base + path),
-              let (d, resp) = try? await URLSession.shared.data(from: url),
+              let (d, resp) = try? await URLSession.shared.mirroredData(from: url),
               (resp as? HTTPURLResponse)?.statusCode == 200, !d.isEmpty else { return nil }
         try? d.write(to: file, options: .atomic)
         return d

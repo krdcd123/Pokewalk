@@ -111,7 +111,7 @@ final class BattleHUD {
                 let file = dir.appendingPathComponent(name)
                 if let d = try? Data(contentsOf: file) { return IndexedPNG(d) }
                 guard let url = URL(string: "https://raw.githubusercontent.com/pret/pokecrystal/master/" + path),
-                      let (d, r) = try? await URLSession.shared.data(from: url), (r as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+                      let (d, r) = try? await URLSession.shared.mirroredData(from: url), (r as? HTTPURLResponse)?.statusCode == 200 else { return nil }
                 try? d.write(to: file, options: .atomic)
                 return IndexedPNG(d)
             }
@@ -129,7 +129,7 @@ final class BattleHUD {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let file = dir.appendingPathComponent("gbtrainer_" + url.pathComponents.suffix(4).joined(separator: "_"))
         var data = try? Data(contentsOf: file)
-        if data == nil, let (d, r) = try? await URLSession.shared.data(from: url), (r as? HTTPURLResponse)?.statusCode == 200 {
+        if data == nil, let (d, r) = try? await URLSession.shared.mirroredData(from: url), (r as? HTTPURLResponse)?.statusCode == 200 {
             try? d.write(to: file, options: .atomic); data = d
         }
         guard let data, let png = IndexedPNG(data) else { return nil }
@@ -144,7 +144,7 @@ final class BattleHUD {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let file = dir.appendingPathComponent("ow_" + url.pathComponents.suffix(3).joined(separator: "_"))
         var data = try? Data(contentsOf: file)
-        if data == nil, let (d, r) = try? await URLSession.shared.data(from: url), (r as? HTTPURLResponse)?.statusCode == 200 {
+        if data == nil, let (d, r) = try? await URLSession.shared.mirroredData(from: url), (r as? HTTPURLResponse)?.statusCode == 200 {
             try? d.write(to: file, options: .atomic); data = d
         }
         guard let data, let png = IndexedPNG(data) else { return nil }

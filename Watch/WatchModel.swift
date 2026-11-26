@@ -58,7 +58,17 @@ final class WatchModel: NSObject, ObservableObject {
     private var lastComplicationReload = Date.distantPast
 
     /// While the watch app is on screen: re-read steps every few seconds and get a fresh snapshot from the phone.
+    private var launchRefreshDone = false
+
     func becameActive() {
+        if !launchRefreshDone {
+            // First time on screen after launch (e.g. after an update): re-save the snapshot in both places
+            // and redraw every complication, so none stays a placeholder.
+            launchRefreshDone = true
+            if !snapshot.party.isEmpty { SharedStore.saveSnapshot(snapshot) }
+            WidgetCenter.shared.invalidateConfigurationRecommendations()
+            WidgetCenter.shared.reloadAllTimelines()
+        }
         Task { await refreshSteps() }
         quietSync()
         liveTimer?.invalidate()

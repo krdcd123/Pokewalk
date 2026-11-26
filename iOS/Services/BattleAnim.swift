@@ -97,7 +97,7 @@ enum BattleAnimGfx {
         let file = dir.appendingPathComponent("crystal_anim_\(name).png")
         var data = try? Data(contentsOf: file)
         if data == nil, let url = URL(string: "https://raw.githubusercontent.com/pret/pokecrystal/master/gfx/battle_anims/\(name).png"),
-           let (d, r) = try? await URLSession.shared.data(from: url), (r as? HTTPURLResponse)?.statusCode == 200 {
+           let (d, r) = try? await URLSession.shared.mirroredData(from: url), (r as? HTTPURLResponse)?.statusCode == 200 {
             try? d.write(to: file, options: .atomic); data = d
         }
         guard let data, let png = IndexedPNG(data) else { return nil }

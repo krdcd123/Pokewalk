@@ -147,12 +147,36 @@ struct Provider: AppIntentTimelineProvider {
 
         // Prefer a fresh HealthKit read; fall back to what the watch app cached in the background.
         let cached = SharedStore.cachedLiveSteps(forSync: snap.syncDate)
-        let fresh = (try? await StepCounter.shared.steps(from: snap.syncDate)) ?? 0
+        // HealthKit can stall right after an update or while the watch is locked: give it 3 s at most,
+        // so the complication always draws (with the cached count) instead of staying a placeholder.
+        let since = snap.syncDate
+        let fresh = await Self.stepsWithin(3, since: since)
         let steps = max(cached, fresh)
 
         let live = member.map { LiveMember($0, in: snap, stepsSinceSync: steps) }
         return PokemonEntry(date: .now, member: member, live: live, stepsSinceSync: steps,
                             stepsToEncounter: max(0, snap.stepsToEncounter - steps))
+    }
+}
+
+extension Provider {
+    /// A HealthKit read that gives up after `seconds` (the read itself keeps going in the background).
+    static func stepsWithin(_ seconds: Double, since: Date) async -> Int {
+        final class Once: @unchecked Sendable {
+            private let lock = NSLock(); private var done = false
+            func take() -> Bool { lock.lock(); defer { lock.unlock() }; if done { return false }; done = true; return true }
+        }
+        let once = Once()
+        return await withCheckedContinuation { (cont: CheckedContinuation<Int, Never>) in
+            Task.detached {
+                let n = (try? await StepCounter.shared.steps(from: since)) ?? 0
+                if once.take() { cont.resume(returning: n) }
+            }
+            Task.detached {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                if once.take() { cont.resume(returning: 0) }
+            }
+        }
     }
 }
 

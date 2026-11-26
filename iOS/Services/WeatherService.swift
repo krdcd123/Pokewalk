@@ -26,7 +26,7 @@ final class WeatherService: ObservableObject {
     private func fetch(_ c: CLLocationCoordinate2D) async {
         let s = String(format: "https://api.open-meteo.com/v1/forecast?latitude=%.3f&longitude=%.3f&current=weather_code,is_day,temperature_2m", c.latitude, c.longitude)
         guard let url = URL(string: s),
-              let (data, _) = try? await URLSession.shared.data(from: url),
+              let (data, _) = try? await URLSession.shared.mirroredData(from: url),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let cur = json["current"] as? [String: Any],
               let code = cur["weather_code"] as? Int else { lastFetch = .distantPast; return }

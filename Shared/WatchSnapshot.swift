@@ -173,13 +173,23 @@ enum SharedStore {
     private static let liveStepsKey = "liveStepsSinceSync"
     private static let liveStepsDateKey = "liveStepsUpdated"
 
+    private static var snapshotFile: URL { containerURL.appendingPathComponent("watchSnapshot.json") }
+
+    /// Saved twice (App Group defaults and a file in the App Group container), so the complications can always read it.
     static func saveSnapshot(_ snap: WatchSnapshot) {
-        if let data = try? JSONEncoder().encode(snap) { defaults.set(data, forKey: snapshotKey) }
+        guard let data = try? JSONEncoder().encode(snap) else { return }
+        defaults.set(data, forKey: snapshotKey)
+        defaults.synchronize()
+        try? data.write(to: snapshotFile, options: .atomic)
     }
 
     static func loadSnapshot() -> WatchSnapshot? {
-        guard let data = defaults.data(forKey: snapshotKey) else { return nil }
-        return try? JSONDecoder().decode(WatchSnapshot.self, from: data)
+        let decoder = JSONDecoder()
+        let a = defaults.data(forKey: snapshotKey).flatMap { try? decoder.decode(WatchSnapshot.self, from: $0) }
+        let b = (try? Data(contentsOf: snapshotFile)).flatMap { try? decoder.decode(WatchSnapshot.self, from: $0) }
+        // whichever is newer and actually has your party
+        let both = [a, b].compactMap { $0 }.filter { !$0.party.isEmpty }
+        return both.max { $0.syncDate < $1.syncDate } ?? a ?? b
     }
 
     static func saveLiveSteps(_ steps: Int, forSync syncDate: Date) {
@@ -241,7 +251,7 @@ enum SharedStore {
     @discardableResult
     static func fetch(_ remote: URL, to file: URL) async -> URL? {
         if FileManager.default.fileExists(atPath: file.path) { return file }
-        guard let (data, resp) = try? await URLSession.shared.data(from: remote),
+        guard let (data, resp) = try? await URLSession.shared.mirroredData(from: remote),
               (resp as? HTTPURLResponse)?.statusCode == 200, !data.isEmpty else { return nil }
         try? data.write(to: file, options: .atomic)
         return file
@@ -297,5 +307,36 @@ extension WatchSnapshot {
         trail = (try? c.decodeIfPresent([TrailSegment].self, forKey: .trail)) ?? []
         garden = (try? c.decodeIfPresent([GardenSpot].self, forKey: .garden)) ?? []
         activities = try? c.decodeIfPresent(Activities.self, forKey: .activities)
+    }
+}
+
+// MARK: - Downloads with a mirror
+
+extension URLSession {
+    /// Like `data(from:)`, but when a GitHub raw file fails (rate limit, outage, slow network) it's fetched
+    /// again from jsDelivr's copy of the same repo, so sprites and icons keep loading.
+    func mirroredData(from url: URL) async throws -> (Data, URLResponse) {
+        var first: (Data, URLResponse)?
+        var firstError: Error?
+        do {
+            let r = try await data(from: url)
+            if (r.1 as? HTTPURLResponse).map({ $0.statusCode == 200 }) ?? true, !r.0.isEmpty { return r }
+            first = r
+        } catch { firstError = error }
+        if let mirror = Self.jsDelivr(url), let r = try? await data(from: mirror),
+           (r.1 as? HTTPURLResponse)?.statusCode == 200, !r.0.isEmpty {
+            return r
+        }
+        if let first { return first }
+        throw firstError ?? URLError(.badServerResponse)
+    }
+
+    /// raw.githubusercontent.com/owner/repo/branch/path → cdn.jsdelivr.net/gh/owner/repo@branch/path
+    static func jsDelivr(_ url: URL) -> URL? {
+        guard url.host == "raw.githubusercontent.com" else { return nil }
+        let parts = url.path.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count >= 4 else { return nil }
+        let path = parts[3...].joined(separator: "/")
+        return URL(string: "https://cdn.jsdelivr.net/gh/\(parts[0])/\(parts[1])@\(parts[2])/\(path)")
     }
 }

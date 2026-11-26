@@ -41,7 +41,7 @@ final class DexInfoService {
     }
 
     private func json(_ s: String) async -> [String: Any]? {
-        guard let url = URL(string: s), let (data, resp) = try? await URLSession.shared.data(from: url),
+        guard let url = URL(string: s), let (data, resp) = try? await URLSession.shared.mirroredData(from: url),
               (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }

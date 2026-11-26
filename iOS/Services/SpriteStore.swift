@@ -132,7 +132,7 @@ final class SpriteStore {
         if let u = userTrainerFile(style, .bike) { return GIFCache.shared.image(at: u) }
         let file = cacheRoot.appendingPathComponent("trainers/\(style.id)-bike.png")
         if !FileManager.default.fileExists(atPath: file.path) {
-            guard let (data, resp) = try? await URLSession.shared.data(from: style.bikeURL),
+            guard let (data, resp) = try? await URLSession.shared.mirroredData(from: style.bikeURL),
                   (resp as? HTTPURLResponse)?.statusCode == 200 else { return await trainerWalk(style) }
             try? data.write(to: file, options: .atomic)
         }
@@ -146,7 +146,7 @@ final class SpriteStore {
     func trainerSurf(_ style: TrainerStyle) async -> UIImage? {
         let file = cacheRoot.appendingPathComponent("trainers/\(style.id)-surf.png")
         if !FileManager.default.fileExists(atPath: file.path) {
-            guard let (data, resp) = try? await URLSession.shared.data(from: style.surfURL),
+            guard let (data, resp) = try? await URLSession.shared.mirroredData(from: style.surfURL),
                   (resp as? HTTPURLResponse)?.statusCode == 200 else { return await trainerWalk(style) }
             try? data.write(to: file, options: .atomic)
         }
@@ -161,7 +161,7 @@ final class SpriteStore {
         if let u = userTrainerFile(style, .walk) ?? userTrainerFile(style, .head) { return GIFCache.shared.image(at: u) }
         let file = cacheRoot.appendingPathComponent("trainers/\(style.id)-overworld.png")
         if !FileManager.default.fileExists(atPath: file.path) {
-            guard let (data, resp) = try? await URLSession.shared.data(from: style.overworldURL),
+            guard let (data, resp) = try? await URLSession.shared.mirroredData(from: style.overworldURL),
                   (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
             try? data.write(to: file, options: .atomic)
         }
@@ -237,7 +237,7 @@ final class SpriteStore {
         let ext = remote.pathExtension
         let dest = cacheRoot.appendingPathComponent("\(cacheKey).\(ext)")
         let task = Task<URL?, Never> {
-            guard let (raw, resp) = try? await URLSession.shared.data(from: remote),
+            guard let (raw, resp) = try? await URLSession.shared.mirroredData(from: remote),
                   (resp as? HTTPURLResponse)?.statusCode == 200, !raw.isEmpty else { return nil }
             var data = raw
             // PokeSprite box icons sit in a big empty canvas: trim it so they fill their slots like before
