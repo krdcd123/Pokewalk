@@ -131,6 +131,8 @@ final class PhoneConnectivity: NSObject, WCSessionDelegate {
                 } else if store.ranchShiftDone, let h = store.collectRanchShift() {
                     text = "Haul: " + RanchMaterial.allCases.compactMap { m in h.materials[m].flatMap { $0 > 0 ? "\($0) \(m.name)" : nil } }.joined(separator: ", ")
                     if h.money > 0 { text += ", ₽\(h.money)" }
+                } else if !store.ranchShiftRunning, let b = store.ranchBuilding {
+                    text = "Everyone's building the \(b.name) — no shifts until it's done."
                 } else if !store.ranchShiftRunning, !store.ranchWorkers.isEmpty {
                     store.startRanchShift()
                     text = "Shift started!"

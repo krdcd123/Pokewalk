@@ -101,9 +101,10 @@ struct RanchView: View {
                 let tile = 16 * k
                 ZStack(alignment: .topLeading) {
                     if let t = gfx.outdoors {
+                        let soft = store.ranchShiftRunning || store.ranchBuilding != nil
                         PixelImageView(image: RanchMap.image(t, built: r.built)).frame(width: geo.size.width, height: geo.size.height)
-                            .blur(radius: store.ranchShiftRunning ? 6 : 0)
-                            .overlay(Color.black.opacity(store.ranchShiftRunning ? 0.15 : 0))
+                            .blur(radius: soft ? 6 : 0)
+                            .overlay(Color.black.opacity(soft ? 0.15 : 0))
                     } else {
                         Color(red: 0.45, green: 0.77, blue: 0.64)
                         ProgressView().tint(.white).frame(width: geo.size.width, height: geo.size.height)
@@ -121,7 +122,15 @@ struct RanchView: View {
                             .symbolEffect(.bounce, options: .repeating.speed(0.4))
                             .position(RanchMap.workSite(b.project, tile: tile))
                     }
-                    if !store.ranchShiftRunning {
+                    // Building: Machokes carry boxes back and forth across the ranch (from Ruby & Sapphire)
+                    if store.ranchBuilding != nil {
+                        MachokeMovers(size: tile * 2.2)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .allowsHitTesting(false)
+                    }
+                    if store.ranchBuilding != nil && !store.ranchShiftRunning {
+                        EmptyView()
+                    } else if !store.ranchShiftRunning {
                         WorkersHop(workers: store.ranchWorkers, iconSize: tile * 1.2)
                             .frame(width: tile * 10, height: tile * 5)
                             .offset(x: tile * 2, y: tile * 3.5)
@@ -266,6 +275,12 @@ struct RanchView: View {
                     }
                 }
             }
+        } else if let b = store.ranchBuilding {
+            Label("Everyone's helping build the \(b.name) — no shifts until it's finished.", systemImage: "hammer.fill")
+                .font(.rounded(14, .heavy)).foregroundStyle(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 14).fill(Color(hex: 0xF5A623).opacity(0.25)))
         } else {
             Button {
                 store.startRanchShift()
@@ -1004,3 +1019,71 @@ struct RanchTimerChip: View {
         }
     }
 }
+
+// MARK: - Building works
+
+/// Machokes carrying moving boxes across the ranch while something's being built — the movers from Ruby &
+/// Sapphire's opening. Walking and crossing run in Core Animation, so it costs next to nothing.
+struct MachokeMovers: UIViewRepresentable {
+    let size: CGFloat
+
+    func makeUIView(context: Context) -> MoversView {
+        let v = MoversView()
+        Task { @MainActor in
+            if let sheet = await PretFiles.sprite("ruby/graphics/object_events/pics/pokemon/machoke_carrying_box.png") {
+                v.frames = (0..<3).compactMap { i in
+                    sheet.cgImage?.cropping(to: CGRect(x: i * 32, y: 0, width: 32, height: 32)).map { UIImage(cgImage: $0) }
+                }
+            }
+        }
+        return v
+    }
+
+    func updateUIView(_ v: MoversView, context: Context) { v.size = size }
+
+    final class MoversView: UIView {
+        var frames: [UIImage] = [] { didSet { rebuild() } }
+        var size: CGFloat = 40 { didSet { if oldValue != size { rebuild() } } }
+        private var lastBounds = CGRect.zero
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            if bounds != lastBounds { lastBounds = bounds; rebuild() }
+        }
+        override func didMoveToWindow() { super.didMoveToWindow(); rebuild() }
+
+        private func rebuild() {
+            subviews.forEach { $0.removeFromSuperview() }
+            guard window != nil, frames.count == 3, bounds.width > 0 else { return }
+            // idle, step, idle, other step — like the overworld walk
+            let walk = [frames[1], frames[0], frames[2], frames[0]]
+            // four movers on different rows, speeds and directions; the box always leads
+            let rows: [(y: CGFloat, secs: Double, delay: Double, leftward: Bool)] = [
+                (0.30, 7.0, 0.0, true), (0.52, 8.5, 2.4, false), (0.74, 6.5, 4.1, true), (0.88, 9.0, 1.2, false),
+            ]
+            for r in rows {
+                let iv = UIImageView()
+                iv.animationImages = walk
+                iv.animationDuration = 0.6
+                iv.layer.magnificationFilter = .nearest
+                iv.frame = CGRect(x: 0, y: 0, width: size, height: size)
+                if !r.leftward { iv.transform = CGAffineTransform(scaleX: -1, y: 1) }
+                addSubview(iv)
+                iv.startAnimating()
+                let y = bounds.height * r.y - size / 2
+                let from = r.leftward ? bounds.width + size : -size
+                let to = r.leftward ? -size : bounds.width + size
+                let move = CABasicAnimation(keyPath: "position")
+                move.fromValue = CGPoint(x: from, y: y + size / 2)
+                move.toValue = CGPoint(x: to, y: y + size / 2)
+                move.duration = r.secs
+                move.repeatCount = .infinity
+                move.timeOffset = r.delay
+                move.isRemovedOnCompletion = false
+                iv.layer.position = CGPoint(x: from, y: y + size / 2)
+                iv.layer.add(move, forKey: "cross")
+            }
+        }
+    }
+}
+

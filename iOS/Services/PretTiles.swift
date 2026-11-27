@@ -16,7 +16,10 @@ enum PretFiles {
         let file = dir.appendingPathComponent(path.replacingOccurrences(of: "/", with: "_"))
         if let d = try? Data(contentsOf: file) { return d }
         // "firered/…" paths come from pret/pokefirered
-        let full = path.hasPrefix("firered/") ? "https://raw.githubusercontent.com/pret/pokefirered/master/" + path.dropFirst(8) : base + path
+        // "ruby/…" paths come from pret/pokeruby (e.g. the Machoke movers)
+        let full = path.hasPrefix("firered/") ? "https://raw.githubusercontent.com/pret/pokefirered/master/" + path.dropFirst(8)
+            : path.hasPrefix("ruby/") ? "https://raw.githubusercontent.com/pret/pokeruby/master/" + path.dropFirst(5)
+            : base + path
         guard let url = URL(string: full),
               let (d, resp) = try? await URLSession.shared.mirroredData(from: url),
               (resp as? HTTPURLResponse)?.statusCode == 200, !d.isEmpty else { return nil }

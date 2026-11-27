@@ -1714,8 +1714,17 @@ extension GameStore {
 
     var ranchShiftHours: Double { RanchRules.shiftHours(ranch: state.ranch, workers: ranchWorkers) }
 
+    /// Something's being built on the ranch (a Ranch project, the Daycare or the Contest Hall): everyone's
+    /// helping, so no shifts until it's done.
+    var ranchBuilding: RanchProject? {
+        if let b = state.ranch.building { return RanchProject.all.first { $0.id == b.project } }
+        if let b = state.daycare.building { return DaycareRules.projects.first { $0.id == b.project } }
+        if let b = state.contests.building { return ContestRules.projects.first { $0.id == b.project } }
+        return nil
+    }
+
     func startRanchShift() {
-        guard !ranchWorkers.isEmpty, !ranchShiftRunning else { return }
+        guard !ranchWorkers.isEmpty, !ranchShiftRunning, ranchBuilding == nil else { return }
         let end = Date().addingTimeInterval(ranchShiftHours * 3600)
         mutate { s in
             s.ranch.shiftStart = .now
