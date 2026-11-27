@@ -108,7 +108,9 @@ final class WalkingDetector: ObservableObject {
     @Published private(set) var isDriving = false
     private var motionSaysVehicle = false
     /// iOS's motion chip says you're in a vehicle (car, bus, train) right now.
-    var inVehicle: Bool { motionSaysAutomotive }
+    var inVehicle: Bool { motionSaysAutomotive && !motionSaysStill }
+    /// iOS's motion chip says you're not moving at all (sat at home).
+    var isStill: Bool { motionSaysStill }
     private var motionSaysAutomotive = false
     private var lastStepAt = Date.distantPast
     private var lastSteps = 0
@@ -161,7 +163,9 @@ final class WalkingDetector: ObservableObject {
         let now = Date()
         let recentSteps = now.timeIntervalSince(lastStepAt) < 8
         let fix = LocationTracker.shared.latestFix.flatMap { now.timeIntervalSince($0.timestamp) < 10 ? $0 : nil }
-        if let fix, fix.speed > 4.5 { lastFastAt = fix.timestamp }             // faster than ~10 mph
+        // faster than ~10 mph — but only a trustworthy reading: indoors GPS speed can spike while you sit still
+        if let fix, fix.speed > 4.5, !motionSaysStill, fix.horizontalAccuracy <= 30,
+           fix.speedAccuracy >= 0, fix.speedAccuracy < 2.5 { lastFastAt = fix.timestamp }
         let sinceFast = now.timeIntervalSince(lastFastAt)
         let driving = !recentSteps && !motionWalkingNow &&
             (sinceFast < 45 || (motionSaysVehicle && sinceFast < 150))          // stuck in traffic still counts

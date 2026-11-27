@@ -6,6 +6,9 @@ enum WhatsNew {
     struct Note { let build: Int; let items: [String] }
 
     static let notes: [Note] = [
+        Note(build: 204, items: [
+            "Fixed red \"drive\" lines appearing while you're sat at home — GPS wandering indoors no longer counts as a journey, and the stray lines are cleaned up.",
+        ]),
         Note(build: 203, items: [
             "The Daycare and Contest Hall stay hidden until your Ranch is ready for them, then pop up with a message (on the watch too).",
         ]),

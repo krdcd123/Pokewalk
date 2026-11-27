@@ -104,7 +104,16 @@ final class TrackStore: ObservableObject {
     func load(_ key: String) -> [[TrackPoint]] {
         guard let data = try? Data(contentsOf: file(key)),
               let segs = try? JSONDecoder().decode([[TrackPoint]].self, from: data) else { return [] }
-        return segs
+        return Self.withoutJitter(segs)
+    }
+
+    /// A "drive" that never got more than 300 m from where it started is GPS wandering while you sat still
+    /// (indoors), not a journey: drop it.
+    static func withoutJitter(_ segs: [[TrackPoint]]) -> [[TrackPoint]] {
+        segs.filter { seg in
+            guard isDrive(seg), let first = seg.first else { return true }
+            return seg.contains { $0.location.distance(from: first.location) > 300 }
+        }
     }
 
     func segments(for date: Date) -> [[TrackPoint]] {
@@ -357,7 +366,7 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
 
     private func checkVehicle() {
         let d = WalkingDetector.shared
-        let inVehicle = (d.isDriving || d.inVehicle) && !d.isWalking
+        let inVehicle = (d.isDriving || d.inVehicle) && !d.isWalking && !d.isStill
         guard inVehicle != vehicleMode else { return }
         vehicleMode = inVehicle
         if keepAliveOn {
@@ -412,17 +421,26 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         WeatherService.shared.update(for: loc)
         PlaceLog.shared.feed(loc)
         guard loc.horizontalAccuracy > 0 else { return }
-        // Speed: GPS's own, or worked out from the last point (with no phone signal the GPS speed is often missing)
-        var speed = loc.speed
-        if speed < 0, let last = TrackStore.shared.today.last?.last {
+        // Speed: GPS's own (when it's trustworthy), or worked out from the last point — with no phone signal
+        // the GPS speed is often missing. Indoors the position wanders tens of metres, so a worked-out speed only
+        // counts over a distance well beyond that wander.
+        let d = WalkingDetector.shared
+        let acc = loc.horizontalAccuracy
+        var speed = loc.speed >= 0 && loc.speedAccuracy >= 0 && loc.speedAccuracy < 3 ? loc.speed : -1
+        let last = TrackStore.shared.today.last?.last
+        if speed < 0, let last {
             let dt = loc.timestamp.timeIntervalSince1970 - last.t
-            if dt > 2 { speed = loc.distance(from: last.location) / dt }
+            let dist = loc.distance(from: last.location)
+            if dt > 5, dist > max(60, acc * 2) { speed = dist / dt }
         }
         // In a vehicle: record it as a drive (red on the map) — tracked, but it never earns anything.
-        // Inside a train carriage GPS is less precise, so drives accept rougher fixes (it's a red line, not steps).
-        let d = WalkingDetector.shared
-        if speed > 4.5 || d.isDriving || (d.inVehicle && !d.isWalking) {
-            if loc.horizontalAccuracy <= 100 { TrackStore.shared.append(loc, drive: true) }
+        // Never while the motion chip says you're sat still (that's GPS wandering at home, not a journey).
+        let inVehicle = !d.isStill && (speed > 4.5 || d.isDriving || (d.inVehicle && !d.isWalking))
+        if inVehicle {
+            // inside a train carriage GPS is rougher, so rough fixes are fine if iOS agrees you're in a vehicle
+            let goodEnough = acc <= 35 || (acc <= 100 && d.inVehicle)
+            let moved = last.map { loc.distance(from: $0.location) >= max(25, acc) } ?? true
+            if goodEnough && moved { TrackStore.shared.append(loc, drive: true) }
             if !vehicleMode { checkVehicle() }
             return
         }
