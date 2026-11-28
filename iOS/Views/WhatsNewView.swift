@@ -6,6 +6,10 @@ enum WhatsNew {
     struct Note { let build: Int; let items: [String] }
 
     static let notes: [Note] = [
+        Note(build: 206, items: [
+            "Train journeys keep their red line all the way: smooth trains that look \"still\" to the iPhone no longer cut it off, and a gap with no signal is joined up.",
+            "Places are tidier: only real stops (15+ minutes, not walking about, never on a train) and named after notable spots like cafés, parks, shops and stations — or the street — instead of random offices.",
+        ]),
         Note(build: 205, items: [
             "While something's being built on the Ranch, the ranch blurs and Machokes carry boxes across it.",
             "Your ranchers are busy helping build, so shifts can't start until the work is finished.",

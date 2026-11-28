@@ -164,8 +164,9 @@ final class WalkingDetector: ObservableObject {
         let recentSteps = now.timeIntervalSince(lastStepAt) < 8
         let fix = LocationTracker.shared.latestFix.flatMap { now.timeIntervalSince($0.timestamp) < 10 ? $0 : nil }
         // faster than ~10 mph — but only a trustworthy reading: indoors GPS speed can spike while you sit still
-        if let fix, fix.speed > 4.5, !motionSaysStill, fix.horizontalAccuracy <= 30,
-           fix.speedAccuracy >= 0, fix.speedAccuracy < 2.5 { lastFastAt = fix.timestamp }
+        if let fix, fix.speedAccuracy >= 0, fix.speedAccuracy < 2.5, fix.horizontalAccuracy <= 65,
+           fix.speed > 8 || (fix.speed > 4.5 && !motionSaysStill) { lastFastAt = fix.timestamp }
+        if LocationTracker.shared.onJourney { lastFastAt = now }
         let sinceFast = now.timeIntervalSince(lastFastAt)
         let driving = !recentSteps && !motionWalkingNow &&
             (sinceFast < 45 || (motionSaysVehicle && sinceFast < 150))          // stuck in traffic still counts

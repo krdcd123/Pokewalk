@@ -149,7 +149,7 @@ final class TrackStore: ObservableObject {
             // A new line when you switch between walking and driving, after a long gap, or a GPS jump
             // (a train going through a tunnel or a dead spot keeps one line: only an impossible speed breaks it)
             let newSegment = last.isDrive != drive
-                || (drive ? (gap > 1_800 || jump / max(gap, 1) > 90) : (gap > 300 || jump > 150))
+                || (drive ? (gap > 3 * 3_600 || jump / max(gap, 1) > 70) : (gap > 300 || jump > 150))
             if newSegment {
                 // join the switch-over point so walk and drive lines touch
                 if last.isDrive != drive, gap < 120, jump < 500 { today.append([TrackPoint(lat: last.lat, lon: last.lon, t: last.t, drive: drive ? true : nil), p]) }
@@ -276,6 +276,8 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         let from = ObjectIdentifier(manager)
         Task { @MainActor in
+            // Every fix (even rough phone-mast ones) helps tell that you're on a journey
+            for loc in locations { self.noteForJourney(loc) }
             // On a train / in a car the stay-awake feed switches to GPS, and every fix is drawn on the red line:
             // the walking feed can pause when your feet aren't moving, which is what cut the line off before.
             if from == ObjectIdentifier(self.keepAlive), self.vehicleMode {
@@ -364,9 +366,31 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         }
     }
 
+    // A smooth train often looks "stationary" to the motion chip, so a journey is also spotted from where you
+    // are: well over a kilometre covered in a few minutes (beyond any GPS wander) can only be travelling.
+    private var journeyFixes: [CLLocation] = []
+    private var lastJourneyAt = Date.distantPast
+    var onJourney: Bool { Date().timeIntervalSince(lastJourneyAt) < 180 }
+
+    private func noteForJourney(_ loc: CLLocation) {
+        guard loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 1_500 else { return }
+        journeyFixes.append(loc)
+        journeyFixes.removeAll { loc.timestamp.timeIntervalSince($0.timestamp) > 600 }
+        for f in journeyFixes {
+            let dt = loc.timestamp.timeIntervalSince(f.timestamp)
+            guard dt >= 90 else { continue }
+            let surely = loc.distance(from: f) - loc.horizontalAccuracy - f.horizontalAccuracy
+            if surely > 1_500, surely / dt > 5 {
+                lastJourneyAt = loc.timestamp
+                if !vehicleMode { checkVehicle() }
+                break
+            }
+        }
+    }
+
     private func checkVehicle() {
         let d = WalkingDetector.shared
-        let inVehicle = (d.isDriving || d.inVehicle) && !d.isWalking && !d.isStill
+        let inVehicle = onJourney || ((d.isDriving || d.inVehicle) && !d.isWalking && !d.isStill)
         guard inVehicle != vehicleMode else { return }
         vehicleMode = inVehicle
         if keepAliveOn {
@@ -435,10 +459,13 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         }
         // In a vehicle: record it as a drive (red on the map) — tracked, but it never earns anything.
         // Never while the motion chip says you're sat still (that's GPS wandering at home, not a journey).
-        let inVehicle = !d.isStill && (speed > 4.5 || d.isDriving || (d.inVehicle && !d.isWalking))
+        // A confident GPS speed of 13+ mph, or a journey spotted from distance covered, counts even if the
+        // motion chip says "still" (smooth trains fool it — that's what cut the line off).
+        let trustedFast = loc.speed > 6 && loc.speedAccuracy >= 0 && loc.speedAccuracy < 2.5
+        let inVehicle = trustedFast || onJourney || (!d.isStill && (speed > 4.5 || d.isDriving || (d.inVehicle && !d.isWalking)))
         if inVehicle {
-            // inside a train carriage GPS is rougher, so rough fixes are fine if iOS agrees you're in a vehicle
-            let goodEnough = acc <= 35 || (acc <= 100 && d.inVehicle)
+            // inside a train carriage GPS is rougher, so rough fixes are fine once it's clearly a journey
+            let goodEnough = acc <= 35 || (acc <= 150 && (d.inVehicle || onJourney || trustedFast))
             let moved = last.map { loc.distance(from: $0.location) >= max(25, acc) } ?? true
             if goodEnough && moved { TrackStore.shared.append(loc, drive: true) }
             if !vehicleMode { checkVehicle() }

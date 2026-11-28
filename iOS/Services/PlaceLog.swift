@@ -62,11 +62,15 @@ let WorkLocation = SavedSpot(key: "work")
 final class PlaceLog: ObservableObject {
     static let shared = PlaceLog()
 
-    static let minStay: TimeInterval = 10 * 60      // counts as a place after 10 minutes
-    static let radius: CLLocationDistance = 120      // wandering within this still counts as "there"
+    static let minStay: TimeInterval = 15 * 60      // counts as a place after 15 minutes
+    static let radius: CLLocationDistance = 100      // wandering within this still counts as "there"
 
     @Published private(set) var revision = 0
     private var anchor: (loc: CLLocation, since: Date)?
+    /// While at an anchor: how many fixes came in, and how many while you were walking. Pacing up and down a
+    /// street (or walking round at work) isn't "stopping somewhere".
+    private var fixesHere = 0
+    private var walkingHere = 0
     private var open: Stay?
 
     private let dir: URL = {
@@ -95,12 +99,17 @@ final class PlaceLog: ObservableObject {
     /// Feed every location fix (moving or not).
     func feed(_ loc: CLLocation) {
         guard loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 100 else { return }
+        // passing through on a train or in a car is never a stay
+        if LocationTracker.shared.onJourney || WalkingDetector.shared.isDriving { anchor = nil; return }
         let now = loc.timestamp
-        guard let a = anchor else { anchor = (loc, now); return }
+        guard let a = anchor else { anchor = (loc, now); fixesHere = 0; walkingHere = 0; return }
 
         if loc.distance(from: a.loc) <= Self.radius {
-            // Still here. Long enough to count?
-            if open == nil, now.timeIntervalSince(a.since) >= Self.minStay {
+            fixesHere += 1
+            if WalkingDetector.shared.isWalking { walkingHere += 1 }
+            // Still here. Long enough to count — and mostly not walking about?
+            let mostlyStill = fixesHere < 6 || Double(walkingHere) / Double(fixesHere) < 0.5
+            if open == nil, mostlyStill, now.timeIntervalSince(a.since) >= Self.minStay {
                 var stay = Stay(lat: a.loc.coordinate.latitude, lon: a.loc.coordinate.longitude, arrived: a.since)
                 if let merged = mergeWithLast(stay) { stay = merged } else { closeOpenStays(before: stay) }
                 open = stay
@@ -115,6 +124,7 @@ final class PlaceLog: ObservableObject {
                 open = nil
             }
             anchor = (loc, now)
+            fixesHere = 0; walkingHere = 0
         }
     }
 
@@ -163,14 +173,23 @@ final class PlaceLog: ObservableObject {
         save(s)
     }
 
-    /// Prefer a named place nearby (shop, café, park…); otherwise the street / area.
+    /// Name it after a notable place right there (café, park, shop, station, museum…) — never a random office or
+    /// business that happens to be nearest; otherwise the street / area.
+    static let notable: [MKPointOfInterestCategory] = [
+        .airport, .amusementPark, .aquarium, .bakery, .beach, .brewery, .cafe, .campground, .fitnessCenter,
+        .foodMarket, .hospital, .hotel, .library, .marina, .movieTheater, .museum, .nationalPark, .nightlife,
+        .park, .publicTransport, .restaurant, .school, .stadium, .store, .theater, .university, .winery, .zoo,
+    ]
+
     private func name(_ stay: Stay) {
         guard stay.name == nil else { return }
         Task {
             var found: String?
-            let req = MKLocalPointsOfInterestRequest(center: stay.coordinate, radius: 60)
+            let req = MKLocalPointsOfInterestRequest(center: stay.coordinate, radius: 50)
+            req.pointOfInterestFilter = MKPointOfInterestFilter(including: Self.notable)
             if let resp = try? await MKLocalSearch(request: req).start() {
                 found = resp.mapItems
+                    .filter { ($0.placemark.location?.distance(from: stay.location) ?? 999) <= 50 }
                     .sorted { ($0.placemark.location?.distance(from: stay.location) ?? 999) < ($1.placemark.location?.distance(from: stay.location) ?? 999) }
                     .first?.name
             }
