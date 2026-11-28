@@ -225,7 +225,7 @@ final class PlaceLog: ObservableObject {
     /// so they get the better name and "Where was this?" choices. Your own names are never touched.
     func refineNames(on day: Date) {
         for st in stays(on: day) where st.options == nil && st.userNamed != true && st.left != nil {
-            name(st, force: true)
+            name(st, force: true, keepUnknownName: true)
         }
     }
 
@@ -239,7 +239,9 @@ final class PlaceLog: ObservableObject {
     /// business that happens to be nearest; otherwise the street / area.
     static var notable: [MKPointOfInterestCategory] { PlaceGuesser.notable }
 
-    private func name(_ stay: Stay, force: Bool = false) {
+    /// `keepUnknownName`: a name that isn't one of the nearby places was probably typed by you (before names
+    /// were marked as yours) — keep it, just add the choices.
+    private func name(_ stay: Stay, force: Bool = false, keepUnknownName: Bool = false) {
         guard force || stay.name == nil, stay.userNamed != true else { return }
         Task {
             let guess = await PlaceGuesser.guess(stay)
@@ -248,6 +250,14 @@ final class PlaceLog: ObservableObject {
             guard let found else { return }
             // re-read so we don't overwrite times (or your own name) that changed meanwhile
             if var s = stays(on: stay.arrived).first(where: { $0.id == stay.id }), s.userNamed != true {
+                let typed = keepUnknownName && s.name != nil && !(guess?.options.contains(s.name!) ?? false)
+                    && s.name != (await PlaceService.shared.placeName(for: stay.location))
+                if typed {
+                    s.userNamed = true
+                    s.options = guess?.options
+                    save(s)
+                    return
+                }
                 s.name = found
                 s.options = guess?.options
                 save(s)
