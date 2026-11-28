@@ -249,9 +249,10 @@ final class PlaceLog: ObservableObject {
             if found == nil { found = await PlaceService.shared.placeName(for: stay.location) }
             guard let found else { return }
             // re-read so we don't overwrite times (or your own name) that changed meanwhile
+            let streetName = keepUnknownName ? await PlaceService.shared.placeName(for: stay.location) : nil
             if var s = stays(on: stay.arrived).first(where: { $0.id == stay.id }), s.userNamed != true {
                 let typed = keepUnknownName && s.name != nil && !(guess?.options.contains(s.name!) ?? false)
-                    && s.name != (await PlaceService.shared.placeName(for: stay.location))
+                    && s.name != streetName
                 if typed {
                     s.userNamed = true
                     s.options = guess?.options
