@@ -6,7 +6,7 @@ enum WhatsNew {
     struct Note { let build: Int; let items: [String] }
 
     static let notes: [Note] = [
-        Note(build: 209, items: [
+        Note(build: 210, items: [
             "Smarter places: PokéWalk uses where you were for most of the stay (not the doorway), how long you stayed and the time of day — a long evening stop picks the restaurant, not the shop next door. On iPhones with Apple Intelligence, Apple's on-device AI makes the final call.",
             "Wrong place? Press and hold it in the Journal › \"Where was this?\" to pick the right one — it remembers for next time.",
             "Places now end properly when you leave on a train, and rough overlapping visits are ignored.",

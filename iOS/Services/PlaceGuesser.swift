@@ -70,9 +70,9 @@ enum PlaceGuesser {
         // 4. Apple's on-device model, when this iPhone has it, makes the final call between the front-runners
         if top.count > 1, let ai = await askModel(top, minutes: minutes, arrived: stay.arrived) { best = ai }
 
-        var options = top.map(\.name)
-        options.removeAll { $0 == best }
-        return Guess(name: best, options: [best] + options.removingDuplicates())
+        var seen = Set([best])
+        let options = [best] + top.map(\.name).filter { seen.insert($0).inserted }
+        return Guess(name: best, options: options)
     }
 
     /// How well a kind of place fits the visit.
