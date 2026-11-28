@@ -15,6 +15,7 @@ struct JournalView: View {
     @ObservedObject private var photos = JournalPhotos.shared
     @State private var renaming: Stay?
     @State private var renamingGroup: [Stay] = []
+    @State private var choosingGroup: [Stay] = []
     @State private var expanded: Set<UUID> = []
     @State private var newName = ""
     @State private var dayWorkouts: [StepCounter.WorkoutInfo] = []
@@ -254,6 +255,7 @@ struct JournalView: View {
         .navigationTitle("Journal")
         .glassScreen()
         .task(id: day) {
+            places.refineNames(on: day)
             steps = max(0, await StepEngine.shared.steps(onDay: day) - (await StepCounter.shared.nonWalkingWorkoutSteps(onDay: day)))
             let dayEnd = Calendar.current.date(byAdding: .day, value: 1, to: day) ?? day
             dayWorkouts = await StepCounter.shared.workouts(from: day, to: min(.now, dayEnd))
@@ -364,6 +366,9 @@ struct JournalView: View {
                             selectStay(g.visits[0].stay)
                         }
                         .contextMenu {
+                            if let opts = g.visits[0].stay.options, opts.count > 1 {
+                                Button("Where was this?", systemImage: "mappin.and.ellipse") { choosingGroup = g.visits.map(\.stay) }
+                            }
                             Button("Rename", systemImage: "pencil") { newName = g.name ?? ""; renaming = g.visits[0].stay; renamingGroup = g.visits.map(\.stay) }
                         }
                     }
@@ -371,6 +376,25 @@ struct JournalView: View {
                 .padding(14)
                 .glassCard(18)
             }
+        }
+        // Pick the right place from what was nearby; PokéWalk remembers it for next time
+        .confirmationDialog("Where were you?", isPresented: Binding(get: { !choosingGroup.isEmpty }, set: { if !$0 { choosingGroup = [] } }),
+                            titleVisibility: .visible) {
+            ForEach(choosingGroup.first?.options ?? [], id: \.self) { name in
+                Button(name) {
+                    SoundKit.shared.play(.select)
+                    for st in choosingGroup { places.rename(st, to: name) }
+                    choosingGroup = []
+                }
+            }
+            Button("Type a name…") {
+                newName = choosingGroup.first?.name ?? ""
+                renaming = choosingGroup.first; renamingGroup = choosingGroup
+                choosingGroup = []
+            }
+            Button("Cancel", role: .cancel) { choosingGroup = [] }
+        } message: {
+            Text("Places near where your phone was. Your choice is remembered next time you're there.")
         }
         .alert("Rename place", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $newName)

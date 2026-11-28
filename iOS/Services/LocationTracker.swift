@@ -277,7 +277,7 @@ final class LocationTracker: NSObject, ObservableObject, CLLocationManagerDelega
         let from = ObjectIdentifier(manager)
         Task { @MainActor in
             // Every fix (even rough phone-mast ones) helps tell that you're on a journey
-            for loc in locations { self.noteForJourney(loc) }
+            for loc in locations { self.noteForJourney(loc); PlaceLog.shared.noteFix(loc) }
             // On a train / in a car the stay-awake feed switches to GPS, and every fix is drawn on the red line:
             // the walking feed can pause when your feet aren't moving, which is what cut the line off before.
             if from == ObjectIdentifier(self.keepAlive), self.vehicleMode {

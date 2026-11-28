@@ -6,6 +6,11 @@ enum WhatsNew {
     struct Note { let build: Int; let items: [String] }
 
     static let notes: [Note] = [
+        Note(build: 207, items: [
+            "Smarter places: PokéWalk uses where you were for most of the stay (not the doorway), how long you stayed and the time of day — a long evening stop picks the restaurant, not the shop next door. On iPhones with Apple Intelligence, Apple's on-device AI makes the final call.",
+            "Wrong place? Press and hold it in the Journal › \"Where was this?\" to pick the right one — it remembers for next time.",
+            "Places now end properly when you leave on a train, and rough overlapping visits are ignored.",
+        ]),
         Note(build: 206, items: [
             "Train journeys keep their red line all the way: smooth trains that look \"still\" to the iPhone no longer cut it off, and a gap with no signal is joined up.",
             "Places are tidier: only real stops (15+ minutes, not walking about, never on a train) and named after notable spots like cafés, parks, shops and stations — or the street — instead of random offices.",

@@ -10,6 +10,8 @@ struct Stay: Codable, Identifiable, Hashable {
     var arrived: Date
     var left: Date?                 // nil = you're still there
     var name: String?
+    var options: [String]?          // other places it could have been (most likely first), for "Where was this?"
+    var userNamed: Bool?            // you picked / typed the name: never change it
 
     var coordinate: CLLocationCoordinate2D { .init(latitude: lat, longitude: lon) }
     var location: CLLocation { CLLocation(latitude: lat, longitude: lon) }
@@ -71,6 +73,33 @@ final class PlaceLog: ObservableObject {
     /// street (or walking round at work) isn't "stopping somewhere".
     private var fixesHere = 0
     private var walkingHere = 0
+    /// Precise fixes while there, to find the middle of where you actually were (the first fix is usually the
+    /// doorway you walked in through — or the place next door).
+    private var hereFixes: [CLLocation] = []
+
+    private static func centre(_ fixes: [CLLocation]) -> CLLocation? {
+        let good = fixes.filter { $0.horizontalAccuracy <= 40 }
+        let use = good.count >= 3 ? good : fixes
+        guard !use.isEmpty else { return nil }
+        var lat = 0.0, lon = 0.0, wsum = 0.0
+        for f in use {
+            let w = 1 / max(5, f.horizontalAccuracy)
+            lat += f.coordinate.latitude * w; lon += f.coordinate.longitude * w; wsum += w
+        }
+        return CLLocation(latitude: lat / wsum, longitude: lon / wsum)
+    }
+
+    /// Any fix at all (rough ones too, even on a train): if you're clearly somewhere else, the stay has ended.
+    /// Without this a stay could carry on for hours after you'd left on a train.
+    func noteFix(_ loc: CLLocation) {
+        guard var s = open, loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 2_000 else { return }
+        if loc.distance(from: s.location) - loc.horizontalAccuracy > Self.radius * 1.5 {
+            s.left = loc.timestamp
+            open = nil
+            anchor = nil
+            finish(s)
+        }
+    }
     private var open: Stay?
 
     private let dir: URL = {
@@ -99,32 +128,40 @@ final class PlaceLog: ObservableObject {
     /// Feed every location fix (moving or not).
     func feed(_ loc: CLLocation) {
         guard loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= 100 else { return }
-        // passing through on a train or in a car is never a stay
-        if LocationTracker.shared.onJourney || WalkingDetector.shared.isDriving { anchor = nil; return }
         let now = loc.timestamp
-        guard let a = anchor else { anchor = (loc, now); fixesHere = 0; walkingHere = 0; return }
+        // passing through on a train or in a car is never a stay (and ends one you were in)
+        if LocationTracker.shared.onJourney || WalkingDetector.shared.isDriving {
+            if var s = open { s.left = now; open = nil; finish(s) }
+            anchor = nil
+            return
+        }
+        guard let a = anchor else { anchor = (loc, now); fixesHere = 0; walkingHere = 0; hereFixes = [loc]; return }
 
         if loc.distance(from: a.loc) <= Self.radius {
             fixesHere += 1
+            hereFixes.append(loc)
+            if hereFixes.count > 400 { hereFixes.removeFirst(100) }
             if WalkingDetector.shared.isWalking { walkingHere += 1 }
             // Still here. Long enough to count — and mostly not walking about?
             let mostlyStill = fixesHere < 6 || Double(walkingHere) / Double(fixesHere) < 0.5
             if open == nil, mostlyStill, now.timeIntervalSince(a.since) >= Self.minStay {
-                var stay = Stay(lat: a.loc.coordinate.latitude, lon: a.loc.coordinate.longitude, arrived: a.since)
+                let mid = Self.centre(hereFixes) ?? a.loc
+                var stay = Stay(lat: mid.coordinate.latitude, lon: mid.coordinate.longitude, arrived: a.since)
                 if let merged = mergeWithLast(stay) { stay = merged } else { closeOpenStays(before: stay) }
                 open = stay
                 save(stay)
                 name(stay)
             }
         } else if loc.distance(from: a.loc) > Self.radius * 1.25 {
-            // Left
+            // Left: settle where it was and what it was, now we know how long you stayed
             if var s = open {
                 s.left = now
-                save(s)
+                if let mid = Self.centre(hereFixes) { s.lat = mid.coordinate.latitude; s.lon = mid.coordinate.longitude }
                 open = nil
+                finish(s)
             }
             anchor = (loc, now)
-            fixesHere = 0; walkingHere = 0
+            fixesHere = 0; walkingHere = 0; hereFixes = [loc]
         }
     }
 
@@ -144,6 +181,14 @@ final class PlaceLog: ObservableObject {
             save(s)
             return
         }
+        // iOS's visits can be rough: one that overlaps stays we've already logged somewhere else is ignored
+        // (that made a "2 h" place that had three other places inside it)
+        let end = left ?? .now
+        let overlaps = stays(on: arrived).contains { o in
+            let oEnd = o.left ?? .now
+            return o.location.distance(from: here) >= Self.radius * 1.5 && o.arrived < end && oEnd > arrived
+        }
+        if overlaps { return }
         let s = Stay(lat: here.coordinate.latitude, lon: here.coordinate.longitude, arrived: arrived, left: left)
         save(s)
         name(s)
@@ -169,35 +214,42 @@ final class PlaceLog: ObservableObject {
 
     func rename(_ stay: Stay, to name: String) {
         var s = stay
-        s.name = name.trimmingCharacters(in: .whitespaces).isEmpty ? nil : name
+        let clean = name.trimmingCharacters(in: .whitespaces)
+        s.name = clean.isEmpty ? nil : clean
+        s.userNamed = clean.isEmpty ? nil : true
+        if !clean.isEmpty { PlaceMemory.learn(clean, at: s.location) }
         save(s)
+    }
+
+    /// Older places (named before the smarter guessing) get a second look when you open their day,
+    /// so they get the better name and "Where was this?" choices. Your own names are never touched.
+    func refineNames(on day: Date) {
+        for st in stays(on: day) where st.options == nil && st.userNamed != true && st.left != nil {
+            name(st, force: true)
+        }
+    }
+
+    /// A stay just ended: name it again with everything we now know (how long you stayed).
+    private func finish(_ s: Stay) {
+        save(s)
+        if s.userNamed != true { name(s, force: true) }
     }
 
     /// Name it after a notable place right there (café, park, shop, station, museum…) — never a random office or
     /// business that happens to be nearest; otherwise the street / area.
-    static let notable: [MKPointOfInterestCategory] = [
-        .airport, .amusementPark, .aquarium, .bakery, .beach, .brewery, .cafe, .campground, .fitnessCenter,
-        .foodMarket, .hospital, .hotel, .library, .marina, .movieTheater, .museum, .nationalPark, .nightlife,
-        .park, .publicTransport, .restaurant, .school, .stadium, .store, .theater, .university, .winery, .zoo,
-    ]
+    static var notable: [MKPointOfInterestCategory] { PlaceGuesser.notable }
 
-    private func name(_ stay: Stay) {
-        guard stay.name == nil else { return }
+    private func name(_ stay: Stay, force: Bool = false) {
+        guard force || stay.name == nil, stay.userNamed != true else { return }
         Task {
-            var found: String?
-            let req = MKLocalPointsOfInterestRequest(center: stay.coordinate, radius: 50)
-            req.pointOfInterestFilter = MKPointOfInterestFilter(including: Self.notable)
-            if let resp = try? await MKLocalSearch(request: req).start() {
-                found = resp.mapItems
-                    .filter { ($0.placemark.location?.distance(from: stay.location) ?? 999) <= 50 }
-                    .sorted { ($0.placemark.location?.distance(from: stay.location) ?? 999) < ($1.placemark.location?.distance(from: stay.location) ?? 999) }
-                    .first?.name
-            }
+            let guess = await PlaceGuesser.guess(stay)
+            var found = guess?.name
             if found == nil { found = await PlaceService.shared.placeName(for: stay.location) }
             guard let found else { return }
-            // re-read so we don't overwrite times that changed meanwhile
-            if var s = stays(on: stay.arrived).first(where: { $0.id == stay.id }), s.name == nil {
+            // re-read so we don't overwrite times (or your own name) that changed meanwhile
+            if var s = stays(on: stay.arrived).first(where: { $0.id == stay.id }), s.userNamed != true {
                 s.name = found
+                s.options = guess?.options
                 save(s)
                 if open?.id == s.id { open = s }
             }
